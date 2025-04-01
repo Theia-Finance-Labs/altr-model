@@ -1,4 +1,28 @@
-# Here you can define all your datasets by using simple YAML syntax.
-#
-# Documentation for this file format can be found in "The Data Catalog"
-# Link: https://docs.kedro.org/en/stable/data/data_catalog.html
+# Asset details table
+plant_detail:
+  type: pandas.SQLTableDataset
+  table_name: int_ast_power_gem_plant_detail
+  credentials: postgres
+  load_args:
+    schema: public_int_assets
+
+plant_events:
+  type: pandas.SQLTableDataset
+  table_name: int_ast_power_gem_plant_events
+  credentials: postgres
+  load_args:
+    schema: public_int_assets
+
+plant_ownerships:
+  type: pandas.SQLTableDataset
+  table_name: int_ast_power_gem_plant_ownerships
+  credentials: postgres
+  load_args:
+    schema: public_int_assets
+
+scenarios:
+  type: pandas.SQLTableDataset
+  table_name: scenarios
+  credentials: postgres
+  load_args:
+    schema: public_marts

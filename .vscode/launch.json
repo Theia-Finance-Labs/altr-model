@@ -1,0 +1,21 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "name": "Kedro Run Trisk (Debug)",
+        "type": "debugpy",
+        "request": "launch",
+        "module": "kedro",
+        "args": [
+          "run",
+          "--pipeline",
+          "trisk"  // 👈 change this if needed
+        ],
+        "console": "integratedTerminal",
+        "justMyCode": false,
+        "env": {
+          "PYTHONBREAKPOINT": "ipdb.set_trace"
+        }
+      }
+    ]
+  }

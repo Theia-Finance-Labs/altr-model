@@ -12,41 +12,43 @@ kedro = "^0.19.12"
 ipython = ">=8.10"
 jupyterlab = ">=3.0"
 notebook = "*"
+pandas = "*"
+tqdm = "*"
+kedro-datasets = {extras = ["pandas"], version = "^6.0.0"}
+sqlalchemy = "^2.0.40"
+psycopg2 = "^2.9.10"
 
-[tool.poetry.extras]
-docs = [
-    "docutils<0.21",
-    "sphinx>=5.3,<7.3",
-    "sphinx_rtd_theme==2.0.0",
-    "nbsphinx==0.8.1",
-    "sphinx-autodoc-typehints==1.20.2",
-    "sphinx_copybutton==0.5.2",
-    "ipykernel>=5.3,<7.0",
-    "Jinja2<3.2.0",
-    "myst-parser>=1.0,<2.1"
-]
-dev = [
-    "pytest-cov~=3.0",
-    "pytest-mock>=1.7.1,<2.0",
-    "pytest~=7.2",
-    "ruff~=0.1.8"
-]
+[tool.poetry.group.docs.dependencies]
+docutils = "<0.21"
+sphinx = ">=5.3,<7.3"
+sphinx_rtd_theme = "==2.0.0"
+nbsphinx = "==0.8.1"
+sphinx-autodoc-typehints = "==1.20.2"
+sphinx_copybutton = "==0.5.2"
+ipykernel = ">=5.3,<7.0"
+Jinja2 = "<3.2.0"
+myst-parser = ">=1.0,<2.1"
+
+[tool.poetry.group.dev.dependencies]
+pytest-cov = "~=3.0"
+pytest-mock = ">=1.7.1,<2.0"
+pytest = "~=7.2"
+ruff = "~=0.1.8"
 
 [tool.poetry.scripts]
 crispy-kedro = "crispy_kedro.__main__:main"
 kedro = "kedro.framework.cli.cli:main"
 
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
-
 [tool.kedro]
 package_name = "crispy_kedro"
 project_name = "crispy-kedro"
 kedro_init_version = "0.19.12"
-tools = "['Linting', 'Testing', 'Documentation', 'Data Structure']"
-example_pipeline = "False"
+tools = ["Linting", "Testing", "Documentation", "Data Structure"]
+example_pipeline = false
 source_dir = "src"
+
+[tool.kedro_telemetry]
+project_id = "0bec92a005924635896a5c2b9e02dc93"
 
 [tool.pytest.ini_options]
 addopts = """
@@ -76,7 +78,8 @@ select = [
     "PL",   # Pylint
     "T201"  # Print statement
 ]
-ignore = ["E501"]  # line-too-long handled by formatter
+ignore = ["E501"]
 
-[tool.kedro_telemetry]
-project_id = "0bec92a005924635896a5c2b9e02dc93"
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
