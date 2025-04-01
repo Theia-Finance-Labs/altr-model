@@ -7,6 +7,10 @@ import pandas as pd
 from typing import Tuple
 from tqdm import tqdm
 
+import pandas as pd
+from typing import Tuple
+from tqdm import tqdm
+
 
 def compute_base_trajectory(
     df: pd.DataFrame, units_events: pd.DataFrame
@@ -63,7 +67,8 @@ def compute_base_trajectory(
         df[["asset_id", "asset_name", "country_name"]], on="asset_id", how="left"
     )
 
-    renewal_df.rename(columns={"total_capacity": "base_trajectory"}, inplace=True)
+    # Rename to have a consistent trajectory column name
+    renewal_df.rename(columns={"total_capacity": "asset_trajectory"}, inplace=True)
     return renewal_df[
         [
             "asset_id",
@@ -71,7 +76,7 @@ def compute_base_trajectory(
             "country_name",
             "technology",
             "year",
-            "base_trajectory",
+            "asset_trajectory",
         ]
     ]
 
@@ -94,14 +99,13 @@ def compute_truncated_trajectory(
     base_trajectory: pd.DataFrame, scenarios: pd.DataFrame
 ) -> pd.DataFrame:
     """
-    Creates a truncated trajectory.
-
-    This function uses the transformation logic that was originally
-    defined in TruncateBaseTrajectoryTransformation.transform().
+    Creates a truncated trajectory using a fixed timeline based on the
+    baseline scenarios. The transformation reindexes the input DataFrame
+    and forward-fills the 'asset_trajectory' column.
     """
     # Get the common minimum scenario year from the baseline scenarios
     min_scenario_year, _ = get_common_scenario_years(scenarios)
-    # Define a fixed timeline: min_year to min_year+5 (inclusive)
+    # Define a fixed timeline: from min_year to min_year+5 (inclusive)
     timeline_years = list(range(min_scenario_year, min_scenario_year + 6))
 
     # Create a full MultiIndex of (asset_id, technology, year)
@@ -122,10 +126,9 @@ def compute_truncated_trajectory(
         .reset_index()
     )
 
-    # Forward fill (and then back fill missing values) for 'base_trajectory'
-    # and store the result in a new column 'truncated_trajectory'
-    df_full["truncated_trajectory"] = (
-        df_full.groupby(["asset_id", "technology"], sort=False)["base_trajectory"]
+    # Forward fill (and back fill) for 'asset_trajectory'
+    df_full["asset_trajectory"] = (
+        df_full.groupby(["asset_id", "technology"], sort=False)["asset_trajectory"]
         .ffill()
         .fillna(0)
     )
@@ -134,23 +137,13 @@ def compute_truncated_trajectory(
 
 
 def compute_baseline_trajectory(
-    truncated_trajectory: pd.DataFrame, scenarios: pd.DataFrame
+    base_trajectory: pd.DataFrame, scenarios: pd.DataFrame
 ) -> pd.DataFrame:
     """
-    Computes the baseline trajectory.
-
-    This function uses the transformation logic that was originally
-    defined in BaselineTransformation.transform().
-
-    **Important:** Since the transformation logic expects a column named
-    "base_trajectory", we first rename the input column accordingly.
+    Computes the baseline trajectory by extending the time range if needed.
+    It expects the input DataFrame to contain a column named 'asset_trajectory'
+    and returns a DataFrame with the same column name.
     """
-    # Rename the column from truncated_trajectory to base_trajectory so that
-    # the transformation logic works correctly.
-    df = truncated_trajectory.rename(
-        columns={"truncated_trajectory": "base_trajectory"}
-    )
-
     # Get the common scenario years from the baseline scenarios
     min_scenario_year, max_scenario_year = get_common_scenario_years(scenarios)
     # Define a fixed timeline: from min_year to min_year+5 (inclusive)
@@ -159,8 +152,8 @@ def compute_baseline_trajectory(
     # Create a full MultiIndex of (asset_id, technology, year)
     index = pd.MultiIndex.from_product(
         [
-            df["asset_id"].unique(),
-            df["technology"].unique(),
+            base_trajectory["asset_id"].unique(),
+            base_trajectory["technology"].unique(),
             timeline_years,
         ],
         names=["asset_id", "technology", "year"],
@@ -168,40 +161,39 @@ def compute_baseline_trajectory(
 
     # Reindex the input DataFrame to the full index
     df_full = (
-        df.set_index(["asset_id", "technology", "year"])
+        base_trajectory.set_index(["asset_id", "technology", "year"])
         .reindex(index)
         .sort_index()
         .reset_index()
     )
 
-    # Forward fill (and then back fill) the 'base_trajectory' by group
-    df_full["base_trajectory"] = (
-        df_full.groupby(["asset_id", "technology"], sort=False)["base_trajectory"]
+    # Forward fill (and back fill) the 'asset_trajectory' by group
+    df_full["asset_trajectory"] = (
+        df_full.groupby(["asset_id", "technology"], sort=False)["asset_trajectory"]
         .ffill()
         .fillna(0)
     )
 
     results = []
     # Process each asset and technology combination separately
-    for (asset_id, tech), group in df.groupby(["asset_id", "technology"]):
+    for (asset_id, tech), group in base_trajectory.groupby(["asset_id", "technology"]):
         # Get the scenario years for the current technology
         scenario_group = scenarios[scenarios["technology"] == tech]
 
         if scenario_group.empty:
-            # If no scenario available, just append the original group
             results.append(group)
             continue
 
-        # Determine the full year range based on the available data and scenarios
+        # Determine the full year range based on available data and scenarios
         start_year = min(group["year"].min(), scenario_group["scenario_year"].min())
         end_year = max(group["year"].max(), scenario_group["scenario_year"].max())
         full_years = pd.DataFrame({"year": range(start_year, end_year + 1)})
 
         # Merge and forward fill the base_trajectory values
         merged = full_years.merge(
-            group[["year", "base_trajectory"]], on="year", how="left"
+            group[["year", "asset_trajectory"]], on="year", how="left"
         )
-        merged["base_trajectory"] = merged["base_trajectory"].ffill().fillna(0)
+        merged["asset_trajectory"] = merged["asset_trajectory"].ffill().fillna(0)
         merged["asset_id"] = asset_id
         merged["technology"] = tech
         results.append(merged)
