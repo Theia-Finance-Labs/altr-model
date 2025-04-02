@@ -1,28 +1,47 @@
-# Asset details table
 plant_detail:
-  type: pandas.SQLTableDataset
+  type: ibis.TableDataset
   table_name: int_ast_power_gem_plant_detail
-  credentials: postgres
-  load_args:
-    schema: public_int_assets
+  database: public_int_assets
+  connection:
+    backend: postgres
+    host: localhost
+    port: 5432
+    user: crispydb_user
+    password: crispypassword
+    database: crispydb
 
 plant_events:
-  type: pandas.SQLTableDataset
+  type: ibis.TableDataset
   table_name: int_ast_power_gem_plant_events
-  credentials: postgres
-  load_args:
-    schema: public_int_assets
+  database: public_int_assets
+  connection:
+    backend: postgres
+    host: localhost
+    port: 5432
+    user: crispydb_user
+    password: crispypassword
+    database: crispydb
 
 plant_ownerships:
-  type: pandas.SQLTableDataset
+  type: ibis.TableDataset
   table_name: int_ast_power_gem_plant_ownerships
-  credentials: postgres
-  load_args:
-    schema: public_int_assets
+  database: public_int_assets
+  connection:
+    backend: postgres
+    host: localhost
+    port: 5432
+    user: crispydb_user
+    password: crispypassword
+    database: crispydb
 
 scenarios:
-  type: pandas.SQLTableDataset
+  type: ibis.TableDataset
   table_name: scenarios
-  credentials: postgres
-  load_args:
-    schema: public_marts
+  database: public_marts
+  connection:
+    backend: postgres
+    host: localhost
+    port: 5432
+    user: crispydb_user
+    password: crispypassword
+    database: crispydb

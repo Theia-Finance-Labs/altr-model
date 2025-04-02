@@ -8,15 +8,28 @@ from typing import Tuple
 from tqdm import tqdm
 
 import pandas as pd
-from typing import Tuple
+from typing import Tuple, List
 from tqdm import tqdm
+import ibis
+
+
+def filter_assets(
+    assets_detail: ibis.expr.types.Table,
+    units_events: ibis.expr.types.Table,
+    asset_ids: List[str],
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    filtered_assets = assets_detail.filter(assets_detail.asset_id.isin(asset_ids))
+    filtered_assets = filtered_assets.execute()
+
+    filtered_events = units_events.filter(units_events.asset_id.isin(asset_ids))
+    filtered_events = filtered_events.execute()
+    return filtered_assets, filtered_events
 
 
 def compute_base_trajectory(
     df: pd.DataFrame, units_events: pd.DataFrame
 ) -> pd.DataFrame:
     # Create a 'delta' column: positive for add_capacity, negative for remove_capacity.
-    df = df.sample(100)
     units_events["delta"] = units_events.apply(
         lambda row: (
             row["capacity_value"]
@@ -108,20 +121,24 @@ def compute_truncated_trajectory(
     # Define a fixed timeline: from min_year to min_year+5 (inclusive)
     timeline_years = list(range(min_scenario_year, min_scenario_year + 6))
 
-    # Create a full MultiIndex of (asset_id, technology, year)
-    index = pd.MultiIndex.from_product(
-        [
-            base_trajectory["asset_id"].unique(),
-            base_trajectory["technology"].unique(),
-            timeline_years,
-        ],
-        names=["asset_id", "technology", "year"],
-    )
+    # Get unique combinations of asset_id and technology
+    asset_tech = base_trajectory[["asset_id", "technology"]].drop_duplicates()
 
+    # Build a list of tuples: (asset_id, technology, year)
+    index_tuples = [
+        (asset, tech, year)
+        for asset, tech in asset_tech.itertuples(index=False, name=None)
+        for year in timeline_years
+    ]
+
+    # Create the MultiIndex from the tuples
+    multi_index = pd.MultiIndex.from_tuples(
+        index_tuples, names=["asset_id", "technology", "year"]
+    )
     # Reindex the base trajectory to the full index
     df_full = (
         base_trajectory.set_index(["asset_id", "technology", "year"])
-        .reindex(index)
+        .reindex(multi_index)
         .sort_index()
         .reset_index()
     )
@@ -133,7 +150,7 @@ def compute_truncated_trajectory(
         .fillna(0)
     )
 
-    return df_full
+    return df_full[["asset_id", "technology", "year", "asset_trajectory"]]
 
 
 def compute_baseline_trajectory(
@@ -144,35 +161,6 @@ def compute_baseline_trajectory(
     It expects the input DataFrame to contain a column named 'asset_trajectory'
     and returns a DataFrame with the same column name.
     """
-    # Get the common scenario years from the baseline scenarios
-    min_scenario_year, max_scenario_year = get_common_scenario_years(scenarios)
-    # Define a fixed timeline: from min_year to min_year+5 (inclusive)
-    timeline_years = list(range(min_scenario_year, min_scenario_year + 6))
-
-    # Create a full MultiIndex of (asset_id, technology, year)
-    index = pd.MultiIndex.from_product(
-        [
-            base_trajectory["asset_id"].unique(),
-            base_trajectory["technology"].unique(),
-            timeline_years,
-        ],
-        names=["asset_id", "technology", "year"],
-    )
-
-    # Reindex the input DataFrame to the full index
-    df_full = (
-        base_trajectory.set_index(["asset_id", "technology", "year"])
-        .reindex(index)
-        .sort_index()
-        .reset_index()
-    )
-
-    # Forward fill (and back fill) the 'asset_trajectory' by group
-    df_full["asset_trajectory"] = (
-        df_full.groupby(["asset_id", "technology"], sort=False)["asset_trajectory"]
-        .ffill()
-        .fillna(0)
-    )
 
     results = []
     # Process each asset and technology combination separately
