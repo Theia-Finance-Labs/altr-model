@@ -5,9 +5,14 @@
 # Link: https://docs.kedro.org/en/0.19.12/configuration/parameters.html
 
 
-baseline_scenario: "KAPSARC_AIM/CGE 2.2_EN_INDCi2030_1600"
-target_scenario: "KAPSARC_AIM/CGE 2.2_EN_INDCi2030_1200f"
-scenario_geography: "R10REST_ASIA"
+# baseline_scenario: "KAPSARC_AIM/CGE 2.2_EN_INDCi2030_1600"
+# target_scenario: "KAPSARC_AIM/CGE 2.2_EN_INDCi2030_1200f"
+# scenario_geography: "R10REST_ASIA"
+
+baseline_scenario: "NGFS2024_GCAM_CP"
+target_scenario: "NGFS2024_GCAM_NZ2050"
+scenario_geography: "Global"
+
 
 asset_ids:
   - L100000104929

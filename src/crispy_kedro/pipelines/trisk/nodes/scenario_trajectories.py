@@ -17,7 +17,9 @@ def filter_scenarios(
     return traj_scenario
 
 
-def calculate_fair_share_perc(scenarios: pd.DataFrame) -> pd.DataFrame:
+def calculate_fair_share_perc(
+    scenarios: pd.DataFrame,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
     # Define the grouping columns
     group_cols = ["scenario", "sector", "scenario_geography", "technology"]
 
@@ -44,4 +46,35 @@ def calculate_fair_share_perc(scenarios: pd.DataFrame) -> pd.DataFrame:
     # Replace NaN values (which may appear if first_pathway was zero) with 0
     scenarios["fair_share_perc"] = scenarios["fair_share_perc"].fillna(0)
 
-    return scenarios
+    scenarios[
+        [
+            "scenario",
+            "scenario_type",
+            "sector",
+            "technology",
+            "technology_type",
+            "scenario_year",
+            "scenario_pathway",
+            "fair_share_perc",
+            "scenario_price",
+            "scenario_capacity_factor",
+        ]
+    ]
+
+    scenario_traj_baseline = (
+        scenarios.loc[scenarios["scenario_type"] == "baseline"]
+        .sort_values(["technology", "scenario_year"])
+        .rename(columns={"scenario_year": "year"})
+    )
+
+    scenario_traj_target = (
+        scenarios.loc[scenarios["scenario_type"] == "target"]
+        .sort_values(["technology", "scenario_year"])
+        .rename(columns={"scenario_year": "year"})
+    )
+
+    return scenario_traj_baseline, scenario_traj_target
+
+
+def apply_capacity_factors(traj_assets_baseline_clean, traj_assets_target_clean):
+    return traj_assets_baseline_prod, traj_assets_target_prod

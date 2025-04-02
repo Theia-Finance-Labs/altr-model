@@ -26,7 +26,7 @@ def filter_assets(
     return filtered_assets, filtered_events
 
 
-def compute_base_trajectory(
+def compute_raw_trajectory(
     df: pd.DataFrame, units_events: pd.DataFrame
 ) -> pd.DataFrame:
     # Create a 'delta' column: positive for add_capacity, negative for remove_capacity.
@@ -82,6 +82,7 @@ def compute_base_trajectory(
 
     # Rename to have a consistent trajectory column name
     renewal_df.rename(columns={"total_capacity": "asset_trajectory"}, inplace=True)
+    renewal_df["asset_trajectory"] = renewal_df["asset_trajectory"].astype(float)
     return renewal_df[
         [
             "asset_id",
@@ -108,8 +109,8 @@ def get_common_scenario_years(df: pd.DataFrame) -> Tuple[int, int]:
     return min_years.iloc[0], max_years.iloc[0]
 
 
-def compute_truncated_trajectory(
-    base_trajectory: pd.DataFrame, scenarios: pd.DataFrame
+def truncate_traj_asset(
+    raw_trajectory: pd.DataFrame, scenarios: pd.DataFrame
 ) -> pd.DataFrame:
     """
     Creates a truncated trajectory using a fixed timeline based on the
@@ -122,7 +123,7 @@ def compute_truncated_trajectory(
     timeline_years = list(range(min_scenario_year, min_scenario_year + 6))
 
     # Get unique combinations of asset_id and technology
-    asset_tech = base_trajectory[["asset_id", "technology"]].drop_duplicates()
+    asset_tech = raw_trajectory[["asset_id", "technology"]].drop_duplicates()
 
     # Build a list of tuples: (asset_id, technology, year)
     index_tuples = [
@@ -137,7 +138,7 @@ def compute_truncated_trajectory(
     )
     # Reindex the base trajectory to the full index
     df_full = (
-        base_trajectory.set_index(["asset_id", "technology", "year"])
+        raw_trajectory.set_index(["asset_id", "technology", "year"])
         .reindex(multi_index)
         .sort_index()
         .reset_index()
@@ -151,42 +152,3 @@ def compute_truncated_trajectory(
     )
 
     return df_full[["asset_id", "technology", "year", "asset_trajectory"]]
-
-
-def compute_baseline_trajectory(
-    base_trajectory: pd.DataFrame, scenarios: pd.DataFrame
-) -> pd.DataFrame:
-    """
-    Computes the baseline trajectory by extending the time range if needed.
-    It expects the input DataFrame to contain a column named 'asset_trajectory'
-    and returns a DataFrame with the same column name.
-    """
-
-    results = []
-    # Process each asset and technology combination separately
-    for (asset_id, tech), group in base_trajectory.groupby(["asset_id", "technology"]):
-        # Get the scenario years for the current technology
-        scenario_group = scenarios[scenarios["technology"] == tech]
-
-        if scenario_group.empty:
-            results.append(group)
-            continue
-
-        # Determine the full year range based on available data and scenarios
-        start_year = min(group["year"].min(), scenario_group["scenario_year"].min())
-        end_year = max(group["year"].max(), scenario_group["scenario_year"].max())
-        full_years = pd.DataFrame({"year": range(start_year, end_year + 1)})
-
-        # Merge and forward fill the base_trajectory values
-        merged = full_years.merge(
-            group[["year", "asset_trajectory"]], on="year", how="left"
-        )
-        merged["asset_trajectory"] = merged["asset_trajectory"].ffill().fillna(0)
-        merged["asset_id"] = asset_id
-        merged["technology"] = tech
-        results.append(merged)
-
-    # Concatenate the results for all asset_id-technology combinations
-    extended_df = pd.concat(results, ignore_index=True)
-
-    return extended_df
