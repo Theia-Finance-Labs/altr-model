@@ -1,4 +1,6 @@
-def apply_scenario_prices(traj_assets_baseline_prod, traj_assets_shocked):
+def apply_scenario_prices(
+    traj_scenario, traj_assets_baseline_prod, traj_assets_shocked
+):
     return traj_assets_revenue
 
 

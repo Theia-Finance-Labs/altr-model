@@ -42,17 +42,17 @@ def compute_raw_trajectory(
 
     # Group units_events by asset_id, technology, and event_year.
     grouped_events = units_events.groupby(
-        ["asset_id", "technology_category", "event_year"], as_index=False
+        ["asset_id", "sector", "technology_category", "event_year"], as_index=False
     )["delta"].sum()
 
     # Determine the latest event year across all units_events
     max_event_year = grouped_events["event_year"].max()
 
     # Pre-compute the groupby object
-    grouped = grouped_events.groupby(["asset_id", "technology_category"])
+    grouped = grouped_events.groupby(["asset_id", "sector", "technology_category"])
     trajectories = []
 
-    for (asset_id, technology_category), group in tqdm(
+    for (asset_id, sector, technology_category), group in tqdm(
         grouped, total=grouped.ngroups, desc="Processing assets x tech", leave=True
     ):
         group = group.sort_values("event_year")
@@ -69,6 +69,7 @@ def compute_raw_trajectory(
                 "year": list(years),
                 "total_capacity": capacity_series.values,
                 "asset_id": asset_id,
+                "sector": sector,
                 "technology": technology_category,
             }
         )
@@ -88,6 +89,7 @@ def compute_raw_trajectory(
             "asset_id",
             "asset_name",
             "country_name",
+            "sector",
             "technology",
             "year",
             "asset_trajectory",
@@ -123,22 +125,22 @@ def truncate_traj_asset(
     timeline_years = list(range(min_scenario_year, min_scenario_year + 6))
 
     # Get unique combinations of asset_id and technology
-    asset_tech = raw_trajectory[["asset_id", "technology"]].drop_duplicates()
+    asset_tech = raw_trajectory[["asset_id", "sector", "technology"]].drop_duplicates()
 
     # Build a list of tuples: (asset_id, technology, year)
     index_tuples = [
-        (asset, tech, year)
-        for asset, tech in asset_tech.itertuples(index=False, name=None)
+        (asset, sector, tech, year)
+        for asset, sector, tech in asset_tech.itertuples(index=False, name=None)
         for year in timeline_years
     ]
 
     # Create the MultiIndex from the tuples
     multi_index = pd.MultiIndex.from_tuples(
-        index_tuples, names=["asset_id", "technology", "year"]
+        index_tuples, names=["asset_id", "sector", "technology", "year"]
     )
     # Reindex the base trajectory to the full index
     df_full = (
-        raw_trajectory.set_index(["asset_id", "technology", "year"])
+        raw_trajectory.set_index(["asset_id", "sector", "technology", "year"])
         .reindex(multi_index)
         .sort_index()
         .reset_index()
@@ -151,4 +153,4 @@ def truncate_traj_asset(
         .fillna(0)
     )
 
-    return df_full[["asset_id", "technology", "year", "asset_trajectory"]]
+    return df_full[["asset_id", "sector", "technology", "year", "asset_trajectory"]]

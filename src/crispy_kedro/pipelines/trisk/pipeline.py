@@ -13,15 +13,16 @@ from .nodes.trisk_input_trajectories import (
     compute_baseline_trajectory,
     compute_target_trajectory,
     force_phase_out,
+    apply_capacity_factors,
 )
 from .nodes.scenario_trajectories import (
     filter_scenarios,
     calculate_fair_share_perc,
-    apply_capacity_factors,
 )
 
 from .nodes.shock_trajectory import (
-    split_assets_per_proximity_to_target,
+    compute_proximity_to_target,
+    split_assets_per_shock_type,
     apply_compensation_shock,
     apply_simple_shock,
     gather_shock_trajectories,
@@ -87,12 +88,24 @@ def create_pipeline(**kwargs) -> Pipeline:
             ),
             node(
                 func=apply_capacity_factors,
-                inputs=["traj_assets_baseline_clean", "traj_assets_target_clean"],
+                inputs=[
+                    "traj_scenario",
+                    "traj_assets_baseline_clean",
+                    "traj_assets_target_clean",
+                ],
                 outputs=["traj_assets_baseline_prod", "traj_assets_target_prod"],
             ),
             node(
-                func=split_assets_per_proximity_to_target,
-                inputs=["truncated_traj_assets_raw", "traj_assets_target_prod"],
+                func=compute_proximity_to_target,
+                inputs=["truncated_traj_assets_raw", "traj_assets_target_clean"],
+                outputs="proximity_to_target",
+            ),
+            node(
+                func=split_assets_per_shock_type,
+                inputs=[
+                    "truncated_traj_assets_raw",
+                    "traj_assets_target_prod",
+                ],
                 outputs=["assets_to_compensate", "assets_to_simple_shock"],
             ),
             node(
@@ -120,7 +133,11 @@ def create_pipeline(**kwargs) -> Pipeline:
             ),
             node(
                 func=apply_scenario_prices,
-                inputs=["traj_assets_baseline_prod", "traj_assets_shocked"],
+                inputs=[
+                    "traj_scenario",
+                    "traj_assets_baseline_prod",
+                    "traj_assets_shocked",
+                ],
                 outputs=["traj_assets_revenue"],
             ),
             node(

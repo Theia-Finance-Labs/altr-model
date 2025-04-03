@@ -46,7 +46,7 @@ def calculate_fair_share_perc(
     # Replace NaN values (which may appear if first_pathway was zero) with 0
     scenarios["fair_share_perc"] = scenarios["fair_share_perc"].fillna(0)
 
-    scenarios[
+    scenarios = scenarios[
         [
             "scenario",
             "scenario_type",
@@ -74,7 +74,3 @@ def calculate_fair_share_perc(
     )
 
     return scenario_traj_baseline, scenario_traj_target
-
-
-def apply_capacity_factors(traj_assets_baseline_clean, traj_assets_target_clean):
-    return traj_assets_baseline_prod, traj_assets_target_prod
