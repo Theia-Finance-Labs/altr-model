@@ -112,7 +112,7 @@ def get_common_scenario_years(df: pd.DataFrame) -> Tuple[int, int]:
 
 
 def truncate_traj_asset(
-    raw_trajectory: pd.DataFrame, scenarios: pd.DataFrame
+    raw_trajectory: pd.DataFrame, scenarios: pd.DataFrame, forecast_horizon: int
 ) -> pd.DataFrame:
     """
     Creates a truncated trajectory using a fixed timeline based on the
@@ -122,7 +122,9 @@ def truncate_traj_asset(
     # Get the common minimum scenario year from the baseline scenarios
     min_scenario_year, _ = get_common_scenario_years(scenarios)
     # Define a fixed timeline: from min_year to min_year+5 (inclusive)
-    timeline_years = list(range(min_scenario_year, min_scenario_year + 6))
+    timeline_years = list(
+        range(min_scenario_year, min_scenario_year + forecast_horizon + 1)
+    )
 
     # Get unique combinations of asset_id and technology
     asset_tech = raw_trajectory[["asset_id", "sector", "technology"]].drop_duplicates()

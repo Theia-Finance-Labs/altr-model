@@ -12,7 +12,8 @@
 baseline_scenario: "NGFS2024_GCAM_CP"
 target_scenario: "NGFS2024_GCAM_NZ2050"
 scenario_geography: "Global"
-
+shock_year: 2030
+forecast_horizon: 5
 
 asset_ids:
   - L100000104929

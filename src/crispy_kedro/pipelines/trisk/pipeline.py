@@ -4,6 +4,11 @@ generated using Kedro 0.19.12
 """
 
 from kedro.pipeline import node, Pipeline, pipeline
+
+from .nodes.force_phase_out import (
+    force_phase_out_target_baseline,
+    force_phase_out_late_sudden,
+)
 from .nodes.assets_trajectories import (
     filter_assets,
     compute_raw_trajectory,
@@ -12,7 +17,6 @@ from .nodes.assets_trajectories import (
 from .nodes.trisk_input_trajectories import (
     compute_baseline_trajectory,
     compute_target_trajectory,
-    force_phase_out,
     apply_capacity_factors,
 )
 from .nodes.scenario_trajectories import (
@@ -28,7 +32,9 @@ from .nodes.shock_trajectory import (
     gather_shock_trajectories,
 )
 from .nodes.revenue_trajectories import (
-    apply_scenario_prices,
+    build_price_trajectory,
+    filter_companies,
+    allocate_production_to_companies,
     calculate_net_profits,
     calculate_annual_profits,
 )
@@ -62,29 +68,39 @@ def create_pipeline(**kwargs) -> Pipeline:
                 outputs=["filtered_plant_detail", "filtered_events"],
             ),
             node(
+                func=filter_companies,
+                inputs=["plant_ownerships", "filtered_plant_detail"],
+                outputs="companies_ownership_tree",
+            ),
+            node(
                 func=compute_raw_trajectory,
                 inputs=["filtered_plant_detail", "filtered_events"],
                 outputs="traj_assets_raw",
             ),
             node(
                 func=truncate_traj_asset,
-                inputs=["traj_assets_raw", "traj_scenario"],
-                outputs="truncated_traj_assets_raw",
+                inputs=["traj_assets_raw", "traj_scenario", "params:forecast_horizon"],
+                outputs="traj_assets_raw_truncated",
             ),
             node(
                 func=compute_baseline_trajectory,
-                inputs=["truncated_traj_assets_raw", "traj_scenario_baseline"],
+                inputs=["traj_assets_raw_truncated", "traj_scenario_baseline"],
                 outputs="traj_assets_baseline",
             ),
             node(
                 func=compute_target_trajectory,
-                inputs=["truncated_traj_assets_raw", "traj_scenario_target"],
+                inputs=["traj_assets_raw_truncated", "traj_scenario_target"],
                 outputs="traj_assets_target",
             ),
             node(
-                func=force_phase_out,
+                func=force_phase_out_target_baseline,
                 inputs=["traj_assets_baseline", "traj_assets_target"],
                 outputs=["traj_assets_baseline_clean", "traj_assets_target_clean"],
+            ),
+            node(
+                func=compute_proximity_to_target,
+                inputs=["traj_assets_raw_truncated", "traj_assets_target_clean"],
+                outputs="proximity_to_target",
             ),
             node(
                 func=apply_capacity_factors,
@@ -92,21 +108,25 @@ def create_pipeline(**kwargs) -> Pipeline:
                     "traj_scenario",
                     "traj_assets_baseline_clean",
                     "traj_assets_target_clean",
+                    "traj_assets_raw_truncated",
                 ],
-                outputs=["traj_assets_baseline_prod", "traj_assets_target_prod"],
-            ),
-            node(
-                func=compute_proximity_to_target,
-                inputs=["truncated_traj_assets_raw", "traj_assets_target_clean"],
-                outputs="proximity_to_target",
+                outputs=[
+                    "traj_assets_baseline_prod",
+                    "traj_assets_target_prod",
+                    "truncated_traj_assets_prod",
+                ],
             ),
             node(
                 func=split_assets_per_shock_type,
                 inputs=[
-                    "truncated_traj_assets_raw",
+                    "traj_assets_raw_truncated",
                     "traj_assets_target_prod",
                 ],
-                outputs=["assets_to_compensate", "assets_to_simple_shock"],
+                outputs=[
+                    "assets_to_compensate",
+                    "assets_to_not_compensate",
+                    "flagged_overshoot",
+                ],
             ),
             node(
                 func=apply_compensation_shock,
@@ -114,51 +134,69 @@ def create_pipeline(**kwargs) -> Pipeline:
                     "assets_to_compensate",
                     "traj_assets_baseline_prod",
                     "traj_assets_target_prod",
+                    "params:shock_year",
                 ],
-                outputs=["assets_compensated_shocked"],
+                outputs="assets_compensated_shocked",
             ),
             node(
                 func=apply_simple_shock,
                 inputs=[
-                    "assets_to_simple_shock",
-                    "traj_assets_baseline_prod",
+                    "assets_to_not_compensate",
+                    "truncated_traj_assets_prod",
                     "traj_assets_target_prod",
                 ],
-                outputs=["assets_simply_shocked"],
+                outputs="assets_simply_shocked",
             ),
             node(
                 gather_shock_trajectories,
-                inputs=["assets_compensated_shocked", "assets_simply_shocked"],
-                outputs=["traj_assets_shocked"],
+                inputs=[
+                    "assets_compensated_shocked",
+                    "assets_simply_shocked",
+                    "flagged_overshoot",
+                ],
+                outputs="traj_assets_shocked",
             ),
             node(
-                func=apply_scenario_prices,
+                func=force_phase_out_late_sudden,
+                inputs=["traj_assets_shocked"],
+                outputs="traj_assets_shocked_phased_out",
+            ),
+            node(
+                func=build_price_trajectory,
                 inputs=[
                     "traj_scenario",
-                    "traj_assets_baseline_prod",
-                    "traj_assets_shocked",
+                    "params:shock_year",
                 ],
-                outputs=["traj_assets_revenue"],
+                outputs="traj_technology_prices",
+            ),
+            node(
+                allocate_production_to_companies,
+                inputs=["companies_ownership_tree", "traj_assets_shocked"],
+                outputs="traj_companies_shock",
             ),
             node(
                 func=calculate_net_profits,
-                inputs=["traj_assets_revenue"],
-                outputs=["traj_assets_net_profits"],
+                inputs=[
+                    "financial_averages",
+                    "traj_companies_shock",
+                    "traj_technology_prices",
+                ],
+                outputs="traj_assets_net_profits",
             ),
             node(
                 func=calculate_annual_profits,
                 inputs=["traj_assets_net_profits"],
-                outputs=["traj_assets_annual_profits"],
+                outputs="traj_assets_annual_profits",
             ),
             node(
                 func=calculate_asset_value_at_risk,
                 inputs=["traj_assets_annual_profits"],
-                outputs=["asset_value_at_risk"],
+                outputs="asset_value_at_risk",
             ),
             node(
                 func=calculate_pd_change_overall,
                 inputs=["asset_value_at_risk"],
-                outputs=["pd_change_overall"],
+                outputs="pd_change_overall",
             ),
         ]
     )

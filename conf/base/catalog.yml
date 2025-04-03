@@ -45,3 +45,15 @@ scenarios:
     user: crispydb_user
     password: crispypassword
     database: crispydb
+
+financial_averages:
+  type: ibis.TableDataset
+  table_name: financial_averages
+  database: public_marts
+  connection:
+    backend: postgres
+    host: localhost
+    port: 5432
+    user: crispydb_user
+    password: crispypassword
+    database: crispydb
