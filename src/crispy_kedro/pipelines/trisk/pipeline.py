@@ -37,10 +37,7 @@ from .nodes.revenue_trajectories import (
     allocate_production_to_companies,
     calculate_net_profits,
     calculate_annual_profits,
-)
-from .nodes.risk_metrics import (
-    calculate_asset_value_at_risk,
-    calculate_pd_change_overall,
+    compute_npvs,
 )
 
 
@@ -171,32 +168,46 @@ def create_pipeline(**kwargs) -> Pipeline:
             ),
             node(
                 allocate_production_to_companies,
-                inputs=["companies_ownership_tree", "traj_assets_shocked"],
-                outputs="traj_companies_shock",
+                inputs=[
+                    "companies_ownership_tree",
+                    "traj_assets_baseline",
+                    "traj_assets_shocked_phased_out",
+                ],
+                outputs=["traj_companies_baseline", "traj_companies_shock"],
             ),
             node(
                 func=calculate_net_profits,
                 inputs=[
                     "financial_averages",
+                    "traj_companies_baseline",
                     "traj_companies_shock",
                     "traj_technology_prices",
                 ],
-                outputs="traj_assets_net_profits",
+                outputs=[
+                    "traj_companies_revenue_baseline",
+                    "traj_companies_revenue_shock",
+                ],
             ),
             node(
                 func=calculate_annual_profits,
-                inputs=["traj_assets_net_profits"],
-                outputs="traj_assets_annual_profits",
+                inputs=[
+                    "traj_companies_revenue_baseline",
+                    "traj_companies_revenue_shock",
+                    "params:discount_rate",
+                    "params:growth_rate",
+                ],
+                outputs=[
+                    "traj_companies_net_profits_baseline",
+                    "traj_companies_net_profits_shock",
+                ],
             ),
             node(
-                func=calculate_asset_value_at_risk,
-                inputs=["traj_assets_annual_profits"],
-                outputs="asset_value_at_risk",
-            ),
-            node(
-                func=calculate_pd_change_overall,
-                inputs=["asset_value_at_risk"],
-                outputs="pd_change_overall",
+                func=compute_npvs,
+                inputs=[
+                    "traj_companies_net_profits_baseline",
+                    "traj_companies_net_profits_shock",
+                ],
+                outputs="companies_npvs",
             ),
         ]
     )

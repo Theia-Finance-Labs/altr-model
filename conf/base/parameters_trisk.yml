@@ -15,6 +15,9 @@ scenario_geography: "Global"
 shock_year: 2030
 forecast_horizon: 5
 
+discount_rate: 0.07
+growth_rate: 0.03
+
 asset_ids:
   - L100000104929
   - L100001004877

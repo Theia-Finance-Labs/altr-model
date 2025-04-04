@@ -72,18 +72,6 @@ def split_assets_per_shock_type(traj_assets_raw_truncated, traj_assets_target_pr
         on=["asset_id", "sector", "technology", "year"],
     )
 
-    # # Select relevant columns
-    # late_sudden_data = data[
-    #     [
-    #         "asset_id",
-    #         "year",
-    #         "sector",
-    #         "technology",
-    #         "asset_trajectory",
-    #         "asset_trajectory_target",
-    #     ]
-    # ]
-
     group_cols = ["asset_id", "sector", "technology"]
     late_sudden_data = late_sudden_data.sort_values(group_cols + ["year"])
 
