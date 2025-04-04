@@ -2,7 +2,9 @@ import numpy as np
 import pandas as pd
 
 
-def enforce_zero_after_first(group, trajectory_column):
+def enforce_zero_after_first(
+    group: pd.DataFrame, trajectory_column: str
+) -> pd.DataFrame:
     # Sort the group by year to ensure the rows are in order
     group = group.sort_values("year").copy()
     # Convert the production column to a numpy array
@@ -20,7 +22,7 @@ def enforce_zero_after_first(group, trajectory_column):
 
 def force_phase_out_target_baseline(
     traj_assets_baseline: pd.DataFrame, traj_assets_target: pd.DataFrame
-):
+) -> tuple[pd.DataFrame, pd.DataFrame]:
 
     traj_assets_baseline = (
         traj_assets_baseline.groupby(["asset_id", "sector", "technology"])
@@ -39,7 +41,7 @@ def force_phase_out_target_baseline(
     return traj_assets_baseline, traj_assets_target
 
 
-def force_phase_out_late_sudden(traj_assets_shocked: pd.DataFrame):
+def force_phase_out_late_sudden(traj_assets_shocked: pd.DataFrame) -> pd.DataFrame:
 
     traj_assets_shocked = (
         traj_assets_shocked.groupby(["asset_id", "sector", "technology"])

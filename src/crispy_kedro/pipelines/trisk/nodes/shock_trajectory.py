@@ -2,7 +2,9 @@ import numpy as np
 import pandas as pd
 
 
-def compute_proximity_to_target(traj_assets_raw_truncated, traj_assets_target_clean):
+def compute_proximity_to_target(
+    traj_assets_raw_truncated: pd.DataFrame, traj_assets_target_clean: pd.DataFrame
+) -> pd.DataFrame:
 
     # Determine the last year with non-NA production for each group
     last_non_na = (
@@ -63,7 +65,9 @@ def compute_proximity_to_target(traj_assets_raw_truncated, traj_assets_target_cl
     return proximity_to_target
 
 
-def split_assets_per_shock_type(traj_assets_raw_truncated, traj_assets_target_prod):
+def split_assets_per_shock_type(
+    traj_assets_raw_truncated: pd.DataFrame, traj_assets_target_prod: pd.DataFrame
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
 
     late_sudden_data = pd.merge(
         traj_assets_raw_truncated,
@@ -150,8 +154,11 @@ def split_assets_per_shock_type(traj_assets_raw_truncated, traj_assets_target_pr
 
 
 def apply_compensation_shock(
-    assets_to_compensate, traj_assets_baseline_prod, traj_assets_target_prod, shock_year
-):
+    assets_to_compensate: pd.DataFrame,
+    traj_assets_baseline_prod: pd.DataFrame,
+    traj_assets_target_prod: pd.DataFrame,
+    shock_year: int,
+) -> pd.DataFrame:
     group_cols = ["asset_id", "sector", "technology"]
     late_sudden_data = pd.merge(
         traj_assets_baseline_prod, traj_assets_target_prod, on=group_cols + ["year"]
@@ -235,8 +242,10 @@ def apply_compensation_shock(
 
 
 def apply_simple_shock(
-    assets_to_not_compensate, truncated_traj_assets_prod, traj_assets_target_prod
-):
+    assets_to_not_compensate: pd.DataFrame,
+    truncated_traj_assets_prod: pd.DataFrame,
+    traj_assets_target_prod: pd.DataFrame,
+) -> pd.DataFrame:
     group_cols = ["asset_id", "sector", "technology"]
 
     # Merge production and target trajectories on group and year
@@ -290,8 +299,10 @@ def apply_simple_shock(
 
 
 def gather_shock_trajectories(
-    assets_compensated_shocked, assets_simply_shocked, flagged_overshoot
-):
+    assets_compensated_shocked: pd.DataFrame,
+    assets_simply_shocked: pd.DataFrame,
+    flagged_overshoot: pd.DataFrame,
+) -> pd.DataFrame:
     group_cols = ["asset_id", "sector", "technology"]
     # Combine compensated and not compensated
     late_sudden_df = pd.concat(

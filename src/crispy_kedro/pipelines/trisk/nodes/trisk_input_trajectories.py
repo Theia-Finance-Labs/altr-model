@@ -141,12 +141,12 @@ def compute_target_trajectory(
 
 
 def apply_capacity_factors(
-    traj_scenario,
-    traj_assets_baseline_clean,
-    traj_assets_target_clean,
-    traj_assets_raw_truncated,
-):
-    def merge_and_apply(df_assets, scenario_type):
+    traj_scenario: pd.DataFrame,
+    traj_assets_baseline_clean: pd.DataFrame,
+    traj_assets_target_clean: pd.DataFrame,
+    traj_assets_raw_truncated: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    def merge_and_apply(df_assets: pd.DataFrame, scenario_type: str) -> pd.DataFrame:
         capfac = traj_scenario.loc[
             traj_scenario["scenario_type"] == scenario_type,
             ["scenario_year", "sector", "scenario_capacity_factor", "technology"],

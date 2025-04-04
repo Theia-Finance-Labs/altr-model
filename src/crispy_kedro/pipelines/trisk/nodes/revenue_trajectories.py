@@ -3,7 +3,9 @@ import numpy as np
 import ibis
 
 
-def build_price_trajectory(traj_scenario, shock_year):
+def build_price_trajectory(
+    traj_scenario: pd.DataFrame, shock_year: int
+) -> pd.DataFrame:
 
     # Part 1: years > shock_year -1 (i.e., years >= shock_year)
     after_shock_target = traj_scenario.loc[
@@ -119,7 +121,9 @@ def build_price_trajectory(traj_scenario, shock_year):
     return traj_price_late_sudden
 
 
-def filter_companies(plant_ownerships, filtered_plant_detail):
+def filter_companies(
+    plant_ownerships: ibis.expr.types.Table, filtered_plant_detail: pd.DataFrame
+) -> pd.DataFrame:
     filtered_assets = filtered_plant_detail["asset_id"].unique()
     plant_ownership_df = plant_ownerships.filter(
         plant_ownerships.asset_id.isin(filtered_assets)
@@ -145,8 +149,10 @@ def filter_companies(plant_ownerships, filtered_plant_detail):
 
 
 def allocate_production_to_companies(
-    companies_ownership_tree, traj_assets_baseline, traj_assets_shocked
-):
+    companies_ownership_tree: pd.DataFrame,
+    traj_assets_baseline: pd.DataFrame,
+    traj_assets_shocked: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     def allocate_trajectory(asset_df, asset_col, output_col):
         """
         Merges asset-level trajectories with company ownership info,
@@ -200,10 +206,10 @@ def allocate_production_to_companies(
 
 def calculate_net_profits(
     financial_averages: ibis.expr.types.Table,
-    traj_companies_baseline,
-    traj_companies_shock,
-    traj_technology_prices,
-):
+    traj_companies_baseline: pd.DataFrame,
+    traj_companies_shock: pd.DataFrame,
+    traj_technology_prices: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     # Execute the financial averages query and ensure margin is float
     financial_averages_df = financial_averages.execute()
     financial_averages_df["net_profit_margin"] = financial_averages_df[
@@ -256,11 +262,11 @@ def calculate_net_profits(
 
 
 def calculate_annual_profits(
-    traj_companies_revenue_baseline,
-    traj_companies_revenue_shock,
-    discount_rate,
-    growth_rate,
-):
+    traj_companies_revenue_baseline: pd.DataFrame,
+    traj_companies_revenue_shock: pd.DataFrame,
+    discount_rate: float,
+    growth_rate: float,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Processes the baseline and shock revenue data to compute annual
     discounted net profits and append terminal value rows.
@@ -316,7 +322,9 @@ def calculate_annual_profits(
     return traj_companies_net_profits_baseline, traj_companies_net_profits_shock
 
 
-def discount_dividend_model(data, discount_rate, profit_col, discounted_col):
+def discount_dividend_model(
+    data: pd.DataFrame, discount_rate: float, profit_col: str, discounted_col: str
+) -> pd.DataFrame:
     """
     For each company group, sort by year, assign a time index t_calc,
     and compute the discounted profit.
@@ -349,8 +357,13 @@ def discount_dividend_model(data, discount_rate, profit_col, discounted_col):
 
 
 def calculate_terminal_value(
-    data, end_year, growth_rate, discount_rate, profit_col, discounted_col
-):
+    data: pd.DataFrame,
+    end_year: int,
+    growth_rate: float,
+    discount_rate: float,
+    profit_col: str,
+    discounted_col: str,
+) -> pd.DataFrame:
     """
     Append a terminal value row for each company group. The terminal row
     represents the next period (end_year + 1) where profit is grown by
@@ -386,9 +399,19 @@ def calculate_terminal_value(
     return data_with_terminal
 
 
-def compute_npvs(traj_companies_net_profits_baseline, traj_companies_net_profits_shock):
+def compute_npvs(
+    traj_companies_net_profits_baseline: pd.DataFrame,
+    traj_companies_net_profits_shock: pd.DataFrame,
+) -> pd.DataFrame:
     """
     Compute total NPV without terminal value
+
+    Parameters:
+      traj_companies_net_profits_baseline: DataFrame with discounted baseline profits
+      traj_companies_net_profits_shock: DataFrame with discounted shock profits
+
+    Returns:
+      DataFrame with NPV calculations including baseline, shock, difference and change
     """
 
     companies_net_profits_baseline = (
