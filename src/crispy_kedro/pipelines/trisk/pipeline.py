@@ -36,8 +36,17 @@ from .nodes.revenue_trajectories import (
     filter_companies,
     allocate_production_to_companies,
     calculate_net_profits,
-    calculate_annual_profits,
+    calculate_discounted_net_profits,
     compute_npvs,
+)
+
+
+from .nodes.reporting_outputs import (
+    plot_assets_baseline_target,
+    plot_assets_shocks,
+    merge_companies_net_profits,
+    plot_companies_net_profits,
+    plot_companies_npvs_kde,
 )
 
 
@@ -189,7 +198,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                 ],
             ),
             node(
-                func=calculate_annual_profits,
+                func=calculate_discounted_net_profits,
                 inputs=[
                     "traj_companies_revenue_baseline",
                     "traj_companies_revenue_shock",
@@ -208,6 +217,39 @@ def create_pipeline(**kwargs) -> Pipeline:
                     "traj_companies_net_profits_shock",
                 ],
                 outputs="companies_npvs",
+            ),
+            node(
+                func=plot_assets_baseline_target,
+                inputs=["traj_assets_baseline_clean", "traj_assets_target_clean"],
+                outputs=None,
+                tags=["reporting"],
+            ),
+            node(
+                func=plot_assets_shocks,
+                inputs=["assets_compensated_shocked", "assets_simply_shocked"],
+                outputs=None,
+                tags=["reporting"],
+            ),
+            node(
+                func=merge_companies_net_profits,
+                inputs=[
+                    "traj_companies_net_profits_baseline",
+                    "traj_companies_net_profits_shock",
+                ],
+                outputs="merged_companies_net_profits_excel",
+                tags=["reporting"],
+            ),
+            node(
+                func=plot_companies_net_profits,
+                inputs="merged_companies_net_profits_excel",
+                outputs=None,
+                tags=["reporting"],
+            ),
+            node(
+                func=plot_companies_npvs_kde,
+                inputs="companies_npvs",
+                outputs="npvs_kde_plot",
+                tags=["reporting"],
             ),
         ]
     )

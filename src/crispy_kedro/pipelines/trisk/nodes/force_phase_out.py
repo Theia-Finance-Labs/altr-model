@@ -24,7 +24,7 @@ def force_phase_out_target_baseline(
     traj_assets_baseline: pd.DataFrame, traj_assets_target: pd.DataFrame
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
 
-    traj_assets_baseline = (
+    traj_assets_baseline_clean = (
         traj_assets_baseline.groupby(["asset_id", "sector", "technology"])
         .apply(
             lambda group: enforce_zero_after_first(group, "asset_trajectory_baseline")
@@ -32,13 +32,13 @@ def force_phase_out_target_baseline(
         .reset_index(drop=True)
     )
 
-    traj_assets_target = (
+    traj_assets_target_clean = (
         traj_assets_target.groupby(["asset_id", "sector", "technology"])
         .apply(lambda group: enforce_zero_after_first(group, "asset_trajectory_target"))
         .reset_index(drop=True)
     )
 
-    return traj_assets_baseline, traj_assets_target
+    return traj_assets_baseline_clean, traj_assets_target_clean
 
 
 def force_phase_out_late_sudden(traj_assets_shocked: pd.DataFrame) -> pd.DataFrame:

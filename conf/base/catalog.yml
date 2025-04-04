@@ -1,3 +1,8 @@
+# ================================================
+# ================== INPUTS ======================
+# ================================================
+
+
 plant_detail:
   type: ibis.TableDataset
   table_name: int_ast_power_gem_plant_detail
@@ -57,3 +62,24 @@ financial_averages:
     user: crispydb_user
     password: crispypassword
     database: crispydb
+
+# ================================================
+# ================== OUTPUTS =====================
+# ================================================
+
+traj_assets_raw_truncated:
+  type: pandas.ExcelDataset
+  filepath: data/08_reporting/traj_assets_raw_truncated.xlsx
+
+merged_companies_net_profits_excel:
+  type: pandas.ExcelDataset
+  filepath: data/08_reporting/companies_net_profits.xlsx
+
+companies_npvs_excel:
+  type: pandas.ExcelDataset
+  filepath: data/08_reporting/companies_npvs.xlsx
+
+npvs_kde_plot:
+  type: matplotlib.MatplotlibWriter
+  filepath: data/08_reporting/npvs_kde_plot.png
+  versioned: true

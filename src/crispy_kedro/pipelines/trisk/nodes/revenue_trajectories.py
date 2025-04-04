@@ -261,7 +261,7 @@ def calculate_net_profits(
     return traj_companies_revenue_baseline, traj_companies_revenue_shock
 
 
-def calculate_annual_profits(
+def calculate_discounted_net_profits(
     traj_companies_revenue_baseline: pd.DataFrame,
     traj_companies_revenue_shock: pd.DataFrame,
     discount_rate: float,
