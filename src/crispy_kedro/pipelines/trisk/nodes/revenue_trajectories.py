@@ -129,19 +129,21 @@ def filter_companies(
         plant_ownerships.asset_id.isin(filtered_assets)
     ).execute()
 
-    # TODO : APPLY OWNERSHIP TREE ACCORDING TO EVENTS
+    # TODO : APPLY OWNERSHIP TREE ACCORDING TO EVENTS // ownership of events is ignored quick&dirty
     # Step 1: aggregate ownership by asset and company
     companies_ownership_tree = plant_ownership_df.groupby(
         ["asset_id", "owner_name", "company_id"], as_index=False
     ).agg({"ownership_percentage": "sum"})
+    companies_ownership_tree["ownership_percentage"] = companies_ownership_tree[
+        "ownership_percentage"
+    ].astype(float)
 
     # Step 2: normalize ownership per asset
-    companies_ownership_tree["normalized_ownership"] = (
-        companies_ownership_tree["ownership_percentage"]
-        / companies_ownership_tree.groupby("asset_id")[
-            "ownership_percentage"
-        ].transform("sum")
-    ).astype(float)
+    companies_ownership_tree["normalized_ownership"] = companies_ownership_tree[
+        "ownership_percentage"
+    ] / companies_ownership_tree.groupby("asset_id")["ownership_percentage"].transform(
+        "sum"
+    )
 
     return companies_ownership_tree[
         ["asset_id", "owner_name", "company_id", "normalized_ownership"]
