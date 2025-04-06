@@ -14,9 +14,15 @@ jupyterlab = ">=3.0"
 notebook = "*"
 pandas = "*"
 tqdm = "*"
-kedro-datasets = {extras = ["pandas"], version = "^6.0.0"}
+kedro-datasets = {extras = ["pandas", "ibis"], version = "^6.0.0"}
 sqlalchemy = "^2.0.40"
 psycopg2 = "^2.9.10"
+matplotlib = "^3.10.1"
+seaborn = "^0.13.2"
+psycopg = "^3.2.6"
+pyarrow = "^19.0.1"
+pyarrow-hotfix = "^0.6"
+openpyxl = "^3.1.5"
 
 [tool.poetry.group.docs.dependencies]
 docutils = "<0.21"
