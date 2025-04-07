@@ -67,9 +67,19 @@ financial_averages:
 # ================== OUTPUTS =====================
 # ================================================
 
-traj_assets_raw_truncated:
+assets_data:
   type: pandas.ExcelDataset
-  filepath: data/08_reporting/traj_assets_raw_truncated.xlsx
+  filepath: data/08_reporting/assets_data.xlsx
+
+scenarios_data:
+  type: pandas.ExcelDataset
+  filepath: data/08_reporting/scenarios_data.xlsx
+
+financial_data:
+  type: pandas.ExcelDataset
+  filepath: data/08_reporting/financial_data.xlsx
+
+
 
 merged_companies_net_profits_excel:
   type: pandas.ExcelDataset

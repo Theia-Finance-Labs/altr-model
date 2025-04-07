@@ -9,9 +9,6 @@ packages = [{ include = "crispy_kedro", from = "src" }]
 [tool.poetry.dependencies]
 python = "^3.10"
 kedro = "^0.19.12"
-ipython = ">=8.10"
-jupyterlab = ">=3.0"
-notebook = "*"
 pandas = "*"
 tqdm = "*"
 kedro-datasets = {extras = ["pandas", "ibis"], version = "^6.0.0"}
@@ -23,6 +20,17 @@ psycopg = "^3.2.6"
 pyarrow = "^19.0.1"
 pyarrow-hotfix = "^0.6"
 openpyxl = "^3.1.5"
+kedro-viz = "^11.0.0"
+
+[tool.poetry.group.dev.dependencies]
+ipython = ">=8.10"
+jupyterlab = ">=3.0"
+notebook = "*"
+pytest-cov = "~=3.0"
+pytest-mock = ">=1.7.1,<2.0"
+pytest = "~=7.2"
+ruff = "~=0.1.8"
+
 
 [tool.poetry.group.docs.dependencies]
 docutils = "<0.21"
@@ -34,12 +42,6 @@ sphinx_copybutton = "==0.5.2"
 ipykernel = ">=5.3,<7.0"
 Jinja2 = "<3.2.0"
 myst-parser = ">=1.0,<2.1"
-
-[tool.poetry.group.dev.dependencies]
-pytest-cov = "~=3.0"
-pytest-mock = ">=1.7.1,<2.0"
-pytest = "~=7.2"
-ruff = "~=0.1.8"
 
 [tool.poetry.scripts]
 crispy-kedro = "crispy_kedro.__main__:main"

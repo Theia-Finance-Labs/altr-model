@@ -49,6 +49,13 @@ from .nodes.reporting_outputs import (
     plot_companies_npvs_kde,
 )
 
+from .nodes.make_trisk_inputs import (
+    make_financial_data,
+    make_assets_data,
+    make_scenarios_data,
+    compute_plant_age_years,
+)
+
 
 def create_pipeline(**kwargs) -> Pipeline:
     return pipeline(
@@ -179,7 +186,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                 allocate_production_to_companies,
                 inputs=[
                     "companies_ownership_tree",
-                    "traj_assets_baseline",
+                    "traj_assets_baseline_prod",
                     "traj_assets_shocked_phased_out",
                 ],
                 outputs=["traj_companies_baseline", "traj_companies_shock"],
@@ -249,6 +256,38 @@ def create_pipeline(**kwargs) -> Pipeline:
                 func=plot_companies_npvs_kde,
                 inputs="companies_npvs",
                 outputs="npvs_kde_plot",
+                tags=["reporting"],
+            ),
+            node(
+                func=compute_plant_age_years,
+                inputs=["traj_assets_raw_truncated", "plant_events"],
+                outputs="assets_age",
+            ),
+            node(
+                func=make_assets_data,
+                inputs=[
+                    "traj_assets_raw_truncated",
+                    "filtered_plant_detail",
+                    "companies_ownership_tree",
+                    "assets_age",
+                ],
+                outputs="assets_data",
+                tags=["reporting"],
+            ),
+            node(
+                func=make_scenarios_data,
+                inputs="scenarios",
+                outputs="scenarios_data",
+                tags=["reporting"],
+            ),
+            node(
+                func=make_financial_data,
+                inputs=[
+                    "traj_assets_raw_truncated",
+                    "companies_ownership_tree",
+                    "financial_averages",
+                ],
+                outputs="financial_data",
                 tags=["reporting"],
             ),
         ]
