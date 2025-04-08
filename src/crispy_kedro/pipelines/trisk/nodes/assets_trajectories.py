@@ -18,7 +18,7 @@ def filter_assets(
     units_events: ibis.expr.types.Table,
     asset_ids: List[str],
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    if len(asset_ids) > 0:
+    if asset_ids:
         filtered_assets = assets_detail.filter(assets_detail.asset_id.isin(asset_ids))
         filtered_events = units_events.filter(units_events.asset_id.isin(asset_ids))
     else:
@@ -27,6 +27,7 @@ def filter_assets(
 
     filtered_assets = filtered_assets.execute()
     filtered_events = filtered_events.execute()
+
     return filtered_assets, filtered_events
 
 

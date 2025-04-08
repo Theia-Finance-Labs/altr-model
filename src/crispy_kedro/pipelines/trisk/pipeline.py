@@ -49,7 +49,7 @@ from .nodes.reporting_outputs import (
     plot_companies_npvs_kde,
 )
 
-from .nodes.make_trisk_inputs import (
+from .nodes.make_R_inputs import (
     make_financial_data,
     make_assets_data,
     make_scenarios_data,
