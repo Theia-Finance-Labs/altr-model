@@ -103,10 +103,10 @@ def compute_plant_age_years(
 
 
 def make_scenarios_data(scenarios: ibis.expr.types.Table):
-    scenarios_data = scenarios.filter(
-        scenarios.scenario_provider.contains("GCAM")
-    ).execute()
-
+    # scenarios_data = scenarios.filter(
+    #     scenarios.scenario_provider.contains("GCAM")
+    # ).execute()
+    scenarios_data = scenarios.execute()
     return scenarios_data
 
 

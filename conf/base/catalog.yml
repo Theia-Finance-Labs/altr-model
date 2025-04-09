@@ -72,8 +72,8 @@ assets_data:
   filepath: data/08_reporting/assets_data.xlsx
 
 scenarios_data:
-  type: pandas.ExcelDataset
-  filepath: data/08_reporting/scenarios_data.xlsx
+  type: pandas.CSVDataset
+  filepath: data/08_reporting/scenarios_data.csv
 
 financial_data:
   type: pandas.ExcelDataset
