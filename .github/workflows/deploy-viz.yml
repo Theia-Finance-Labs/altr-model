@@ -29,6 +29,7 @@ jobs:
       - name: Build Kedro Viz
         run: |
           kedro viz build
+          ls -la build  # Debug step to verify build directory contents
           
       - name: Authenticate to Google Cloud via WIF
         id: auth
@@ -43,8 +44,13 @@ jobs:
       - name: Deploy to GCP Storage
         run: |
           mkdir -p temp_build
-          cp -r build/* temp_build/
-          gsutil -m rsync -r temp_build gs://${{ env.GCP_BUCKET_NAME }}/viz
+          if [ -d "build" ]; then
+            cp -r build/* temp_build/
+            gsutil -m rsync -r temp_build gs://${{ env.GCP_BUCKET_NAME }}/viz
+          else
+            echo "Error: build directory not found"
+            exit 1
+          fi
           
       - name: Invalidate Cloud CDN Cache
         run: |
