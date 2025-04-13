@@ -6,62 +6,43 @@
 plant_detail:
   type: ibis.TableDataset
   table_name: int_ast_power_gem_plant_detail
-  database: public_int_assets
+  database: bertrand_marts
   connection:
-    backend: postgres
-    host: localhost
-    port: 5432
-    user: crispydb_user
-    password: crispypassword
-    database: crispydb
+    backend: bigquery
+    project_id: cloud-1in1000
 
 plant_events:
   type: ibis.TableDataset
   table_name: int_ast_power_gem_plant_events
-  database: public_int_assets
+  database: bertrand_marts
   connection:
-    backend: postgres
-    host: localhost
-    port: 5432
-    user: crispydb_user
-    password: crispypassword
-    database: crispydb
+    backend: bigquery
+    project_id: cloud-1in1000
 
 plant_ownerships:
   type: ibis.TableDataset
   table_name: int_ast_power_gem_plant_ownerships
-  database: public_int_assets
+  database: bertrand_marts
   connection:
-    backend: postgres
-    host: localhost
-    port: 5432
-    user: crispydb_user
-    password: crispypassword
-    database: crispydb
+    backend: bigquery
+    project_id: cloud-1in1000
+
 
 scenarios:
   type: ibis.TableDataset
   table_name: scenarios
-  database: public_marts
+  database: bertrand_marts
   connection:
-    backend: postgres
-    host: localhost
-    port: 5432
-    user: crispydb_user
-    password: crispypassword
-    database: crispydb
+    backend: bigquery
+    project_id: cloud-1in1000
 
 financial_averages:
   type: ibis.TableDataset
   table_name: financial_averages
-  database: public_marts
+  database: bertrand_marts
   connection:
-    backend: postgres
-    host: localhost
-    port: 5432
-    user: crispydb_user
-    password: crispypassword
-    database: crispydb
+    backend: bigquery
+    project_id: cloud-1in1000
 
 # ================================================
 # ================== OUTPUTS =====================

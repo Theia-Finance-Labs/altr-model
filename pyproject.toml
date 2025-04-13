@@ -7,20 +7,19 @@ readme = "README.md"
 packages = [{ include = "crispy_kedro", from = "src" }]
 
 [tool.poetry.dependencies]
-python = "^3.10"
+python = ">=3.10,<3.11"
 kedro = "^0.19.12"
 pandas = "*"
+numpy = "<2.0.0"
 tqdm = "*"
 kedro-datasets = {extras = ["pandas", "ibis"], version = "^6.0.0"}
-sqlalchemy = "^2.0.40"
-psycopg2 = "^2.9.10"
 matplotlib = "^3.10.1"
 seaborn = "^0.13.2"
-psycopg = "^3.2.6"
-pyarrow = "^19.0.1"
-pyarrow-hotfix = "^0.6"
 openpyxl = "^3.1.5"
-kedro-viz = "^11.0.0"
+kedro-viz = "6.1.0"
+ibis-bigquery = "^2.2.1"
+# ibis-framework = "^3.2.0"
+pydantic = ">=1.9.0,<2.0.0"
 
 [tool.poetry.group.dev.dependencies]
 ipython = ">=8.10"
