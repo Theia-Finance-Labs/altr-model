@@ -22,13 +22,21 @@ jobs:
         with:
           python-version: '3.10'
           
-      - name: Install Kedro and dependencies
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: latest
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+          
+      - name: Install dependencies
         run: |
-          pip install kedro kedro-viz kedro-datasets[ibis] ibis-framework
+          poetry install --no-interaction
+          poetry run pip install kedro-viz
           
       - name: Build Kedro Viz
         run: |
-          kedro viz build
+          poetry run kedro viz build
           ls -la build  # Debug step to verify build directory contents
           
       - name: Authenticate to Google Cloud via WIF
@@ -43,14 +51,7 @@ jobs:
           
       - name: Deploy to GCP Storage
         run: |
-          mkdir -p temp_build
-          if [ -d "build" ]; then
-            cp -r build/* temp_build/
-            gsutil -m rsync -r temp_build gs://${{ env.GCP_BUCKET_NAME }}/viz
-          else
-            echo "Error: build directory not found"
-            exit 1
-          fi
+          gsutil -m rsync -r build gs://${{ env.GCP_BUCKET_NAME }}/viz
           
       - name: Invalidate Cloud CDN Cache
         run: |
