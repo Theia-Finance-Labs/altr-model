@@ -42,7 +42,7 @@ jobs:
           
       - name: Deploy to GCP Storage
         run: |
-          gsutil -m rsync -r -d build gs://${{ env.GCP_BUCKET_NAME }}/viz
+          gsutil -m rsync -r -d build/ gs://${{ env.GCP_BUCKET_NAME }}/viz
           
       - name: Invalidate Cloud CDN Cache
         run: |
