@@ -1,0 +1,49 @@
+name: Deploy Kedro Viz to GCP
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  GCP_BUCKET_NAME: trisk.1in1000.com
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          
+      - name: Install Kedro
+        run: |
+          pip install kedro kedro-viz
+          
+      - name: Build Kedro Viz
+        run: |
+          kedro viz build
+          
+      - name: Authenticate to Google Cloud via WIF
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: "projects/350220397525/locations/global/workloadIdentityPools/github-pool/providers/theia"
+          service_account: "github-ci@cloud-1in1000.iam.gserviceaccount.com"
+          
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+          
+      - name: Deploy to GCP Storage
+        run: |
+          gsutil -m rsync -r -d .viz/build gs://${{ env.GCP_BUCKET_NAME }}/viz
+          
+      - name: Invalidate Cloud CDN Cache
+        run: |
+          gcloud compute url-maps invalidate-cdn-cache viz-url-map --path "/*" 
