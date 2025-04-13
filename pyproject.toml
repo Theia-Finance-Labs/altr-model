@@ -17,9 +17,8 @@ matplotlib = "^3.10.1"
 seaborn = "^0.13.2"
 openpyxl = "^3.1.5"
 kedro-viz = "6.1.0"
-ibis-bigquery = "^2.2.1"
-# ibis-framework = "^3.2.0"
 pydantic = ">=1.9.0,<2.0.0"
+ibis-framework = {extras = ["bigquery"], version = "^10.4.0"}
 
 [tool.poetry.group.dev.dependencies]
 ipython = ">=8.10"

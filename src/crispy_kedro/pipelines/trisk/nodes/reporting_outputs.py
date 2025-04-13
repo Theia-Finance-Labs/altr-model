@@ -227,7 +227,7 @@ def plot_companies_net_profits(merged_net_profits: pd.DataFrame) -> dict:
     line with a dashed line (marker "x").
 
     The plot is saved as:
-      {COMPANIES_NET_PROFITS_DIR}/company_{company_id}_net_profits.png
+      {COMPANIES_NET_PROFITS_DIR}/company_{sanitized_company_id}_net_profits.png
 
     Returns:
       A dictionary mapping each company_id to its saved file path.
@@ -258,12 +258,19 @@ def plot_companies_net_profits(merged_net_profits: pd.DataFrame) -> dict:
         ax.set_ylabel("Net Profit")
         ax.legend()
 
+        # Sanitize company_id for filename
+        sanitized_company = "".join(
+            c for c in str(company) if c.isalnum() or c in ("-", "_")
+        )
         file_path = os.path.join(
-            COMPANIES_NET_PROFITS_DIR, f"company_{company}_net_profits.png"
+            COMPANIES_NET_PROFITS_DIR, f"company_{sanitized_company}_net_profits.png"
         )
         fig.tight_layout()
         fig.savefig(file_path)
         plt.close(fig)
+        file_paths[company] = file_path
+
+    return file_paths
 
 
 def plot_companies_npvs_kde(companies_npvs: pd.DataFrame) -> str:

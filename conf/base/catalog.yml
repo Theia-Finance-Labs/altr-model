@@ -6,7 +6,7 @@
 plant_detail:
   type: ibis.TableDataset
   table_name: int_ast_power_gem_plant_detail
-  database: bertrand_marts
+  database: bertrand_int_assets
   connection:
     backend: bigquery
     project_id: cloud-1in1000
@@ -14,7 +14,7 @@ plant_detail:
 plant_events:
   type: ibis.TableDataset
   table_name: int_ast_power_gem_plant_events
-  database: bertrand_marts
+  database: bertrand_int_assets
   connection:
     backend: bigquery
     project_id: cloud-1in1000
@@ -22,7 +22,7 @@ plant_events:
 plant_ownerships:
   type: ibis.TableDataset
   table_name: int_ast_power_gem_plant_ownerships
-  database: bertrand_marts
+  database: bertrand_int_assets
   connection:
     backend: bigquery
     project_id: cloud-1in1000

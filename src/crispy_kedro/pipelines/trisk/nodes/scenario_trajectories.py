@@ -14,6 +14,8 @@ def filter_scenarios(
         & scenarios.scenario_geography.isin([scenario_geography])
     )
     traj_scenario = traj_scenario.execute()
+
+    traj_scenario["scenario_pathway"] = traj_scenario["scenario_pathway"].astype(float)
     return traj_scenario
 
 
