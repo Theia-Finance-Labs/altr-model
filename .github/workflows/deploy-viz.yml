@@ -36,7 +36,7 @@ jobs:
           
       - name: Build Kedro Viz
         run: |
-          poetry run kedro viz build
+          poetry run kedro viz --build
           ls -la build  # Debug step to verify build directory contents
           
       - name: Authenticate to Google Cloud via WIF
