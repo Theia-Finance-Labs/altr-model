@@ -53,6 +53,3 @@ jobs:
         run: |
           gsutil -m rsync -r build gs://${{ env.GCP_BUCKET_NAME }}/viz
           
-      - name: Invalidate Cloud CDN Cache
-        run: |
-          gcloud compute url-maps invalidate-cdn-cache viz-url-map --path "/*" 
