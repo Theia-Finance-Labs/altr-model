@@ -1,55 +1,53 @@
-name: Deploy Kedro Viz to GCP
+name: Build, Push, and Deploy Kedro Viz
 
 on:
   push:
     branches:
       - main
 
-env:
-  GCP_BUCKET_NAME: trisk.1in1000.com
+# Permissions needed for Workload Identity Federation
+permissions:
+  id-token: write   # To request the OIDC token
+  contents: read    # To checkout the repository
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: 'read'
-      id-token: 'write'
+    env:
+      GIT_SHA: ${{ github.sha }}
+      IMAGE_BASE: europe-west3-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/kedro-viz/kedro-viz
+      REGION: europe-west3
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-          
-      - name: Install Poetry
-        uses: snok/install-poetry@v1
-        with:
-          version: latest
-          virtualenvs-create: true
-          virtualenvs-in-project: true
-          
-      - name: Install dependencies
-        run: |
-          poetry install --no-interaction
-          poetry run pip install kedro-viz
-          
-      - name: Build Kedro Viz
-        run: |
-          poetry run kedro viz --build
-          ls -la build  # Debug step to verify build directory contents
-          
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Authenticate to Google Cloud via WIF
         id: auth
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: "projects/350220397525/locations/global/workloadIdentityPools/github-pool/providers/theia"
           service_account: "github-ci@cloud-1in1000.iam.gserviceaccount.com"
-          
-      - name: Set up Google Cloud SDK
+
+      - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
-          
-      - name: Deploy to GCP Storage
+
+      - name: Configure Docker for Artifact Registry
         run: |
-          gsutil -m rsync -r build gs://${{ env.GCP_BUCKET_NAME }}/viz
-          
+          gcloud auth configure-docker europe-west3-docker.pkg.dev --quiet
+
+      - name: Build and Push Docker Image
+        run: |
+          docker build -t ${IMAGE_BASE}:${GIT_SHA} -f Dockerfile .
+          docker push ${IMAGE_BASE}:${GIT_SHA}
+          # Optional: Push 'latest' tag as well
+          docker tag ${IMAGE_BASE}:${GIT_SHA} ${IMAGE_BASE}:latest
+          docker push ${IMAGE_BASE}:latest
+
+      - name: Deploy Cloud Run Service
+        run: |
+          gcloud run services update kedro-viz \
+            --image=${IMAGE_BASE}:${GIT_SHA} \
+            --region=${REGION}
