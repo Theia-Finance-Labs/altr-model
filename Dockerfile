@@ -26,6 +26,7 @@ RUN poetry config virtualenvs.create false \
 # Copy all project files
 COPY src ./src
 COPY conf ./conf
+COPY README.md ./
 
 # Optionally copy data if needed for viz context
 # COPY data ./data
