@@ -16,17 +16,15 @@ RUN apt-get update && apt-get install -y \
 # Install Poetry
 RUN pip install poetry
 
-# Copy only the Poetry configuration files needed for dependency installation
+# Copy all project files first
+COPY src ./src
+COPY conf ./conf
 COPY pyproject.toml poetry.lock ./
 COPY README.md ./
 
 # Configure Poetry to avoid virtual environments and install dependencies
 RUN poetry config virtualenvs.create false \
     && poetry install --no-interaction --no-ansi
-
-# Copy all project files
-COPY src ./src
-COPY conf ./conf
 
 # Optionally copy data if needed for viz context
 # COPY data ./data
