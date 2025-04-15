@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GIT_SHA: ${{ github.sha }}
-      IMAGE_BASE: europe-west3-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/kedro-viz/kedro-viz
+      IMAGE_BASE: europe-west3-docker.pkg.dev/cloud-1in1000/crispy-app/kedro-viz
       REGION: europe-west3
     steps:
       - name: Checkout Code
