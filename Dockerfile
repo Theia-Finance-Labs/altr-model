@@ -18,6 +18,7 @@ RUN pip install poetry
 
 # Copy only the Poetry configuration files needed for dependency installation
 COPY pyproject.toml poetry.lock ./
+COPY README.md ./
 
 # Configure Poetry to avoid virtual environments and install dependencies
 RUN poetry config virtualenvs.create false \
@@ -26,7 +27,6 @@ RUN poetry config virtualenvs.create false \
 # Copy all project files
 COPY src ./src
 COPY conf ./conf
-COPY README.md ./
 
 # Optionally copy data if needed for viz context
 # COPY data ./data
