@@ -16,8 +16,7 @@ kedro-datasets = {extras = ["pandas", "ibis"], version = "^6.0.0"}
 matplotlib = "^3.10.1"
 seaborn = "^0.13.2"
 openpyxl = "^3.1.5"
-kedro-viz = "6.1.0"
-pydantic = ">=1.9.0,<2.0.0"
+kedro-viz = "^11.0.0"
 ibis-framework = {extras = ["bigquery"], version = "^10.4.0"}
 
 [tool.poetry.group.dev.dependencies]
