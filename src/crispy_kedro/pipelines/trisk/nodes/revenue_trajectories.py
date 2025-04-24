@@ -125,9 +125,10 @@ def filter_companies(
     plant_ownerships: ibis.expr.types.Table, filtered_plant_detail: pd.DataFrame
 ) -> pd.DataFrame:
     filtered_assets = filtered_plant_detail["asset_id"].unique()
-    plant_ownership_df = plant_ownerships.filter(
-        plant_ownerships.asset_id.isin(filtered_assets)
-    ).execute()
+    plant_ownership_df = plant_ownerships.execute()
+    plant_ownership_df = plant_ownership_df.loc[
+        plant_ownership_df["asset_id"].isin(filtered_assets)
+    ]
 
     # TODO : APPLY OWNERSHIP TREE ACCORDING TO EVENTS // ownership of events is ignored quick&dirty
     # Step 1: aggregate ownership by asset and company

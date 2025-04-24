@@ -11,7 +11,7 @@ from .nodes.force_phase_out import (
 )
 from .nodes.assets_trajectories import (
     filter_assets,
-    compute_raw_trajectory,
+    # compute_raw_trajectory,
     truncate_traj_asset,
 )
 from .nodes.trisk_input_trajectories import (
@@ -53,7 +53,7 @@ from .nodes.make_R_inputs import (
     make_financial_data,
     make_assets_data,
     make_scenarios_data,
-    compute_plant_age_years,
+    # compute_plant_age_years,
 )
 
 
@@ -69,6 +69,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                     "params:scenario_geography",
                 ],
                 outputs="traj_scenario",
+                tags=["legacy"],
             ),
             node(
                 func=calculate_fair_share_perc,
@@ -77,23 +78,21 @@ def create_pipeline(**kwargs) -> Pipeline:
             ),
             node(
                 func=filter_assets,
-                inputs=["plant_detail", "plant_events", "params:asset_ids"],
-                outputs=["filtered_plant_detail", "filtered_events"],
+                inputs=["assets_forecasts", "params:asset_ids"],
+                outputs="traj_assets_raw",
+                tags=["legacy"],
             ),
             node(
                 func=filter_companies,
-                inputs=["plant_ownerships", "filtered_plant_detail"],
+                inputs=["plant_ownerships", "traj_assets_raw"],
                 outputs="companies_ownership_tree",
-            ),
-            node(
-                func=compute_raw_trajectory,
-                inputs=["filtered_plant_detail", "filtered_events"],
-                outputs="traj_assets_raw",
+                tags=["legacy"],
             ),
             node(
                 func=truncate_traj_asset,
                 inputs=["traj_assets_raw", "traj_scenario", "params:forecast_horizon"],
                 outputs="traj_assets_raw_truncated",
+                tags=["legacy"],
             ),
             node(
                 func=compute_baseline_trajectory,
@@ -259,27 +258,20 @@ def create_pipeline(**kwargs) -> Pipeline:
                 tags=["reporting"],
             ),
             node(
-                func=compute_plant_age_years,
-                inputs=["traj_assets_raw_truncated", "plant_events"],
-                outputs="assets_age",
-            ),
-            node(
                 func=make_assets_data,
                 inputs=[
-                    "traj_assets_raw_truncated",
-                    "filtered_plant_detail",
-                    "companies_ownership_tree",
-                    "assets_age",
+                    "traj_assets_raw",
+                    "params:forecast_horizon",
                 ],
                 outputs="assets_data",
-                tags=["reporting"],
+                tags=["legacy"],
             ),
-            node(
-                func=make_scenarios_data,
-                inputs="scenarios",
-                outputs="scenarios_data",
-                tags=["reporting"],
-            ),
+            # node(
+            #     func=make_scenarios_data,
+            #     inputs="scenarios",
+            #     outputs="scenarios_data",
+            #     tags=["legacy"],
+            # ),
             node(
                 func=make_financial_data,
                 inputs=[
@@ -288,7 +280,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                     "financial_averages",
                 ],
                 outputs="financial_data",
-                tags=["reporting"],
+                tags=["legacy"],
             ),
         ]
     )

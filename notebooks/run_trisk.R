@@ -1,3 +1,4 @@
+# run kedro run --tags=legacy to get the data
 library(readxl)
 library(dplyr)
 
@@ -18,7 +19,7 @@ if (!grepl(paste0("/?", target_dir, "$"), normalized_current)) {
 devtools::load_all()
 
 assets_data <- readxl::read_excel(file.path("..", "..", "data", "08_reporting", "assets_data.xlsx"))
-scenarios_data <- readxl::read_excel(file.path("..", "..", "data", "08_reporting", "scenarios_data.xlsx"))
+scenarios_data <- readr::read_csv(file.path("..", "..", "data", "08_reporting", "scenarios_data.csv"))
 financial_data <- readxl::read_excel(file.path("..", "..", "data", "08_reporting", "financial_data.xlsx"))
 carbon_data <- readr::read_csv(file.path("inst", "testdata", "ngfs_carbon_price_testdata.csv"))
 

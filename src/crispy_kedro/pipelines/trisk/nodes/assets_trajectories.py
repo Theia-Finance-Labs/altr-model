@@ -14,92 +14,95 @@ import ibis
 
 
 def filter_assets(
-    assets_detail: ibis.expr.types.Table,
-    units_events: ibis.expr.types.Table,
+    assets_forecasts: ibis.expr.types.Table,
     asset_ids: List[str],
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     if asset_ids:
-        filtered_assets = assets_detail.filter(assets_detail.asset_id.isin(asset_ids))
-        filtered_events = units_events.filter(units_events.asset_id.isin(asset_ids))
+        filtered_assets = assets_forecasts.filter(
+            assets_forecasts.asset_id.isin(asset_ids)
+        )
     else:
-        filtered_assets = assets_detail
-        filtered_events = units_events
+        filtered_assets = assets_forecasts
 
     filtered_assets = filtered_assets.execute()
-    filtered_events = filtered_events.execute()
 
-    return filtered_assets, filtered_events
-
-
-def compute_raw_trajectory(
-    df: pd.DataFrame, units_events: pd.DataFrame
-) -> pd.DataFrame:
-    # Create a 'delta' column: positive for add_capacity, negative for remove_capacity.
-    units_events["delta"] = units_events.apply(
-        lambda row: (
-            row["capacity_value"]
-            if row["event_type"] == "add_capacity"
-            else -row["capacity_value"]
-        ),
-        axis=1,
-    )
-    units_events = units_events[units_events["asset_id"].isin(df["asset_id"])]
-
-    # Group units_events by asset_id, technology, and event_year.
-    grouped_events = units_events.groupby(
-        ["asset_id", "sector", "technology_category", "event_year"], as_index=False
-    )["delta"].sum()
-
-    # Determine the latest event year across all units_events
-    max_event_year = grouped_events["event_year"].max()
-
-    # Pre-compute the groupby object
-    grouped = grouped_events.groupby(["asset_id", "sector", "technology_category"])
-    trajectories = []
-
-    for (asset_id, sector, technology_category), group in tqdm(
-        grouped, total=grouped.ngroups, desc="Processing assets x tech", leave=True
-    ):
-        group = group.sort_values("event_year")
-        group["total_capacity"] = group["delta"].cumsum()
-
-        start_year = int(group["event_year"].min())
-        years = range(start_year, int(max_event_year) + 1)
-
-        capacity_series = group.set_index("event_year")["total_capacity"]
-        capacity_series = capacity_series.reindex(years).ffill().fillna(0)
-
-        df_years = pd.DataFrame(
-            {
-                "year": list(years),
-                "total_capacity": capacity_series.values,
-                "asset_id": asset_id,
-                "sector": sector,
-                "technology": technology_category,
-            }
-        )
-        trajectories.append(df_years)
-
-    renewal_df = pd.concat(trajectories, ignore_index=True)
-
-    renewal_df = renewal_df.merge(
-        df[["asset_id", "asset_name", "country_name"]], on="asset_id", how="left"
+    filtered_assets.rename(columns={"production_year": "year"}, inplace=True)
+    filtered_assets["asset_trajectory"] = filtered_assets["asset_trajectory"].astype(
+        float
     )
 
-    # Rename to have a consistent trajectory column name
-    renewal_df.rename(columns={"total_capacity": "asset_trajectory"}, inplace=True)
-    renewal_df["asset_trajectory"] = renewal_df["asset_trajectory"].astype(float)
-    return renewal_df[
-        [
-            "asset_id",
-            "asset_name",
-            "country_name",
-            "sector",
-            "technology",
-            "year",
-            "asset_trajectory",
-        ]
-    ]
+    return filtered_assets
+
+
+# def compute_raw_trajectory(
+#     df: pd.DataFrame, units_events: pd.DataFrame
+# ) -> pd.DataFrame:
+#     # Create a 'delta' column: positive for add_capacity, negative for remove_capacity.
+#     units_events["delta"] = units_events.apply(
+#         lambda row: (
+#             row["capacity_value"]
+#             if row["event_type"] == "add_capacity"
+#             else -row["capacity_value"]
+#         ),
+#         axis=1,
+#     )
+#     units_events = units_events[units_events["asset_id"].isin(df["asset_id"])]
+
+#     # Group units_events by asset_id, technology, and event_year.
+#     grouped_events = units_events.groupby(
+#         ["asset_id", "sector", "technology_category", "event_year"], as_index=False
+#     )["delta"].sum()
+
+#     # Determine the latest event year across all units_events
+#     max_event_year = grouped_events["event_year"].max()
+
+#     # Pre-compute the groupby object
+#     grouped = grouped_events.groupby(["asset_id", "sector", "technology_category"])
+#     trajectories = []
+
+#     for (asset_id, sector, technology_category), group in tqdm(
+#         grouped, total=grouped.ngroups, desc="Processing assets x tech", leave=True
+#     ):
+#         group = group.sort_values("event_year")
+#         group["total_capacity"] = group["delta"].cumsum()
+
+#         start_year = int(group["event_year"].min())
+#         years = range(start_year, int(max_event_year) + 1)
+
+#         capacity_series = group.set_index("event_year")["total_capacity"]
+#         capacity_series = capacity_series.reindex(years).ffill().fillna(0)
+
+#         df_years = pd.DataFrame(
+#             {
+#                 "year": list(years),
+#                 "total_capacity": capacity_series.values,
+#                 "asset_id": asset_id,
+#                 "sector": sector,
+#                 "technology": technology_category,
+#             }
+#         )
+#         trajectories.append(df_years)
+
+#     renewal_df = pd.concat(trajectories, ignore_index=True)
+
+#     renewal_df = renewal_df.merge(
+#         df[["asset_id", "asset_name", "country_name"]], on="asset_id", how="left"
+#     )
+
+#     # Rename to have a consistent trajectory column name
+#     renewal_df.rename(columns={"total_capacity": "asset_trajectory"}, inplace=True)
+#     renewal_df["asset_trajectory"] = renewal_df["asset_trajectory"].astype(float)
+#     return renewal_df[
+#         [
+#             "asset_id",
+#             "asset_name",
+#             "country_name",
+#             "sector",
+#             "technology",
+#             "year",
+#             "asset_trajectory",
+#         ]
+#     ]
 
 
 def get_common_scenario_years(df: pd.DataFrame) -> Tuple[int, int]:
@@ -131,8 +134,13 @@ def truncate_traj_asset(
         range(min_scenario_year, min_scenario_year + forecast_horizon + 1)
     )
 
+    # TODO FIX IN DATA DUPLICATES ON YEAR
+    raw_trajectory = raw_trajectory.drop_duplicates(
+        subset=["asset_id", "sector", "technology", "year"], keep="first"
+    )
+
     # Get unique combinations of asset_id and technology
-    asset_tech = raw_trajectory[["asset_id", "sector", "technology"]].drop_duplicates()
+    asset_tech = raw_trajectory[["asset_id", "sector", "technology"]]
 
     # Build a list of tuples: (asset_id, technology, year)
     index_tuples = [

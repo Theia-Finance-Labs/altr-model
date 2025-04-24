@@ -4,102 +4,77 @@ import pandas as pd
 
 
 def make_assets_data(
-    traj_assets_raw_truncated,
-    filtered_plant_detail,
-    companies_ownership_tree,
-    assets_age,
+    traj_assets_raw,
+    forecast_horizon,
 ):
-    # Merge trajectories with the ownership tree
-    assets_data = traj_assets_raw_truncated.merge(
-        companies_ownership_tree, on="asset_id", how="left"
-    )
+    traj_assets_raw_truncated = traj_assets_raw.loc[
+        (traj_assets_raw.year <= 2025 + forecast_horizon)
+        & (traj_assets_raw.year >= 2025),
+    ]
 
-    # Calculate the ownership-adjusted trajectory
-    assets_data["adjusted_trajectory"] = (
-        assets_data["asset_trajectory"] * assets_data["normalized_ownership"]
-    )
-
-    # Merge in plant details
-    assets_data = assets_data.merge(filtered_plant_detail, on="asset_id", how="left")
-
-    # Merge in asset age details
-    assets_data = assets_data.merge(assets_age, on="asset_id", how="left")
-
-    assets_data = assets_data.rename(
-        columns={
-            "year": "production_year",
-            "owner_name": "company_name",
-            "adjusted_trajectory": "capacity",
-        }
-    )
-    assets_data["workforce_size"] = None
-    assets_data["capacity_unit"] = None
-    assets_data["capacity_factor"] = 1
-    assets_data["emission_factor"] = 0.5
-
-    return assets_data
+    return traj_assets_raw_truncated
 
 
-def compute_plant_age_years(
-    traj_assets_raw_truncated: pd.DataFrame, units_events: ibis.expr.types.Table
-) -> pd.DataFrame:
-    """
-    Computes the average (capacity-weighted) age of energy production plants (assets)
-    based on past capacity addition events.
+# def compute_plant_age_years(
+#     traj_assets_raw_truncated: pd.DataFrame, units_events: ibis.expr.types.Table
+# ) -> pd.DataFrame:
+#     """
+#     Computes the average (capacity-weighted) age of energy production plants (assets)
+#     based on past capacity addition events.
 
-    Parameters
-    ----------
-    traj_assets_raw_truncated : pandas.DataFrame
-        A DataFrame containing asset-year trajectories, with at least the columns:
-        - 'asset_id': unique identifier for the asset
-        - 'year': the scenario year the asset appears in
+#     Parameters
+#     ----------
+#     traj_assets_raw_truncated : pandas.DataFrame
+#         A DataFrame containing asset-year trajectories, with at least the columns:
+#         - 'asset_id': unique identifier for the asset
+#         - 'year': the scenario year the asset appears in
 
-    units_events : ibis.expr.types.Table
-        An Ibis table representing historical unit-level events, expected to include:
-        - 'asset_id': identifier matching assets in traj_assets_raw_truncated
-        - 'event_year': the year an event occurred
-        - 'event_type': type of event (e.g. 'add_capacity')
-        - 'capacity_value': the capacity added in the event
+#     units_events : ibis.expr.types.Table
+#         An Ibis table representing historical unit-level events, expected to include:
+#         - 'asset_id': identifier matching assets in traj_assets_raw_truncated
+#         - 'event_year': the year an event occurred
+#         - 'event_type': type of event (e.g. 'add_capacity')
+#         - 'capacity_value': the capacity added in the event
 
-    Returns
-    -------
-    pandas.DataFrame
-        A DataFrame with columns:
-        - 'asset_id': the asset identifier
-        - 'asset_age': the capacity-weighted average age of capacity additions as of 2025
+#     Returns
+#     -------
+#     pandas.DataFrame
+#         A DataFrame with columns:
+#         - 'asset_id': the asset identifier
+#         - 'asset_age': the capacity-weighted average age of capacity additions as of 2025
 
-    Notes
-    -----
-    - Filters events to only include 'add_capacity' before the latest year in the scenario data.
-    - Age is computed as (2025 - event_year).
-    - The result reflects the age of the plant at the reference year 2025.
-    """
+#     Notes
+#     -----
+#     - Filters events to only include 'add_capacity' before the latest year in the scenario data.
+#     - Age is computed as (2025 - event_year).
+#     - The result reflects the age of the plant at the reference year 2025.
+#     """
 
-    asset_ids = traj_assets_raw_truncated["asset_id"].unique().tolist()
-    max_year = traj_assets_raw_truncated["year"].max()
-    filtered_events = units_events.filter(
-        units_events.asset_id.isin(asset_ids)
-        & (units_events.event_year < max_year)
-        & (units_events.event_type == "add_capacity")
-    ).execute()
+#     asset_ids = traj_assets_raw_truncated["asset_id"].unique().tolist()
+#     max_year = traj_assets_raw_truncated["year"].max()
+#     filtered_events = units_events.filter(
+#         units_events.asset_id.isin(asset_ids)
+#         & (units_events.event_year < max_year)
+#         & (units_events.event_type == "add_capacity")
+#     ).execute()
 
-    filtered_events["event_age"] = 2025 - filtered_events["event_year"]
+#     filtered_events["event_age"] = 2025 - filtered_events["event_year"]
 
-    assets_age = (
-        filtered_events.groupby("asset_id")
-        .apply(
-            lambda group: pd.Series(
-                {
-                    "asset_age": np.ceil(
-                        np.average(group["event_age"], weights=group["capacity_value"])
-                    )
-                }
-            )
-        )
-        .reset_index()
-    )
+#     assets_age = (
+#         filtered_events.groupby("asset_id")
+#         .apply(
+#             lambda group: pd.Series(
+#                 {
+#                     "asset_age": np.ceil(
+#                         np.average(group["event_age"], weights=group["capacity_value"])
+#                     )
+#                 }
+#             )
+#         )
+#         .reset_index()
+#     )
 
-    return assets_age
+#     return assets_age
 
 
 def make_scenarios_data(scenarios: ibis.expr.types.Table):
