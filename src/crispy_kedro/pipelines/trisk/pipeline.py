@@ -266,12 +266,12 @@ def create_pipeline(**kwargs) -> Pipeline:
                 outputs="assets_data",
                 tags=["legacy"],
             ),
-            # node(
-            #     func=make_scenarios_data,
-            #     inputs="scenarios",
-            #     outputs="scenarios_data",
-            #     tags=["legacy"],
-            # ),
+            node(
+                func=make_scenarios_data,
+                inputs="scenarios",
+                outputs="scenarios_data",
+                tags=["legacy"],
+            ),
             node(
                 func=make_financial_data,
                 inputs=[

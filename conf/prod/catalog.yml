@@ -6,7 +6,7 @@
 assets_forecasts:
   type: ibis.TableDataset
   table_name: assets_forecasts
-  database: bertrand_marts
+  database: prod_marts
   connection:
     backend: bigquery
     project_id: cloud-1in1000
@@ -15,7 +15,7 @@ assets_forecasts:
 plant_ownerships:
   type: ibis.TableDataset
   table_name: int_ast_power_gem_plant_ownerships
-  database: bertrand_int_assets
+  database: prod_int_assets
   connection:
     backend: bigquery
     project_id: cloud-1in1000
@@ -24,7 +24,7 @@ plant_ownerships:
 scenarios:
   type: ibis.TableDataset
   table_name: scenarios
-  database: bertrand_marts
+  database: prod_marts
   connection:
     backend: bigquery
     project_id: cloud-1in1000
@@ -32,7 +32,7 @@ scenarios:
 financial_averages:
   type: ibis.TableDataset
   table_name: financial_averages
-  database: bertrand_marts
+  database: prod_marts
   connection:
     backend: bigquery
     project_id: cloud-1in1000
