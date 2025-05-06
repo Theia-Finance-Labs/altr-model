@@ -7,7 +7,7 @@ readme = "README.md"
 packages = [{ include = "crispy_kedro", from = "src" }]
 
 [tool.poetry.dependencies]
-python = ">=3.10,<3.11"
+python = "^3.11"
 kedro = "^0.19.12"
 pandas = "*"
 numpy = "<2.0.0"
