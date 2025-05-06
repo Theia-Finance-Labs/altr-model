@@ -224,18 +224,18 @@ def create_pipeline(**kwargs) -> Pipeline:
                 ],
                 outputs="companies_npvs",
             ),
-            node(
-                func=plot_assets_baseline_target,
-                inputs=["traj_assets_baseline_clean", "traj_assets_target_clean"],
-                outputs=None,
-                tags=["reporting"],
-            ),
-            node(
-                func=plot_assets_shocks,
-                inputs=["assets_compensated_shocked", "assets_simply_shocked"],
-                outputs=None,
-                tags=["reporting"],
-            ),
+            # node(
+            #     func=plot_assets_baseline_target,
+            #     inputs=["traj_assets_baseline_clean", "traj_assets_target_clean"],
+            #     outputs=None,
+            #     tags=["reporting"],
+            # ),
+            # node(
+            #     func=plot_assets_shocks,
+            #     inputs=["assets_compensated_shocked", "assets_simply_shocked"],
+            #     outputs=None,
+            #     tags=["reporting"],
+            # ),
             node(
                 func=merge_companies_net_profits,
                 inputs=[
@@ -245,42 +245,17 @@ def create_pipeline(**kwargs) -> Pipeline:
                 outputs="merged_companies_net_profits_excel",
                 tags=["reporting"],
             ),
-            node(
-                func=plot_companies_net_profits,
-                inputs="merged_companies_net_profits_excel",
-                outputs=None,
-                tags=["reporting"],
-            ),
-            node(
-                func=plot_companies_npvs_kde,
-                inputs="companies_npvs",
-                outputs="npvs_kde_plot",
-                tags=["reporting"],
-            ),
-            node(
-                func=make_assets_data,
-                inputs=[
-                    "traj_assets_raw",
-                    "params:forecast_horizon",
-                ],
-                outputs="assets_data",
-                tags=["legacy"],
-            ),
-            node(
-                func=make_scenarios_data,
-                inputs="scenarios",
-                outputs="scenarios_data",
-                tags=["legacy"],
-            ),
-            node(
-                func=make_financial_data,
-                inputs=[
-                    "traj_assets_raw_truncated",
-                    "companies_ownership_tree",
-                    "financial_averages",
-                ],
-                outputs="financial_data",
-                tags=["legacy"],
-            ),
+            # node(
+            #     func=plot_companies_net_profits,
+            #     inputs="merged_companies_net_profits_excel",
+            #     outputs=None,
+            #     tags=["reporting"],
+            # ),
+            # node(
+            #     func=plot_companies_npvs_kde,
+            #     inputs="companies_npvs",
+            #     outputs="npvs_kde_plot",
+            #     tags=["reporting"],
+            # ),
         ]
     )
