@@ -1,33 +1,3 @@
-# Parse command line arguments
-args <- commandArgs(trailingOnly = TRUE)
-
-# Function to parse named arguments
-parse_args <- function(args) {
-  args_list <- list()
-  for (arg in args) {
-    split_arg <- strsplit(arg, "=")[[1]]
-    if (length(split_arg) == 2) {
-      name <- gsub("^--", "", split_arg[1])
-      value <- split_arg[2]
-      # Remove surrounding quotes if they exist
-      value <- gsub("^\"|\"$", "", value)
-      args_list[[name]] <- value
-    }
-  }
-  return(args_list)
-}
-
-# Parse the arguments
-parsed_args <- parse_args(args)
-
-if (is.null(parsed_args$config)) {
-  stop("Required argument missing. Please provide --config argument with baseline-target pairs JSON.")
-}
-
-# Parse the JSON configuration
-library(jsonlite)
-BASELINE_TARGET_PAIR <- fromJSON(parsed_args$config)
-
 # run kedro run --tags=legacy to get the data
 library(readxl)
 library(dplyr)
@@ -133,11 +103,30 @@ if (script_dir == ".") {
   script_dir <- getwd()
 }
 
-# Define paths
-data_dir <- file.path("/app/data")  # Modified to use container path
-target_dir <- file.path("/app/trisk.model")  # Modified to use container path
+# Define the target directory relative to the script
+target_dir <- file.path(dirname(script_dir), "pkg", "trisk.model")
 
-# Read input data
+# Normalize the target directory path
+target_dir <- normalizePath(target_dir, mustWork = FALSE)
+
+# If not already in pkg/trisk.model, set it
+if (!grepl(paste0("/?", basename(target_dir), "$"), normalizePath(getwd(), mustWork = FALSE))) {
+  if (dir.exists(target_dir)) {
+    setwd(target_dir)
+    message("Working directory set to: ", getwd())
+  } else {
+    stop("Target directory does not exist: ", target_dir, "\nPlease ensure you are running this script from the correct location.")
+  }
+}
+
+# Define data paths relative to the script directory
+data_dir <- file.path(dirname(script_dir), "data", "08_reporting")
+data_dir <- normalizePath(data_dir, mustWork = FALSE)
+
+if (!dir.exists(data_dir)) {
+  stop("Data directory does not exist: ", data_dir, "\nPlease ensure you have run 'kedro run --tags=legacy' first.")
+}
+
 assets_data <- readr::read_csv(file.path(data_dir, "assets_data.csv")) %>% 
   rename(
     production_year=year,
@@ -145,11 +134,81 @@ assets_data <- readr::read_csv(file.path(data_dir, "assets_data.csv")) %>%
   )
 scenarios_data <- readr::read_csv(file.path(data_dir, "scenarios_data.csv"))
 financial_data <- readr::read_csv(file.path(data_dir, "financial_data.csv"))
-carbon_data <- readr::read_csv(file.path(data_dir, "ngfs_carbon_price_testdata.csv"))
+carbon_data <- readr::read_csv(file.path(target_dir, "inst", "testdata", "ngfs_carbon_price_testdata.csv"))
 
 SHOCK_YEAR = 2030
 
-# Process each baseline-target pair
+BASELINE_TARGET_PAIR <- list(
+  list(baseline='AR6_WITCH 5.0_EN_NoPolicy',
+  targets=c(
+"AR6_WITCH 5.0_EN_INDCi2030_1000", 
+"AR6_WITCH 5.0_EN_INDCi2030_1000_NDCp", "AR6_WITCH 5.0_EN_INDCi2030_1000f", 
+"AR6_WITCH 5.0_EN_INDCi2030_1000f_NDCp", "AR6_WITCH 5.0_EN_INDCi2030_1200", 
+"AR6_WITCH 5.0_EN_INDCi2030_1200_NDCp", "AR6_WITCH 5.0_EN_INDCi2030_1200f", 
+"AR6_WITCH 5.0_EN_INDCi2030_1200f_NDCp", "AR6_WITCH 5.0_EN_INDCi2030_1400", 
+"AR6_WITCH 5.0_EN_INDCi2030_1400_NDCp", "AR6_WITCH 5.0_EN_INDCi2030_1400f", 
+"AR6_WITCH 5.0_EN_INDCi2030_1400f_NDCp", "AR6_WITCH 5.0_EN_INDCi2030_1600", 
+"AR6_WITCH 5.0_EN_INDCi2030_1600_NDCp", "AR6_WITCH 5.0_EN_INDCi2030_1600f", 
+"AR6_WITCH 5.0_EN_INDCi2030_1600f_NDCp", "AR6_WITCH 5.0_EN_INDCi2030_1800", 
+"AR6_WITCH 5.0_EN_INDCi2030_1800_NDCp", "AR6_WITCH 5.0_EN_INDCi2030_1800f", 
+"AR6_WITCH 5.0_EN_INDCi2030_1800f_NDCp", "AR6_WITCH 5.0_EN_INDCi2030_2000", 
+"AR6_WITCH 5.0_EN_INDCi2030_2000_NDCp", "AR6_WITCH 5.0_EN_INDCi2030_2000f", 
+"AR6_WITCH 5.0_EN_INDCi2030_2000f_NDCp", "AR6_WITCH 5.0_EN_INDCi2030_2500", 
+"AR6_WITCH 5.0_EN_INDCi2030_2500_NDCp", "AR6_WITCH 5.0_EN_INDCi2030_2500f", 
+"AR6_WITCH 5.0_EN_INDCi2030_2500f_NDCp", "AR6_WITCH 5.0_EN_INDCi2030_3000", 
+"AR6_WITCH 5.0_EN_INDCi2030_3000_NDCp", "AR6_WITCH 5.0_EN_INDCi2030_3000f", 
+"AR6_WITCH 5.0_EN_INDCi2030_3000f_NDCp", "AR6_WITCH 5.0_EN_INDCi2030_500f", 
+"AR6_WITCH 5.0_EN_INDCi2030_600f", "AR6_WITCH 5.0_EN_INDCi2030_600f_NDCp", 
+"AR6_WITCH 5.0_EN_INDCi2030_700f", "AR6_WITCH 5.0_EN_INDCi2030_700f_NDCp", 
+"AR6_WITCH 5.0_EN_INDCi2030_800", "AR6_WITCH 5.0_EN_INDCi2030_800_NDCp", 
+"AR6_WITCH 5.0_EN_INDCi2030_800f", "AR6_WITCH 5.0_EN_INDCi2030_800f_NDCp", 
+"AR6_WITCH 5.0_EN_INDCi2030_900", "AR6_WITCH 5.0_EN_INDCi2030_900_NDCp", 
+"AR6_WITCH 5.0_EN_INDCi2030_900f", "AR6_WITCH 5.0_EN_INDCi2030_900f_NDCp", 
+"AR6_WITCH 5.0_EN_INDCi2100", "AR6_WITCH 5.0_EN_INDCi2100_NDCp", 
+"AR6_WITCH 5.0_EN_NPi2020_1000", "AR6_WITCH 5.0_EN_NPi2020_1000f", 
+"AR6_WITCH 5.0_EN_NPi2020_1200", "AR6_WITCH 5.0_EN_NPi2020_1200f", 
+"AR6_WITCH 5.0_EN_NPi2020_1400", "AR6_WITCH 5.0_EN_NPi2020_1400f", 
+"AR6_WITCH 5.0_EN_NPi2020_1600", "AR6_WITCH 5.0_EN_NPi2020_1600f", 
+"AR6_WITCH 5.0_EN_NPi2020_1800", "AR6_WITCH 5.0_EN_NPi2020_1800f", 
+"AR6_WITCH 5.0_EN_NPi2020_2000", "AR6_WITCH 5.0_EN_NPi2020_2000f", 
+"AR6_WITCH 5.0_EN_NPi2020_2500", "AR6_WITCH 5.0_EN_NPi2020_2500f", 
+"AR6_WITCH 5.0_EN_NPi2020_3000", "AR6_WITCH 5.0_EN_NPi2020_3000f", 
+"AR6_WITCH 5.0_EN_NPi2020_400f", "AR6_WITCH 5.0_EN_NPi2020_450", 
+"AR6_WITCH 5.0_EN_NPi2020_450f", "AR6_WITCH 5.0_EN_NPi2020_500", 
+"AR6_WITCH 5.0_EN_NPi2020_500f", "AR6_WITCH 5.0_EN_NPi2020_600", 
+"AR6_WITCH 5.0_EN_NPi2020_600f", "AR6_WITCH 5.0_EN_NPi2020_700", 
+"AR6_WITCH 5.0_EN_NPi2020_700f", "AR6_WITCH 5.0_EN_NPi2020_800", 
+"AR6_WITCH 5.0_EN_NPi2020_800f", "AR6_WITCH 5.0_EN_NPi2020_900", 
+"AR6_WITCH 5.0_EN_NPi2020_900f", "AR6_WITCH 5.0_EN_NPi2100"
+  )),
+  list(baseline='AR6_IMAGE 3.2_SSP1-baseline',
+  targets=c(
+
+"AR6_IMAGE 3.2_SSP1_SPA1_19I_RE_LB", "AR6_IMAGE 3.2_SSP1_SPA1_26I_D", 
+"AR6_IMAGE 3.2_SSP1_SPA1_26I_LI", "AR6_IMAGE 3.2_SSP1_SPA1_26I_LIRE", 
+"AR6_IMAGE 3.2_SSP1_SPA1_26I_RE", "AR6_IMAGE 3.2_SSP1_SPA1_34I_D", 
+"AR6_IMAGE 3.2_SSP1_SPA1_34I_LI", "AR6_IMAGE 3.2_SSP1_SPA1_34I_LIRE", 
+"AR6_IMAGE 3.2_SSP1_SPA1_34I_RE"
+
+  )),
+  list(baseline='AR6_IMAGE 3.2_SSP2-baseline',
+  targets=c(
+
+"AR6_IMAGE 3.2_SSP2_SPA0_26I_D", 
+"AR6_IMAGE 3.2_SSP2_SPA1_19I_D_LB", "AR6_IMAGE 3.2_SSP2_SPA1_19I_LIRE_LB", 
+"AR6_IMAGE 3.2_SSP2_SPA1_19I_RE_LB", "AR6_IMAGE 3.2_SSP2_SPA2_19I_D", 
+"AR6_IMAGE 3.2_SSP2_SPA2_19I_LI", "AR6_IMAGE 3.2_SSP2_SPA2_19I_LIRE", 
+"AR6_IMAGE 3.2_SSP2_SPA2_19I_RE", "AR6_IMAGE 3.2_SSP2_SPA2_26I_D", 
+"AR6_IMAGE 3.2_SSP2_SPA2_26I_LI", "AR6_IMAGE 3.2_SSP2_SPA2_26I_LIRE", 
+"AR6_IMAGE 3.2_SSP2_SPA2_26I_RE", "AR6_IMAGE 3.2_SSP2_SPA2_34I_D", 
+"AR6_IMAGE 3.2_SSP2_SPA2_34I_LI", "AR6_IMAGE 3.2_SSP2_SPA2_34I_LIRE", 
+"AR6_IMAGE 3.2_SSP2_SPA2_34I_RE", "AR6_IMAGE 3.2_SSP2_SPA2_45I_D", 
+"AR6_IMAGE 3.2_SSP2_SPA2_45I_LI", "AR6_IMAGE 3.2_SSP2_SPA2_45I_LIRE", 
+"AR6_IMAGE 3.2_SSP2_SPA2_45I_RE"
+
+  ))
+)
+
 for (baseline_target_pairs in BASELINE_TARGET_PAIR) {
   baseline_scenario <- baseline_target_pairs$baseline
   target_scenarios <- baseline_target_pairs$targets
