@@ -26,7 +26,11 @@ if (is.null(parsed_args$config)) {
 
 # Parse the JSON configuration
 library(jsonlite)
-BASELINE_TARGET_PAIR <- fromJSON(parsed_args$config)
+json_data <- fromJSON(parsed_args$config)
+if (!is.data.frame(json_data)) {
+  # Convert list to data frame if necessary
+  json_data <- as.data.frame(do.call(rbind, json_data))
+}
 
 # run kedro run --tags=legacy to get the data
 library(readxl)
@@ -44,13 +48,26 @@ if (!file.exists(creds_path)) {
   stop("The GCS credentials file does not exist at: ", creds_path)
 }
 
+# Print GCS credentials info for debugging
+message("GCS Credentials Info:")
+message("Credentials path: ", creds_path)
+message("File exists: ", file.exists(creds_path))
+message("File permissions: ", file.access(creds_path, mode = 4) == 0)  # Check if readable
+message("File size: ", file.size(creds_path), " bytes")
+
+# Get MLflow tracking URI from environment variable
+mlflow_tracking_uri <- Sys.getenv("MLFLOW_TRACKING_URI")
+if (mlflow_tracking_uri == "") {
+  stop("The MLFLOW_TRACKING_URI environment variable is not set.")
+}
+
 # Initialize MLflow with error handling and retry logic
 max_retries <- 3
 retry_count <- 0
 while (retry_count < max_retries) {
   tryCatch({
     # Set MLflow tracking URI
-    mlflow_set_tracking_uri("http://localhost:5000")
+    mlflow_set_tracking_uri(mlflow_tracking_uri)
     
     # Test the connection by getting the experiment
     experiment <- mlflow_get_experiment(name = "trisk_runs")
@@ -126,16 +143,9 @@ tryCatch({
   stop(paste0("Failed to set up MLflow experiment 'trisk_runs'. Please check your MLflow server (is it running at http://localhost:5000?), GCS credentials, and the 'trisk_runs' experiment configuration. Original error: ", e$message))
 })
 
-# Get the script's directory and normalize paths
-script_dir <- normalizePath(dirname(sys.frame(1)$ofile), mustWork = FALSE)
-if (script_dir == ".") {
-  # If running interactively or from RStudio, get the current working directory
-  script_dir <- getwd()
-}
-
-# Define paths
-data_dir <- file.path("/app/data")  # Modified to use container path
-target_dir <- file.path("/app/trisk.model")  # Modified to use container path
+# Define paths for container environment
+data_dir <- "/app/data"
+target_dir <- "/app/trisk.model"
 
 # Read input data
 assets_data <- readr::read_csv(file.path(data_dir, "assets_data.csv")) %>% 
@@ -150,9 +160,9 @@ carbon_data <- readr::read_csv(file.path(data_dir, "ngfs_carbon_price_testdata.c
 SHOCK_YEAR = 2030
 
 # Process each baseline-target pair
-for (baseline_target_pairs in BASELINE_TARGET_PAIR) {
-  baseline_scenario <- baseline_target_pairs$baseline
-  target_scenarios <- baseline_target_pairs$targets
+for (i in 1:nrow(json_data)) {
+  baseline_scenario <- json_data$baseline[i]
+  target_scenarios <- unlist(json_data$targets[i])
 
   available_scenario_geographies <- scenarios_data %>% 
     filter(scenario %in% c(baseline_scenario, target_scenarios)) %>%
@@ -177,7 +187,17 @@ for (baseline_target_pairs in BASELINE_TARGET_PAIR) {
     dir.create(base_output_dir, recursive = TRUE)
   }
 
-  devtools::load_all()
+  # Load the trisk.model package
+  tryCatch({
+    # Change to the trisk.model directory
+    old_wd <- getwd()
+    setwd(target_dir)
+    devtools::load_all()
+    setwd(old_wd)
+  }, error = function(e) {
+    stop("Failed to load trisk.model package: ", e$message)
+  })
+
   for (target_scenario in unique(target_scenarios)) {  
     for (scenario_geography in unique(available_scenario_geographies$scenario_geography)) {
       # Update progress bar
@@ -246,6 +266,23 @@ for (baseline_target_pairs in BASELINE_TARGET_PAIR) {
           
           while (artifact_retry_count < max_artifact_retries) {
             tryCatch({
+              # Verify file exists and is readable before logging
+              if (!file.exists(output_csv)) {
+                stop("Output file does not exist: ", output_csv)
+              }
+              if (file.access(output_csv, mode = 4) != 0) {
+                stop("Output file is not readable: ", output_csv)
+              }
+              
+              # Get file info for debugging
+              file_info <- file.info(output_csv)
+              message("File info for ", output_csv, ":")
+              message("  Size: ", file_info$size, " bytes")
+              message("  Permissions: ", file_info$mode)
+              message("  Owner: ", file_info$uname)
+              message("  Group: ", file_info$grname)
+              
+              # Try to log the artifact
               mlflow_log_artifact(output_csv)
               message("Successfully logged artifact: ", output_csv)
               break
@@ -253,8 +290,13 @@ for (baseline_target_pairs in BASELINE_TARGET_PAIR) {
               artifact_retry_count <<- artifact_retry_count + 1
               if (artifact_retry_count == max_artifact_retries) {
                 message("Warning: Failed to log artifact after ", max_artifact_retries, " attempts: ", e$message)
+                message("Full error details:")
+                message("  Error message: ", e$message)
+                message("  Error class: ", class(e)[1])
+                message("  Call stack: ", paste(capture.output(sys.calls()), collapse = "\n"))
               } else {
                 message("Attempt ", artifact_retry_count, " to log artifact failed. Retrying in 5 seconds...")
+                message("Error details: ", e$message)
                 Sys.sleep(5)
               }
             })
@@ -291,8 +333,13 @@ for (baseline_target_pairs in BASELINE_TARGET_PAIR) {
               error_retry_count <<- error_retry_count + 1
               if (error_retry_count == max_error_retries) {
                 message("Warning: Failed to log error artifact after ", max_error_retries, " attempts: ", e2$message)
+                message("Full error details:")
+                message("  Error message: ", e2$message)
+                message("  Error class: ", class(e2)[1])
+                message("  Call stack: ", paste(capture.output(sys.calls()), collapse = "\n"))
               } else {
                 message("Attempt ", error_retry_count, " to log error artifact failed. Retrying in 5 seconds...")
+                message("Error details: ", e2$message)
                 Sys.sleep(5)
               }
             })
@@ -333,7 +380,7 @@ for (baseline_target_pairs in BASELINE_TARGET_PAIR) {
       })
     }
   }
+  # Close progress bar
+  close(pb)
 }
-# Close progress bar
-close(pb)
 
