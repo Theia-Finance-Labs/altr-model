@@ -257,5 +257,30 @@ def create_pipeline(**kwargs) -> Pipeline:
             #     outputs="npvs_kde_plot",
             #     tags=["reporting"],
             # ),
+            # node(
+            #     func=make_assets_data,
+            #     inputs=[
+            #         "traj_assets_raw",
+            #         "params:forecast_horizon",
+            #     ],
+            #     outputs="assets_data",
+            #     tags=["legacy"],
+            # ),
+            # node(
+            #     func=make_scenarios_data,
+            #     inputs="scenarios",
+            #     outputs="scenarios_data",
+            #     tags=["legacy"],
+            # ),
+            # node(
+            #     func=make_financial_data,
+            #     inputs=[
+            #         "traj_assets_raw_truncated",
+            #         "companies_ownership_tree",
+            #         "financial_averages",
+            #     ],
+            #     outputs="financial_data",
+            #     tags=["legacy"],
+            # ),
         ]
     )

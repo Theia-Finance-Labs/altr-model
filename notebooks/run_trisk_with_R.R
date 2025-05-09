@@ -39,26 +39,36 @@ library(mlflow)
 
 # Check if GCS credentials environment variable is set
 if (Sys.getenv("GOOGLE_APPLICATION_CREDENTIALS") == "") {
-  stop("The GOOGLE_APPLICATION_CREDENTIALS environment variable is not set. \nPlease set it to the path of your GCS credentials JSON file.")
+  # In Cloud Run, we use default credentials
+  message("GOOGLE_APPLICATION_CREDENTIALS not set, using default credentials")
+} else {
+  # In local development, verify the credentials file exists
+  creds_path <- Sys.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+  if (!file.exists(creds_path)) {
+    stop("The GCS credentials file does not exist at: ", creds_path)
+  }
+  
+  # Print GCS credentials info for debugging
+  message("GCS Credentials Info:")
+  message("Credentials path: ", creds_path)
+  message("File exists: ", file.exists(creds_path))
+  message("File permissions: ", file.access(creds_path, mode = 4) == 0)  # Check if readable
+  message("File size: ", file.size(creds_path), " bytes")
 }
-
-# Verify the credentials file exists and is readable
-creds_path <- Sys.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-if (!file.exists(creds_path)) {
-  stop("The GCS credentials file does not exist at: ", creds_path)
-}
-
-# Print GCS credentials info for debugging
-message("GCS Credentials Info:")
-message("Credentials path: ", creds_path)
-message("File exists: ", file.exists(creds_path))
-message("File permissions: ", file.access(creds_path, mode = 4) == 0)  # Check if readable
-message("File size: ", file.size(creds_path), " bytes")
 
 # Get MLflow tracking URI from environment variable
 mlflow_tracking_uri <- Sys.getenv("MLFLOW_TRACKING_URI")
 if (mlflow_tracking_uri == "") {
   stop("The MLFLOW_TRACKING_URI environment variable is not set.")
+}
+
+# Get experiment name from environment variable
+experiment_name <- Sys.getenv("MLFLOW_EXPERIMENT_NAME")
+if (experiment_name == "") {
+  experiment_name <- "trisk_runs"  # Default value if not set
+  message("MLFLOW_EXPERIMENT_NAME not set, using default value: ", experiment_name)
+} else {
+  message("Using experiment name from MLFLOW_EXPERIMENT_NAME: ", experiment_name)
 }
 
 # Initialize MLflow with error handling and retry logic
@@ -87,15 +97,18 @@ while (retry_count < max_retries) {
 
 # Ensure experiment exists with proper error handling
 tryCatch({
-  experiment_name <- "trisk_runs"
   expected_artifact_location <- "gs://crispy-mlflow-backend"
   
   # Try to get the experiment first
   experiment <- mlflow_get_experiment(name = experiment_name)
   
   if (is.null(experiment)) {
-    message(paste0("Experiment '", experiment_name, "' does not exist. Creating with artifact location: '", expected_artifact_location, "' and setting as active."))
-    mlflow_set_experiment(experiment_name = experiment_name, artifact_location = expected_artifact_location)
+    message(paste0("Experiment '", experiment_name, "' does not exist. Creating it..."))
+    experiment <- mlflow_create_experiment(
+      name = experiment_name,
+      artifact_location = expected_artifact_location
+    )
+    message(paste0("Successfully created experiment '", experiment_name, "' with ID: ", experiment$experiment_id))
   } else {
     message(paste0("Experiment '", experiment_name, "' already exists with ID: ", experiment$experiment_id))
     
@@ -125,13 +138,12 @@ tryCatch({
       )
       stop(error_message)
     }
-    
-    # If artifact location is correct, set experiment as active
-    message(paste0("Existing experiment '", experiment_name, "' has the correct artifact location. Setting as active."))
-    mlflow_set_experiment(experiment_name = experiment_name)
   }
   
-  # Verify active experiment (optional but good for sanity check)
+  # Set the experiment as active
+  mlflow_set_experiment(experiment_name = experiment_name)
+  
+  # Verify active experiment
   active_exp <- mlflow_get_experiment()
   message(sprintf("Successfully set up MLflow. Active experiment: '%s' (ID: %s), Artifact Location: '%s'", 
                   active_exp$name, active_exp$experiment_id, 
@@ -192,6 +204,11 @@ for (i in 1:nrow(json_data)) {
     # Change to the trisk.model directory
     old_wd <- getwd()
     setwd(target_dir)
+    
+    # Get git commit information from environment variables
+    git_commit <- Sys.getenv("TRISK_MODEL_COMMIT", "unknown_commit")
+    git_commit_short <- Sys.getenv("TRISK_MODEL_COMMIT_SHORT", "unknown")
+    
     devtools::load_all()
     setwd(old_wd)
   }, error = function(e) {
@@ -229,6 +246,8 @@ for (i in 1:nrow(json_data)) {
         mlflow_log_param("scenario_geography", scenario_geography)
         mlflow_log_param("shock_year", SHOCK_YEAR)
         mlflow_log_param("scenario_provider", scenario_provider)
+        mlflow_log_param("trisk_model_commit", git_commit)
+        mlflow_log_param("trisk_model_commit_short", git_commit_short)
         
         # Try to run the model, catch any errors
         tryCatch({
@@ -285,6 +304,12 @@ for (i in 1:nrow(json_data)) {
               # Try to log the artifact
               mlflow_log_artifact(output_csv)
               message("Successfully logged artifact: ", output_csv)
+              
+              # Delete the file after successful logging
+              if (file.exists(output_csv)) {
+                file.remove(output_csv)
+                message("Successfully deleted local file: ", output_csv)
+              }
               break
             }, error = function(e) {
               artifact_retry_count <<- artifact_retry_count + 1
@@ -328,6 +353,12 @@ for (i in 1:nrow(json_data)) {
               mlflow_log_param("error", e$message)
               mlflow_log_artifact(output_txt)
               message("Successfully logged error artifact")
+              
+              # Delete the error file after successful logging
+              if (file.exists(output_txt)) {
+                file.remove(output_txt)
+                message("Successfully deleted local error file: ", output_txt)
+              }
               break
             }, error = function(e2) {
               error_retry_count <<- error_retry_count + 1
