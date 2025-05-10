@@ -24,6 +24,26 @@ if (is.null(parsed_args$config)) {
   stop("Required argument missing. Please provide --config argument with baseline-target pairs JSON.")
 }
 
+if (is.null(parsed_args$ccs_status)) {
+  stop("Required argument missing. Please provide --ccs_status argument (w/ CCS, w/o CCS, or both).")
+}
+
+if (is.null(parsed_args$shock_year)) {
+  stop("Required argument missing. Please provide --shock_year argument.")
+}
+
+# Validate CCS status
+valid_ccs_statuses <- c("w/ CCS", "w/o CCS", "both")
+if (!parsed_args$ccs_status %in% valid_ccs_statuses) {
+  stop("Invalid CCS status. Must be one of: ", paste(valid_ccs_statuses, collapse = ", "))
+}
+
+# Validate shock year
+shock_year <- as.numeric(parsed_args$shock_year)
+if (is.na(shock_year)) {
+  stop("Invalid shock year. Must be a numeric value.")
+}
+
 # Parse the JSON configuration
 library(jsonlite)
 json_data <- fromJSON(parsed_args$config)
@@ -149,6 +169,56 @@ tryCatch({
                   active_exp$name, active_exp$experiment_id, 
                   ifelse(is.null(active_exp$artifact_location), "Not set", active_exp$artifact_location)))
 
+  # Fetch existing run parameters to avoid re-computation
+  message("Fetching existing MLflow runs to check for prior results...")
+  existing_run_params_list <- list() # Initialize list to store parameters of relevant runs
+  
+  # This tryCatch is for fetching existing runs; errors here shouldn't stop the whole script,
+  # but will mean no skipping occurs.
+  tryCatch({
+    if (!is.null(active_exp) && !is.null(active_exp$experiment_id)) {
+      all_run_infos <- mlflow::mlflow_list_run_infos(experiment_id = active_exp$experiment_id)
+      
+      if (nrow(all_run_infos) > 0) {
+        message(paste("Found", nrow(all_run_infos), "existing runs in experiment. Processing their parameters..."))
+        for (run_info_idx in 1:nrow(all_run_infos)) {
+          run_id <- all_run_infos$run_uuid[run_info_idx]
+          run_data <- mlflow::mlflow_get_run(run_id = run_id)
+          
+          # Extract parameters if they exist
+          if (!is.null(run_data$data$params) && nrow(run_data$data$params) > 0) {
+            # Convert params data_frame to a named list
+            # params_df columns are 'key' and 'value'
+            params_df <- run_data$data$params
+            run_params <- setNames(as.list(params_df$value), params_df$key)
+            
+            # Check for the presence of essential parameters for comparison
+            required_params_for_check <- c("baseline_scenario", "target_scenario", "scenario_geography", "shock_year", "ccs_status")
+            if (all(required_params_for_check %in% names(run_params))) {
+              existing_run_params_list[[run_id]] <- list(
+                baseline_scenario = run_params[["baseline_scenario"]],
+                target_scenario = run_params[["target_scenario"]],
+                scenario_geography = run_params[["scenario_geography"]],
+                shock_year = as.character(run_params[["shock_year"]]), # MLflow stores params as strings
+                ccs_status = run_params[["ccs_status"]], # Add CCS status to parameters
+                had_error = "error" %in% names(run_params) # Check if an 'error' parameter was logged
+              )
+            }
+          }
+        }
+        message(paste("Finished processing. Identified", length(existing_run_params_list), "prior runs with comparable parameters."))
+      } else {
+        message("No existing runs found in the experiment.")
+      }
+    } else {
+      message("Warning: Active experiment or experiment ID is NULL. Cannot fetch existing runs to check for skipping.")
+    }
+  }, error = function(e_fetch) {
+    message(paste("Warning: Failed to fetch or process existing MLflow runs. Will proceed without skipping. Error:", e_fetch$message))
+    # Ensure existing_run_params_list is empty or in a consistent state if error occurs mid-population
+    existing_run_params_list <- list()
+  })
+
 }, error = function(e) {
   message("Error setting up MLflow experiment 'trisk_runs': ", e$message)
   message("Current GOOGLE_APPLICATION_CREDENTIALS: ", Sys.getenv("GOOGLE_APPLICATION_CREDENTIALS"))
@@ -165,11 +235,19 @@ assets_data <- readr::read_csv(file.path(data_dir, "assets_data.csv")) %>%
     production_year=year,
     plant_age_years=asset_age
   )
+
+# Modify technology column based on CCS status
+if (parsed_args$ccs_status != "both") {
+  assets_data <- assets_data %>%
+    mutate(technology = case_when(
+      technology %in% c("CoalCap", "GasCap", "OilCap") ~ paste0(technology, "_", gsub(" ", "", parsed_args$ccs_status)),
+      TRUE ~ technology
+    ))
+}
+
 scenarios_data <- readr::read_csv(file.path(data_dir, "scenarios_data.csv"))
 financial_data <- readr::read_csv(file.path(data_dir, "financial_data.csv"))
 carbon_data <- readr::read_csv(file.path(data_dir, "ngfs_carbon_price_testdata.csv"))
-
-SHOCK_YEAR = 2030
 
 # Process each baseline-target pair
 for (i in 1:nrow(json_data)) {
@@ -221,6 +299,50 @@ for (i in 1:nrow(json_data)) {
       current_iteration <- current_iteration + 1
       setTxtProgressBar(pb, current_iteration)
       
+      # --- Check if this combination has already been run successfully ---
+      current_params_to_check <- list(
+        baseline_scenario = baseline_scenario,    # From the outer loop over json_data
+        target_scenario = target_scenario,        # From the loop over target_scenarios
+        scenario_geography = scenario_geography,  # Current scenario_geography
+        shock_year = as.character(shock_year),    # From command line argument
+        ccs_status = parsed_args$ccs_status       # Add CCS status to parameters
+      )
+
+      already_ran_successfully <- FALSE
+      if (length(existing_run_params_list) > 0) {
+        for (existing_run_id in names(existing_run_params_list)) {
+          params_from_existing_run <- existing_run_params_list[[existing_run_id]]
+          
+          # Compare all relevant parameters
+          if (identical(params_from_existing_run$baseline_scenario, current_params_to_check$baseline_scenario) &&
+              identical(params_from_existing_run$target_scenario, current_params_to_check$target_scenario) &&
+              identical(params_from_existing_run$scenario_geography, current_params_to_check$scenario_geography) &&
+              identical(params_from_existing_run$shock_year, current_params_to_check$shock_year) &&
+              identical(params_from_existing_run$ccs_status, current_params_to_check$ccs_status)) {
+            
+            if (!params_from_existing_run$had_error) {
+              already_ran_successfully <- TRUE
+              message(sprintf("Skipping: Baseline='%s', Target='%s', Geo='%s', ShockYear='%s', CCS='%s'. Found existing successful run: %s",
+                              current_params_to_check$baseline_scenario,
+                              current_params_to_check$target_scenario,
+                              current_params_to_check$scenario_geography,
+                              current_params_to_check$shock_year,
+                              current_params_to_check$ccs_status,
+                              existing_run_id))
+              break # Found a successful match, no need to check other existing runs
+            } else {
+              message(sprintf("Found existing run %s for parameters, but it had an error. Will re-run.", existing_run_id))
+              # Continue checking other runs, in case there's a successful one later, though unlikely for same params
+            }
+          }
+        }
+      }
+
+      if (already_ran_successfully) {
+        next # Skip to the next iteration of the scenario_geography loop
+      }
+      # --- End of check ---
+
       # Sanitize target scenario name for use in filenames
       safe_target_scenario <- gsub("[\\/:*?\"<>|]", "_", target_scenario)
       base_filename <- paste0("npvs_", scenario_geography, "_", safe_target_scenario)
@@ -231,7 +353,7 @@ for (i in 1:nrow(json_data)) {
         baseline_scenario = baseline_scenario,
         target_scenario = target_scenario,
         scenario_geography = scenario_geography,
-        shock_year = SHOCK_YEAR
+        shock_year = shock_year
       )
       trisk_params <- do.call(trisk.model::process_params, c(list(fun = trisk.model::run_trisk_model), params_overwrite))
 
@@ -244,10 +366,11 @@ for (i in 1:nrow(json_data)) {
         mlflow_log_param("baseline_scenario", baseline_scenario)
         mlflow_log_param("target_scenario", target_scenario)
         mlflow_log_param("scenario_geography", scenario_geography)
-        mlflow_log_param("shock_year", SHOCK_YEAR)
+        mlflow_log_param("shock_year", shock_year)
         mlflow_log_param("scenario_provider", scenario_provider)
         mlflow_log_param("trisk_model_commit", git_commit)
         mlflow_log_param("trisk_model_commit_short", git_commit_short)
+        mlflow_log_param("ccs_status", parsed_args$ccs_status)  # Log CCS status
         
         # Try to run the model, catch any errors
         tryCatch({
@@ -259,7 +382,7 @@ for (i in 1:nrow(json_data)) {
             baseline_scenario = baseline_scenario,
             target_scenario = target_scenario,
             scenario_geography = scenario_geography,
-            shock_year = SHOCK_YEAR
+            shock_year = shock_year
           )
 
           npv_results <- st_results$npv_results
@@ -339,6 +462,8 @@ for (i in 1:nrow(json_data)) {
             "Error running trisk model for:\n",
             "Scenario geography: ", scenario_geography, "\n",
             "Target scenario: ", target_scenario, "\n",
+            "CCS status: ", parsed_args$ccs_status, "\n",  # Add CCS status to error message
+            "Shock year: ", shock_year, "\n",  # Add shock year to error message
             "Error message: ", e$message, "\n",
             "Timestamp: ", format(Sys.time(), "%Y-%m-%d %H:%M:%S")
           )
