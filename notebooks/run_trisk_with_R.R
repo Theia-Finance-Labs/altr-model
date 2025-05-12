@@ -240,7 +240,7 @@ assets_data <- readr::read_csv(file.path(data_dir, "assets_data.csv")) %>%
 if (parsed_args$ccs_status != "both") {
   assets_data <- assets_data %>%
     mutate(technology = case_when(
-      technology %in% c("CoalCap", "GasCap", "OilCap") ~ paste0(technology, "_", gsub(" ", "", parsed_args$ccs_status)),
+      technology %in% c("CoalCap", "GasCap", "OilCap") ~ paste0(technology, "_", parsed_args$ccs_status),
       TRUE ~ technology
     ))
 }

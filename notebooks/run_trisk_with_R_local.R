@@ -3,6 +3,9 @@ library(readxl)
 library(dplyr)
 library(mlflow)
 
+# Define CCS status
+CCS_STATUS <- "w/ CCS"  # or "w/o CCS" or "both"
+
 # Check if GCS credentials environment variable is set
 if (Sys.getenv("GOOGLE_APPLICATION_CREDENTIALS") == "") {
   stop("The GOOGLE_APPLICATION_CREDENTIALS environment variable is not set. \nPlease set it to the path of your GCS credentials JSON file.")
@@ -132,6 +135,16 @@ assets_data <- readr::read_csv(file.path(data_dir, "assets_data.csv")) %>%
     production_year=year,
     plant_age_years=asset_age
   )
+
+# Modify technology column based on CCS status
+if (CCS_STATUS != "both") {
+  assets_data <- assets_data %>%
+    mutate(technology = case_when(
+      technology %in% c("CoalCap", "GasCap", "OilCap") ~ paste0(technology, "_", CCS_STATUS),
+      TRUE ~ technology
+    ))
+}
+
 scenarios_data <- readr::read_csv(file.path(data_dir, "scenarios_data.csv"))
 financial_data <- readr::read_csv(file.path(data_dir, "financial_data.csv"))
 carbon_data <- readr::read_csv(file.path(target_dir, "inst", "testdata", "ngfs_carbon_price_testdata.csv"))
@@ -268,6 +281,7 @@ for (baseline_target_pairs in BASELINE_TARGET_PAIR) {
         mlflow_log_param("scenario_geography", scenario_geography)
         mlflow_log_param("shock_year", SHOCK_YEAR)
         mlflow_log_param("scenario_provider", scenario_provider)
+        mlflow_log_param("ccs_status", CCS_STATUS)  # Log CCS status
         
         # Try to run the model, catch any errors
         tryCatch({
@@ -331,6 +345,7 @@ for (baseline_target_pairs in BASELINE_TARGET_PAIR) {
             "Error running trisk model for:\n",
             "Scenario geography: ", scenario_geography, "\n",
             "Target scenario: ", target_scenario, "\n",
+            "CCS status: ", CCS_STATUS, "\n",  # Add CCS status to error message
             "Error message: ", e$message, "\n",
             "Timestamp: ", format(Sys.time(), "%Y-%m-%d %H:%M:%S")
           )
