@@ -67,12 +67,12 @@ if (Sys.getenv("GOOGLE_APPLICATION_CREDENTIALS") == "") {
   if (!file.exists(creds_path)) {
     stop("The GCS credentials file does not exist at: ", creds_path)
   }
-  
+
   # Print GCS credentials info for debugging
   message("GCS Credentials Info:")
   message("Credentials path: ", creds_path)
   message("File exists: ", file.exists(creds_path))
-  message("File permissions: ", file.access(creds_path, mode = 4) == 0)  # Check if readable
+  message("File permissions: ", file.access(creds_path, mode = 4) == 0) # Check if readable
   message("File size: ", file.size(creds_path), " bytes")
 }
 
@@ -85,7 +85,7 @@ if (mlflow_tracking_uri == "") {
 # Get experiment name from environment variable
 experiment_name <- Sys.getenv("MLFLOW_EXPERIMENT_NAME")
 if (experiment_name == "") {
-  experiment_name <- "trisk_runs"  # Default value if not set
+  experiment_name <- "trisk_runs" # Default value if not set
   message("MLFLOW_EXPERIMENT_NAME not set, using default value: ", experiment_name)
 } else {
   message("Using experiment name from MLFLOW_EXPERIMENT_NAME: ", experiment_name)
@@ -95,146 +95,161 @@ if (experiment_name == "") {
 max_retries <- 3
 retry_count <- 0
 while (retry_count < max_retries) {
-  tryCatch({
-    # Set MLflow tracking URI
-    mlflow_set_tracking_uri(mlflow_tracking_uri)
-    
-    # Test the connection by getting the experiment
-    experiment <- mlflow_get_experiment(name = "trisk_runs")
-    
-    # If we get here, connection is successful
-    message("Successfully connected to MLflow server")
-    break
-  }, error = function(e) {
-    retry_count <<- retry_count + 1
-    if (retry_count == max_retries) {
-      stop("Failed to connect to MLflow server after ", max_retries, " attempts. Error: ", e$message)
+  tryCatch(
+    {
+      # Set MLflow tracking URI
+      mlflow_set_tracking_uri(mlflow_tracking_uri)
+
+      # Test the connection by getting the experiment
+      experiment <- mlflow_get_experiment(name = "trisk_runs")
+
+      # If we get here, connection is successful
+      message("Successfully connected to MLflow server")
+      break
+    },
+    error = function(e) {
+      retry_count <<- retry_count + 1
+      if (retry_count == max_retries) {
+        stop("Failed to connect to MLflow server after ", max_retries, " attempts. Error: ", e$message)
+      }
+      message("Attempt ", retry_count, " failed. Retrying in 5 seconds...")
+      Sys.sleep(5)
     }
-    message("Attempt ", retry_count, " failed. Retrying in 5 seconds...")
-    Sys.sleep(5)
-  })
+  )
 }
 
 # Ensure experiment exists with proper error handling
-tryCatch({
-  expected_artifact_location <- "gs://crispy-mlflow-backend"
-  
-  # Try to get the experiment first
-  experiment <- mlflow_get_experiment(name = experiment_name)
-  
-  if (is.null(experiment)) {
-    message(paste0("Experiment '", experiment_name, "' does not exist. Creating it..."))
-    experiment <- mlflow_create_experiment(
-      name = experiment_name,
-      artifact_location = expected_artifact_location
-    )
-    message(paste0("Successfully created experiment '", experiment_name, "' with ID: ", experiment$experiment_id))
-  } else {
-    message(paste0("Experiment '", experiment_name, "' already exists with ID: ", experiment$experiment_id))
-    
-    # Handle cases where artifact_location might be NULL or needs trimming
-    actual_artifact_location_val <- experiment$artifact_location
-    if (is.null(actual_artifact_location_val)) {
+tryCatch(
+  {
+    expected_artifact_location <- "gs://crispy-mlflow-backend"
+
+    # Try to get the experiment first
+    experiment <- mlflow_get_experiment(name = experiment_name)
+
+    if (is.null(experiment)) {
+      message(paste0("Experiment '", experiment_name, "' does not exist. Creating it..."))
+      experiment <- mlflow_create_experiment(
+        name = experiment_name,
+        artifact_location = expected_artifact_location
+      )
+      message(paste0("Successfully created experiment '", experiment_name, "' with ID: ", experiment$experiment_id))
+    } else {
+      message(paste0("Experiment '", experiment_name, "' already exists with ID: ", experiment$experiment_id))
+
+      # Handle cases where artifact_location might be NULL or needs trimming
+      actual_artifact_location_val <- experiment$artifact_location
+      if (is.null(actual_artifact_location_val)) {
         actual_artifact_location_trimmed <- ""
         actual_artifact_location_display <- "Not set"
-    } else {
+      } else {
         actual_artifact_location_trimmed <- trimws(actual_artifact_location_val)
         actual_artifact_location_display <- actual_artifact_location_val
-    }
-    expected_artifact_location_trimmed <- trimws(expected_artifact_location)
-
-    message(paste0("Verifying artifact_location. Current: '", actual_artifact_location_display, 
-                   "', Expected: '", expected_artifact_location, "'"))
-
-    if (!identical(actual_artifact_location_trimmed, expected_artifact_location_trimmed)) {
-      error_message <- sprintf(
-        "CRITICAL ERROR: Existing MLflow experiment '%s' has an incorrect artifact_location: '%s'. Expected: '%s'. %s",
-        experiment_name, 
-        actual_artifact_location_display,
-        expected_artifact_location,
-        paste0("This script requires the artifact location to be GCS for proper operation. ",
-               "Please delete the existing experiment from your MLflow server (likely at http://localhost:5000) ",
-               "and re-run this script. It will be recreated with the correct settings.")
-      )
-      stop(error_message)
-    }
-  }
-  
-  # Set the experiment as active
-  mlflow_set_experiment(experiment_name = experiment_name)
-  
-  # Verify active experiment
-  active_exp <- mlflow_get_experiment()
-  message(sprintf("Successfully set up MLflow. Active experiment: '%s' (ID: %s), Artifact Location: '%s'", 
-                  active_exp$name, active_exp$experiment_id, 
-                  ifelse(is.null(active_exp$artifact_location), "Not set", active_exp$artifact_location)))
-
-  # Fetch existing run parameters to avoid re-computation
-  message("Fetching existing MLflow runs to check for prior results...")
-  existing_run_params_list <- list() # Initialize list to store parameters of relevant runs
-  
-  # This tryCatch is for fetching existing runs; errors here shouldn't stop the whole script,
-  # but will mean no skipping occurs.
-  tryCatch({
-    if (!is.null(active_exp) && !is.null(active_exp$experiment_id)) {
-      all_run_infos <- mlflow::mlflow_list_run_infos(experiment_id = active_exp$experiment_id)
-      
-      if (nrow(all_run_infos) > 0) {
-        message(paste("Found", nrow(all_run_infos), "existing runs in experiment. Processing their parameters..."))
-        for (run_info_idx in 1:nrow(all_run_infos)) {
-          run_id <- all_run_infos$run_uuid[run_info_idx]
-          run_data <- mlflow::mlflow_get_run(run_id = run_id)
-          
-          # Extract parameters if they exist
-          if (!is.null(run_data$data$params) && nrow(run_data$data$params) > 0) {
-            # Convert params data_frame to a named list
-            # params_df columns are 'key' and 'value'
-            params_df <- run_data$data$params
-            run_params <- setNames(as.list(params_df$value), params_df$key)
-            
-            # Check for the presence of essential parameters for comparison
-            required_params_for_check <- c("baseline_scenario", "target_scenario", "scenario_geography", "shock_year", "ccs_status")
-            if (all(required_params_for_check %in% names(run_params))) {
-              existing_run_params_list[[run_id]] <- list(
-                baseline_scenario = run_params[["baseline_scenario"]],
-                target_scenario = run_params[["target_scenario"]],
-                scenario_geography = run_params[["scenario_geography"]],
-                shock_year = as.character(run_params[["shock_year"]]), # MLflow stores params as strings
-                ccs_status = run_params[["ccs_status"]], # Add CCS status to parameters
-                had_error = "error" %in% names(run_params) # Check if an 'error' parameter was logged
-              )
-            }
-          }
-        }
-        message(paste("Finished processing. Identified", length(existing_run_params_list), "prior runs with comparable parameters."))
-      } else {
-        message("No existing runs found in the experiment.")
       }
-    } else {
-      message("Warning: Active experiment or experiment ID is NULL. Cannot fetch existing runs to check for skipping.")
-    }
-  }, error = function(e_fetch) {
-    message(paste("Warning: Failed to fetch or process existing MLflow runs. Will proceed without skipping. Error:", e_fetch$message))
-    # Ensure existing_run_params_list is empty or in a consistent state if error occurs mid-population
-    existing_run_params_list <- list()
-  })
+      expected_artifact_location_trimmed <- trimws(expected_artifact_location)
 
-}, error = function(e) {
-  message("Error setting up MLflow experiment 'trisk_runs': ", e$message)
-  message("Current GOOGLE_APPLICATION_CREDENTIALS: ", Sys.getenv("GOOGLE_APPLICATION_CREDENTIALS"))
-  stop(paste0("Failed to set up MLflow experiment 'trisk_runs'. Please check your MLflow server (is it running at http://localhost:5000?), GCS credentials, and the 'trisk_runs' experiment configuration. Original error: ", e$message))
-})
+      message(paste0(
+        "Verifying artifact_location. Current: '", actual_artifact_location_display,
+        "', Expected: '", expected_artifact_location, "'"
+      ))
+
+      if (!identical(actual_artifact_location_trimmed, expected_artifact_location_trimmed)) {
+        error_message <- sprintf(
+          "CRITICAL ERROR: Existing MLflow experiment '%s' has an incorrect artifact_location: '%s'. Expected: '%s'. %s",
+          experiment_name,
+          actual_artifact_location_display,
+          expected_artifact_location,
+          paste0(
+            "This script requires the artifact location to be GCS for proper operation. ",
+            "Please delete the existing experiment from your MLflow server (likely at http://localhost:5000) ",
+            "and re-run this script. It will be recreated with the correct settings."
+          )
+        )
+        stop(error_message)
+      }
+    }
+
+    # Set the experiment as active
+    mlflow_set_experiment(experiment_name = experiment_name)
+
+    # Verify active experiment
+    active_exp <- mlflow_get_experiment()
+    message(sprintf(
+      "Successfully set up MLflow. Active experiment: '%s' (ID: %s), Artifact Location: '%s'",
+      active_exp$name, active_exp$experiment_id,
+      ifelse(is.null(active_exp$artifact_location), "Not set", active_exp$artifact_location)
+    ))
+
+    # Fetch existing run parameters to avoid re-computation
+    message("Fetching existing MLflow runs to check for prior results...")
+    existing_run_params_list <- list() # Initialize list to store parameters of relevant runs
+
+    # This tryCatch is for fetching existing runs; errors here shouldn't stop the whole script,
+    # but will mean no skipping occurs.
+    tryCatch(
+      {
+        if (!is.null(active_exp) && !is.null(active_exp$experiment_id)) {
+          all_run_infos <- mlflow::mlflow_search_runs(experiment_ids = active_exp$experiment_id)
+
+          if (nrow(all_run_infos) > 0) {
+            message(paste("Found", nrow(all_run_infos), "existing runs in experiment. Processing their parameters..."))
+            for (run_info_idx in 1:nrow(all_run_infos)) {
+              run_id <- all_run_infos$run_id[run_info_idx]
+              run_data <- mlflow::mlflow_get_run(run_id = run_id)
+
+              # Extract parameters if they exist
+              if (!is.null(run_data$data$params) && nrow(run_data$data$params) > 0) {
+                # Convert params data_frame to a named list
+                # params_df columns are 'key' and 'value'
+                params_df <- run_data$data$params
+                run_params <- setNames(as.list(params_df$value), params_df$key)
+
+                # Check for the presence of essential parameters for comparison
+                required_params_for_check <- c("baseline_scenario", "target_scenario", "scenario_geography", "shock_year", "ccs_status")
+                if (all(required_params_for_check %in% names(run_params))) {
+                  existing_run_params_list[[run_id]] <- list(
+                    baseline_scenario = run_params[["baseline_scenario"]],
+                    target_scenario = run_params[["target_scenario"]],
+                    scenario_geography = run_params[["scenario_geography"]],
+                    shock_year = as.character(run_params[["shock_year"]]), # MLflow stores params as strings
+                    ccs_status = run_params[["ccs_status"]], # Add CCS status to parameters
+                    had_error = "error" %in% names(run_params) # Check if an 'error' parameter was logged
+                  )
+                }
+              }
+            }
+            message(paste("Finished processing. Identified", length(existing_run_params_list), "prior runs with comparable parameters."))
+          } else {
+            message("No existing runs found in the experiment.")
+          }
+        } else {
+          message("Warning: Active experiment or experiment ID is NULL. Cannot fetch existing runs to check for skipping.")
+        }
+      },
+      error = function(e_fetch) {
+        message(paste("Warning: Failed to fetch or process existing MLflow runs. Will proceed without skipping. Error:", e_fetch$message))
+        # Ensure existing_run_params_list is empty or in a consistent state if error occurs mid-population
+        existing_run_params_list <- list()
+      }
+    )
+  },
+  error = function(e) {
+    message("Error setting up MLflow experiment 'trisk_runs': ", e$message)
+    message("Current GOOGLE_APPLICATION_CREDENTIALS: ", Sys.getenv("GOOGLE_APPLICATION_CREDENTIALS"))
+    stop(paste0("Failed to set up MLflow experiment 'trisk_runs'. Please check your MLflow server (is it running at http://localhost:5000?), GCS credentials, and the 'trisk_runs' experiment configuration. Original error: ", e$message))
+  }
+)
 
 # Define paths for container environment
 data_dir <- "/app/data"
 target_dir <- "/app/trisk.model"
 
 # Read input data
-assets_data <- readr::read_csv(file.path(data_dir, "assets_data.csv")) %>% 
+assets_data <- readr::read_csv(file.path(data_dir, "assets_data.csv")) %>%
   rename(
-    production_year=year,
-    plant_age_years=asset_age
+    production_year = year,
+    plant_age_years = asset_age
   )
+message(sprintf("Loaded assets_data: %d rows, %d columns", nrow(assets_data), ncol(assets_data)))
 
 # Modify technology column based on CCS status
 if (parsed_args$ccs_status != "both") {
@@ -246,15 +261,20 @@ if (parsed_args$ccs_status != "both") {
 }
 
 scenarios_data <- readr::read_csv(file.path(data_dir, "scenarios_data.csv"))
+message(sprintf("Loaded scenarios_data: %d rows, %d columns", nrow(scenarios_data), ncol(scenarios_data)))
+
 financial_data <- readr::read_csv(file.path(data_dir, "financial_data.csv"))
+message(sprintf("Loaded financial_data: %d rows, %d columns", nrow(financial_data), ncol(financial_data)))
+
 carbon_data <- readr::read_csv(file.path(data_dir, "ngfs_carbon_price_testdata.csv"))
+message(sprintf("Loaded carbon_data: %d rows, %d columns", nrow(carbon_data), ncol(carbon_data)))
 
 # Process each baseline-target pair
 for (i in 1:nrow(json_data)) {
   baseline_scenario <- json_data$baseline[i]
   target_scenarios <- unlist(json_data$targets[i])
 
-  available_scenario_geographies <- scenarios_data %>% 
+  available_scenario_geographies <- scenarios_data %>%
     filter(scenario %in% c(baseline_scenario, target_scenarios)) %>%
     distinct(scenario_geography)
   print(available_scenario_geographies)
@@ -278,57 +298,61 @@ for (i in 1:nrow(json_data)) {
   }
 
   # Load the trisk.model package
-  tryCatch({
-    # Change to the trisk.model directory
-    old_wd <- getwd()
-    setwd(target_dir)
-    
-    # Get git commit information from environment variables
-    git_commit <- Sys.getenv("TRISK_MODEL_COMMIT", "unknown_commit")
-    git_commit_short <- Sys.getenv("TRISK_MODEL_COMMIT_SHORT", "unknown")
-    
-    devtools::load_all()
-    setwd(old_wd)
-  }, error = function(e) {
-    stop("Failed to load trisk.model package: ", e$message)
-  })
+  tryCatch(
+    {
+      # Change to the trisk.model directory
+      old_wd <- getwd()
+      setwd(target_dir)
 
-  for (target_scenario in unique(target_scenarios)) {  
+      # Get git commit information from environment variables
+      git_commit <- Sys.getenv("TRISK_MODEL_COMMIT", "unknown_commit")
+      git_commit_short <- Sys.getenv("TRISK_MODEL_COMMIT_SHORT", "unknown")
+
+      devtools::load_all()
+      setwd(old_wd)
+    },
+    error = function(e) {
+      stop("Failed to load trisk.model package: ", e$message)
+    }
+  )
+
+  for (target_scenario in unique(target_scenarios)) {
     for (scenario_geography in unique(available_scenario_geographies$scenario_geography)) {
       # Update progress bar
       current_iteration <- current_iteration + 1
       setTxtProgressBar(pb, current_iteration)
-      
+
       # --- Check if this combination has already been run successfully ---
       current_params_to_check <- list(
-        baseline_scenario = baseline_scenario,    # From the outer loop over json_data
-        target_scenario = target_scenario,        # From the loop over target_scenarios
-        scenario_geography = scenario_geography,  # Current scenario_geography
-        shock_year = as.character(shock_year),    # From command line argument
-        ccs_status = parsed_args$ccs_status       # Add CCS status to parameters
+        baseline_scenario = baseline_scenario, # From the outer loop over json_data
+        target_scenario = target_scenario, # From the loop over target_scenarios
+        scenario_geography = scenario_geography, # Current scenario_geography
+        shock_year = as.character(shock_year), # From command line argument
+        ccs_status = parsed_args$ccs_status # Add CCS status to parameters
       )
 
       already_ran_successfully <- FALSE
       if (length(existing_run_params_list) > 0) {
         for (existing_run_id in names(existing_run_params_list)) {
           params_from_existing_run <- existing_run_params_list[[existing_run_id]]
-          
+
           # Compare all relevant parameters
           if (identical(params_from_existing_run$baseline_scenario, current_params_to_check$baseline_scenario) &&
-              identical(params_from_existing_run$target_scenario, current_params_to_check$target_scenario) &&
-              identical(params_from_existing_run$scenario_geography, current_params_to_check$scenario_geography) &&
-              identical(params_from_existing_run$shock_year, current_params_to_check$shock_year) &&
-              identical(params_from_existing_run$ccs_status, current_params_to_check$ccs_status)) {
-            
+            identical(params_from_existing_run$target_scenario, current_params_to_check$target_scenario) &&
+            identical(params_from_existing_run$scenario_geography, current_params_to_check$scenario_geography) &&
+            identical(params_from_existing_run$shock_year, current_params_to_check$shock_year) &&
+            identical(params_from_existing_run$ccs_status, current_params_to_check$ccs_status)) {
             if (!params_from_existing_run$had_error) {
               already_ran_successfully <- TRUE
-              message(sprintf("Skipping: Baseline='%s', Target='%s', Geo='%s', ShockYear='%s', CCS='%s'. Found existing successful run: %s",
-                              current_params_to_check$baseline_scenario,
-                              current_params_to_check$target_scenario,
-                              current_params_to_check$scenario_geography,
-                              current_params_to_check$shock_year,
-                              current_params_to_check$ccs_status,
-                              existing_run_id))
+              message(sprintf(
+                "Skipping: Baseline='%s', Target='%s', Geo='%s', ShockYear='%s', CCS='%s'. Found existing successful run: %s",
+                current_params_to_check$baseline_scenario,
+                current_params_to_check$target_scenario,
+                current_params_to_check$scenario_geography,
+                current_params_to_check$shock_year,
+                current_params_to_check$ccs_status,
+                existing_run_id
+              ))
               break # Found a successful match, no need to check other existing runs
             } else {
               message(sprintf("Found existing run %s for parameters, but it had an error. Will re-run.", existing_run_id))
@@ -395,12 +419,14 @@ for (i in 1:nrow(json_data)) {
           
           pd_results <- pd_results %>%
             dplyr::bind_cols(trisk_params)
-          
-          company_trajectories <- company_trajectories %>%
-            dplyr::bind_cols(trisk_params)
+        
           
           # Save individual NPV results file
           readr::write_csv(npv_results, output_csv)
+          
+          # Save company trajectories
+          trajectories_csv <- file.path(base_output_dir, paste0(base_filename, "_trajectories.csv"))
+          readr::write_csv(company_trajectories, trajectories_csv)
           
           # Log artifacts to MLflow with retry logic
           artifact_retry_count <- 0
@@ -408,12 +434,18 @@ for (i in 1:nrow(json_data)) {
           
           while (artifact_retry_count < max_artifact_retries) {
             tryCatch({
-              # Verify file exists and is readable before logging
+              # Verify files exist and are readable before logging
               if (!file.exists(output_csv)) {
                 stop("Output file does not exist: ", output_csv)
               }
+              if (!file.exists(trajectories_csv)) {
+                stop("Trajectories file does not exist: ", trajectories_csv)
+              }
               if (file.access(output_csv, mode = 4) != 0) {
                 stop("Output file is not readable: ", output_csv)
+              }
+              if (file.access(trajectories_csv, mode = 4) != 0) {
+                stop("Trajectories file is not readable: ", trajectories_csv)
               }
               
               # Get file info for debugging
@@ -424,14 +456,19 @@ for (i in 1:nrow(json_data)) {
               message("  Owner: ", file_info$uname)
               message("  Group: ", file_info$grname)
               
-              # Try to log the artifact
+              # Try to log the artifacts
               mlflow_log_artifact(output_csv)
-              message("Successfully logged artifact: ", output_csv)
+              mlflow_log_artifact(trajectories_csv)
+              message("Successfully logged artifacts: ", output_csv, " and ", trajectories_csv)
               
-              # Delete the file after successful logging
+              # Delete the files after successful logging
               if (file.exists(output_csv)) {
                 file.remove(output_csv)
                 message("Successfully deleted local file: ", output_csv)
+              }
+              if (file.exists(trajectories_csv)) {
+                file.remove(trajectories_csv)
+                message("Successfully deleted local file: ", trajectories_csv)
               }
               break
             }, error = function(e) {
@@ -539,4 +576,3 @@ for (i in 1:nrow(json_data)) {
   # Close progress bar
   close(pb)
 }
-
