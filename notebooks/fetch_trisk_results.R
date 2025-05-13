@@ -11,7 +11,13 @@ flatten <- purrr::flatten
 # MLflow configuration
 mlflow_tracking_uri <- "https://mlflow.1in1000.com:443"
 experiment_name <- "age_impact_v1"
+
 # Define the target scenario value for filtering
+# Available target scenarios :
+#   "AR6_WITCH 5.0_EN_INDCi2030_1000"
+#   "AR6_WITCH 5.0_EN_INDCi2030_1200"
+#   "AR6_IMAGE 3.2_SSP1_SPA1_19I_RE_LB"
+#   "AR6_IMAGE 3.2_SSP1_SPA1_26I_LI"
 TARGET_SCENARIO_VALUE <- "AR6_IMAGE 3.2_SSP1_SPA1_19I_RE_LB"
 
 #' Fetch all successful runs from MLflow that match a specific target_scenario parameter.

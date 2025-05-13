@@ -5,10 +5,17 @@ import json
 import os
 from pathlib import Path
 import shutil
+import argparse
 
 # MLflow configuration
 mlflow_tracking_uri = "https://mlflow.1in1000.com:443"
 experiment_name = "age_impact_v1"
+
+# Available target scenarios:
+#   "AR6_WITCH 5.0_EN_INDCi2030_1000"
+#   "AR6_WITCH 5.0_EN_INDCi2030_1200"
+#   "AR6_IMAGE 3.2_SSP1_SPA1_19I_RE_LB"
+#   "AR6_IMAGE 3.2_SSP1_SPA1_26I_LI"
 
 
 def fetch_successful_runs() -> List[Dict]:
@@ -130,7 +137,7 @@ def display_runs(runs: List[Dict], title: str = ""):
         print("\n" + "-" * 80 + "\n")
 
 
-def main(output_path: str):
+def main(output_path: str, target_scenario: str = None):
     """
     Main function to fetch and download MLflow runs and artifacts.
 
@@ -138,6 +145,7 @@ def main(output_path: str):
         output_path (str): Base directory for output files. Will create:
             - {output_path}/artifacts/ for downloaded artifacts
             - {output_path}/successful_runs.json for run information
+        target_scenario (str): The target scenario to filter runs by. If None, all runs will be downloaded.
     """
     try:
         # Create output directory structure
@@ -163,10 +171,15 @@ def main(output_path: str):
         # Display all runs
         display_runs(successful_runs, "All Successful Runs")
 
-        # Filter and display runs for specific target scenario
-        target_scenario = "AR6_IMAGE 3.2_SSP1_SPA1_19I_RE_LB"
-        filtered_runs = filter_runs_by_target_scenario(successful_runs, target_scenario)
-        display_runs(filtered_runs, f"Runs with target scenario: {target_scenario}")
+        # Filter and display runs for specific target scenario if provided
+        if target_scenario is not None:
+            filtered_runs = filter_runs_by_target_scenario(
+                successful_runs, target_scenario
+            )
+            display_runs(filtered_runs, f"Runs with target scenario: {target_scenario}")
+        else:
+            filtered_runs = successful_runs
+            print("\nNo target scenario specified - downloading all successful runs")
 
         # Download artifacts for each filtered run
         print("\nDownloading artifacts for filtered runs...")
@@ -200,4 +213,11 @@ def main(output_path: str):
 
 if __name__ == "__main__":
     output_path = "workspace/mlflow_results"
-    main(output_path)
+
+    # Available target scenarios :
+    #   "AR6_WITCH 5.0_EN_INDCi2030_1000"
+    #   "AR6_WITCH 5.0_EN_INDCi2030_1200"
+    #   "AR6_IMAGE 3.2_SSP1_SPA1_19I_RE_LB"
+    #   "AR6_IMAGE 3.2_SSP1_SPA1_26I_LI"
+    target_scenario = None  # Set to None to download all runs, or specify a scenario from the list above
+    main(output_path, target_scenario)
