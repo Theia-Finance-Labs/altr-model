@@ -11,6 +11,7 @@ from .nodes import (
     force_phase_out_late_sudden,
     apply_capacity_factors,
     apply_compensation_shock,
+    allocate_production_to_companies,
 )
 
 
@@ -20,28 +21,26 @@ def create_pipeline(**kwargs) -> Pipeline:
             node(
                 func=calculate_fair_share_perc,
                 inputs=["traj_scenario"],
-                outputs=["traj_scenario_baseline", "traj_scenario_target"],
+                outputs=["traj_scenario_fair_share"],
             ),
             node(
                 func=compute_target_trajectory,
-                inputs=["traj_assets_raw_truncated", "traj_scenario_target"],
+                inputs=["traj_assets", "traj_scenario_fair_share"],
                 outputs="traj_assets_target",
             ),
             node(
                 func=force_phase_out_target_baseline,
-                inputs=["traj_assets_baseline", "traj_assets_target"],
-                outputs=["traj_assets_baseline_clean", "traj_assets_target_clean"],
+                inputs=["traj_assets_target"],
+                outputs=["traj_assets_target_clean"],
             ),
             node(
                 func=apply_capacity_factors,
                 inputs=[
-                    "traj_scenario",
-                    "traj_assets_baseline_clean",
+                    "traj_scenario_fair_share",
                     "traj_assets_target_clean",
-                    "traj_assets_raw_truncated",
+                    "traj_assets",
                 ],
                 outputs=[
-                    "traj_assets_baseline_prod",
                     "traj_assets_target_prod",
                     "truncated_traj_assets_prod",
                 ],
@@ -49,17 +48,31 @@ def create_pipeline(**kwargs) -> Pipeline:
             node(
                 func=apply_compensation_shock,
                 inputs=[
-                    "assets_to_compensate",
-                    "traj_assets_baseline_prod",
+                    "traj_assets",
                     "traj_assets_target_prod",
                     "params:shock_year",
                 ],
-                outputs="assets_compensated_shocked",
+                outputs="traj_assets_shocked",
             ),
             node(
                 func=force_phase_out_late_sudden,
                 inputs=["traj_assets_shocked"],
                 outputs="traj_assets_shocked_phased_out",
             ),
-        ]
+            node(
+                func=allocate_production_to_companies,
+                inputs=[
+                    "companies_ownership_tree",
+                    "traj_assets",
+                    "traj_assets_shocked_phased_out",
+                ],
+                outputs=["traj_companies_shock", "traj_companies_baseline"],
+            ),
+        ],
+        # inputs=["traj_scenario", "traj_assets", "companies_ownership_tree"],
+        # outputs=["traj_companies_shock", "traj_companies_baseline"],
+        # parameters=[
+        #     "params:shock_year",
+        # ],
+        # namespace="layer1",
     )

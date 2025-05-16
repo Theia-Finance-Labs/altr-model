@@ -48,5 +48,21 @@ def create_pipeline(**kwargs) -> Pipeline:
                     "traj_companies_net_profits_shock",
                 ],
             ),
-        ]
+        ],
+        # inputs=[
+        #     "financial_averages",
+        #     "traj_scenario",
+        #     "traj_companies_baseline",
+        #     "traj_companies_shock",
+        # ],
+        # outputs=[
+        #     "traj_companies_net_profits_baseline",
+        #     "traj_companies_net_profits_shock",
+        # ],
+        # parameters=[
+        #     "params:discount_rate",
+        #     "params:growth_rate",
+        #     "params:shock_year",
+        # ],
+        # namespace="layer2",
     )

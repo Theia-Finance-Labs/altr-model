@@ -1,10 +1,7 @@
 import ibis
 
 
-def make_assets_data(
-    traj_assets_raw,
-    forecast_horizon,
-):
+def make_assets_data(traj_assets_raw, forecast_horizon=5):
     traj_assets_raw_truncated = traj_assets_raw.loc[
         (traj_assets_raw.year <= 2025 + forecast_horizon)
         & (traj_assets_raw.year >= 2025),

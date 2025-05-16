@@ -52,19 +52,13 @@ def calculate_fair_share_perc(
         ]
     ]
 
-    scenario_traj_baseline = (
-        scenarios.loc[scenarios["scenario_type"] == "baseline"]
-        .sort_values(["technology", "scenario_year"])
-        .rename(columns={"scenario_year": "year"})
-    )
-
     scenario_traj_target = (
         scenarios.loc[scenarios["scenario_type"] == "target"]
         .sort_values(["technology", "scenario_year"])
         .rename(columns={"scenario_year": "year"})
     )
 
-    return scenario_traj_baseline, scenario_traj_target
+    return scenario_traj_target
 
 
 def compute_target_trajectory(
@@ -134,9 +128,8 @@ def compute_target_trajectory(
 
 def apply_capacity_factors(
     traj_scenario: pd.DataFrame,
-    traj_assets_baseline_clean: pd.DataFrame,
     traj_assets_target_clean: pd.DataFrame,
-    traj_assets_raw_truncated: pd.DataFrame,
+    traj_assets: pd.DataFrame,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     def merge_and_apply(df_assets: pd.DataFrame, scenario_type: str) -> pd.DataFrame:
         capfac = traj_scenario.loc[
@@ -161,10 +154,9 @@ def apply_capacity_factors(
 
         return df
 
-    traj_assets_baseline_prod = merge_and_apply(traj_assets_baseline_clean, "baseline")
     traj_assets_target_prod = merge_and_apply(traj_assets_target_clean, "target")
 
-    truncated_traj_assets_prod = traj_assets_raw_truncated.rename(
+    truncated_traj_assets_prod = traj_assets.rename(
         columns=({"asset_trajectory": "asset_trajectory_baseline"})
     )
     truncated_traj_assets_prod = merge_and_apply(truncated_traj_assets_prod, "baseline")
@@ -172,34 +164,20 @@ def apply_capacity_factors(
         columns=({"asset_trajectory_baseline": "asset_trajectory"})
     )
 
-    traj_assets_baseline_prod = traj_assets_baseline_prod[
-        ["asset_id", "sector", "technology", "year", "asset_trajectory_baseline"]
-    ]
     traj_assets_target_prod = traj_assets_target_prod[
         ["asset_id", "sector", "technology", "year", "asset_trajectory_target"]
     ]
 
-    truncated_traj_assets_prod = truncated_traj_assets_prod[
-        ["asset_id", "sector", "technology", "year", "asset_trajectory"]
-    ]
-
-    return (
-        traj_assets_baseline_prod,
-        traj_assets_target_prod,
-        truncated_traj_assets_prod,
-    )
+    return traj_assets_target_prod, truncated_traj_assets_prod
 
 
 def apply_compensation_shock(
     assets_to_compensate: pd.DataFrame,
-    traj_assets_baseline_prod: pd.DataFrame,
     traj_assets_target_prod: pd.DataFrame,
     shock_year: int,
 ) -> pd.DataFrame:
     group_cols = ["asset_id", "sector", "technology"]
-    late_sudden_data = pd.merge(
-        traj_assets_baseline_prod, traj_assets_target_prod, on=group_cols + ["year"]
-    )
+    late_sudden_data = traj_assets_target_prod
 
     ls_data_to_compensate = late_sudden_data.merge(
         assets_to_compensate, on=["asset_id"], how="inner"
@@ -296,17 +274,7 @@ def enforce_zero_after_first(
     return group
 
 
-def force_phase_out_target_baseline(
-    traj_assets_baseline: pd.DataFrame, traj_assets_target: pd.DataFrame
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-
-    traj_assets_baseline_clean = (
-        traj_assets_baseline.groupby(["asset_id", "sector", "technology"])
-        .apply(
-            lambda group: enforce_zero_after_first(group, "asset_trajectory_baseline")
-        )
-        .reset_index(drop=True)
-    )
+def force_phase_out_target_baseline(traj_assets_target: pd.DataFrame) -> pd.DataFrame:
 
     traj_assets_target_clean = (
         traj_assets_target.groupby(["asset_id", "sector", "technology"])
@@ -314,7 +282,7 @@ def force_phase_out_target_baseline(
         .reset_index(drop=True)
     )
 
-    return traj_assets_baseline_clean, traj_assets_target_clean
+    return traj_assets_target_clean
 
 
 def force_phase_out_late_sudden(traj_assets_shocked: pd.DataFrame) -> pd.DataFrame:
@@ -326,3 +294,59 @@ def force_phase_out_late_sudden(traj_assets_shocked: pd.DataFrame) -> pd.DataFra
     )
 
     return traj_assets_shocked
+
+
+def allocate_production_to_companies(
+    companies_ownership_tree: pd.DataFrame,
+    traj_assets_baseline: pd.DataFrame,
+    traj_assets_shocked: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    def allocate_trajectory(asset_df, asset_col, output_col):
+        """
+        Merges asset-level trajectories with company ownership info,
+        allocates the asset trajectory based on normalized ownership,
+        and aggregates by company, sector, technology, and year.
+
+        Parameters:
+            asset_df: DataFrame with asset trajectories.
+            asset_col: The column name in asset_df to allocate (e.g.
+                       "asset_trajectory_baseline" or "asset_trajectory_shock").
+            output_col: The name for the resulting allocated column
+                        (e.g. "company_trajectory_baseline" or
+                        "company_trajectory_shock").
+
+        Returns:
+            A DataFrame aggregated to the company level.
+        """
+        merged = asset_df.merge(
+            companies_ownership_tree[
+                ["asset_id", "company_id", "normalized_ownership"]
+            ],
+            on="asset_id",
+            how="inner",
+        )
+        merged[f"allocated_{asset_col}"] = (
+            merged[asset_col] * merged["normalized_ownership"]
+        )
+        allocated = (
+            merged.groupby(
+                ["company_id", "sector", "technology", "year"], as_index=False
+            )[f"allocated_{asset_col}"]
+            .sum()
+            .rename(columns={f"allocated_{asset_col}": output_col})
+        )
+        return allocated
+
+    # Allocate baseline trajectories. Assumes traj_assets_baseline has a column named
+    # "asset_trajectory_baseline".
+    traj_companies_baseline = allocate_trajectory(
+        traj_assets_baseline, "asset_trajectory_baseline", "company_trajectory_baseline"
+    )
+
+    # Allocate shock trajectories. Assumes traj_assets_shocked has a column named
+    # "asset_trajectory_shock".
+    traj_companies_shock = allocate_trajectory(
+        traj_assets_shocked, "asset_trajectory_shock", "company_trajectory_shock"
+    )
+
+    return traj_companies_baseline, traj_companies_shock
