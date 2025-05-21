@@ -32,10 +32,11 @@ def filter_assets(
 def filter_scenarios(
     scenarios: ibis.expr.types.Table,
     target_scenario: str,
+    baseline_scenario: str,
     scenario_geography: str,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     traj_scenario = scenarios.filter(
-        scenarios.scenario.isin([target_scenario])
+        scenarios.scenario.isin([target_scenario, baseline_scenario])
         & scenarios.scenario_geography.isin([scenario_geography])
     )
     traj_scenario = traj_scenario.execute()

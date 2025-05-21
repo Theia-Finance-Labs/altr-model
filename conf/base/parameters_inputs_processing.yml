@@ -5,7 +5,7 @@
 # Link: https://docs.kedro.org/en/0.19.12/configuration/parameters.html
 
 
-# baseline_scenario: "NGFS2024_GCAM_CP"
+baseline_scenario: "NGFS2024_GCAM_CP"
 target_scenario: "NGFS2024_GCAM_NZ2050"
 scenario_geography: "Global"
 

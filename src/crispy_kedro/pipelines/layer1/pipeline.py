@@ -7,7 +7,7 @@ from kedro.pipeline import node, Pipeline, pipeline  # noqa
 from .nodes import (
     calculate_fair_share_perc,
     compute_target_trajectory,
-    force_phase_out_target_baseline,
+    force_phase_out_traj_assets,
     force_phase_out_late_sudden,
     apply_capacity_factors,
     apply_compensation_shock,
@@ -21,7 +21,7 @@ def create_pipeline(**kwargs) -> Pipeline:
             node(
                 func=calculate_fair_share_perc,
                 inputs=["traj_scenario"],
-                outputs=["traj_scenario_fair_share"],
+                outputs="traj_scenario_fair_share",
             ),
             node(
                 func=compute_target_trajectory,
@@ -29,9 +29,9 @@ def create_pipeline(**kwargs) -> Pipeline:
                 outputs="traj_assets_target",
             ),
             node(
-                func=force_phase_out_target_baseline,
+                func=force_phase_out_traj_assets,
                 inputs=["traj_assets_target"],
-                outputs=["traj_assets_target_clean"],
+                outputs="traj_assets_target_clean",
             ),
             node(
                 func=apply_capacity_factors,
@@ -40,16 +40,12 @@ def create_pipeline(**kwargs) -> Pipeline:
                     "traj_assets_target_clean",
                     "traj_assets",
                 ],
-                outputs=[
-                    "traj_assets_target_prod",
-                    "truncated_traj_assets_prod",
-                ],
+                outputs="traj_assets_prod",
             ),
             node(
                 func=apply_compensation_shock,
                 inputs=[
-                    "traj_assets",
-                    "traj_assets_target_prod",
+                    "traj_assets_prod",
                     "params:shock_year",
                 ],
                 outputs="traj_assets_shocked",
@@ -63,7 +59,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                 func=allocate_production_to_companies,
                 inputs=[
                     "companies_ownership_tree",
-                    "traj_assets",
+                    "traj_assets_prod",
                     "traj_assets_shocked_phased_out",
                 ],
                 outputs=["traj_companies_shock", "traj_companies_baseline"],

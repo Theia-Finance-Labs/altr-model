@@ -10,41 +10,43 @@ from typing import Tuple
 
 def calculate_fair_share_perc(
     scenarios: pd.DataFrame,
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    # Define the grouping columns
-    group_cols = ["scenario", "sector", "scenario_geography", "technology"]
+) -> pd.DataFrame:
 
     # Sort the DataFrame by scenario_year so that the first value in each group is the earliest year
-    scenarios = scenarios.sort_values("scenario_year")
+    scenarios_fair_share = scenarios.sort_values("scenario_year").rename(
+        columns={"scenario_year": "year"}
+    )
 
     # Compute the first scenario_pathway value for each group
     # This ensures we capture the value after sorting by scenario_year
-    scenarios["first_pathway"] = scenarios.groupby(group_cols)[
-        "scenario_pathway"
-    ].transform("first")
+    scenarios_fair_share["first_pathway"] = scenarios_fair_share.groupby(
+        ["scenario", "sector", "scenario_geography", "technology"]
+    )["scenario_pathway"].transform("first")
 
     # Calculate tmsr = (scenario_pathway - first_pathway) / first_pathway
-    scenarios["tmsr"] = (
-        scenarios["scenario_pathway"] - scenarios["first_pathway"]
-    ) / scenarios["first_pathway"]
+    scenarios_fair_share["tmsr"] = (
+        scenarios_fair_share["scenario_pathway"] - scenarios_fair_share["first_pathway"]
+    ) / scenarios_fair_share["first_pathway"]
 
     # Drop the helper column if it's no longer needed
-    scenarios = scenarios.drop(columns="first_pathway")
+    scenarios_fair_share = scenarios_fair_share.drop(columns="first_pathway")
 
     # Set fair_share_perc equal to tmsr
-    scenarios["fair_share_perc"] = scenarios["tmsr"]
+    scenarios_fair_share["fair_share_perc"] = scenarios_fair_share["tmsr"]
 
     # Replace NaN values (which may appear if first_pathway was zero) with 0
-    scenarios["fair_share_perc"] = scenarios["fair_share_perc"].fillna(0)
+    scenarios_fair_share["fair_share_perc"] = scenarios_fair_share[
+        "fair_share_perc"
+    ].fillna(0)
 
-    scenarios = scenarios[
+    scenarios_fair_share = scenarios_fair_share[
         [
             "scenario",
             "scenario_type",
             "sector",
             "technology",
             "technology_type",
-            "scenario_year",
+            "year",
             "scenario_pathway",
             "fair_share_perc",
             "scenario_price",
@@ -52,17 +54,17 @@ def calculate_fair_share_perc(
         ]
     ]
 
-    scenario_traj_target = (
-        scenarios.loc[scenarios["scenario_type"] == "target"]
-        .sort_values(["technology", "scenario_year"])
-        .rename(columns={"scenario_year": "year"})
-    )
+    # scenario_traj_target = (
+    #     scenarios.loc[scenarios["scenario_type"] == "target"]
+    #     .sort_values(["technology", "scenario_year"])
+    #     .rename(columns={"scenario_year": "year"})
+    # )
 
-    return scenario_traj_target
+    return scenarios_fair_share
 
 
 def compute_target_trajectory(
-    raw_trajectory: pd.DataFrame, target_scenario: pd.DataFrame
+    raw_trajectory: pd.DataFrame, scenarios: pd.DataFrame
 ) -> pd.DataFrame:
     """
     Computes the target trajectory by extending the time range using the target scenario.
@@ -82,8 +84,15 @@ def compute_target_trajectory(
 
     # Merge the first-year values with the target scenario to get a row for every (technology, year)
     target_trajectory = raw_trajectory_first_year.merge(
-        target_scenario[
-            ["sector", "technology", "year", "scenario_pathway", "fair_share_perc"]
+        scenarios.loc[
+            scenarios["scenario_type"] == "target",
+            [
+                "sector",
+                "technology",
+                "year",
+                "scenario_pathway",
+                "fair_share_perc",
+            ],
         ],
         how="right",
         on=["sector", "technology"],
@@ -134,8 +143,8 @@ def apply_capacity_factors(
     def merge_and_apply(df_assets: pd.DataFrame, scenario_type: str) -> pd.DataFrame:
         capfac = traj_scenario.loc[
             traj_scenario["scenario_type"] == scenario_type,
-            ["scenario_year", "sector", "scenario_capacity_factor", "technology"],
-        ].rename(columns={"scenario_year": "year"})
+            ["year", "sector", "scenario_capacity_factor", "technology"],
+        ]
 
         df = pd.merge(
             df_assets,
@@ -156,32 +165,35 @@ def apply_capacity_factors(
 
     traj_assets_target_prod = merge_and_apply(traj_assets_target_clean, "target")
 
-    truncated_traj_assets_prod = traj_assets.rename(
+    traj_assets_baseline_prod = traj_assets.rename(
         columns=({"asset_trajectory": "asset_trajectory_baseline"})
     )
-    truncated_traj_assets_prod = merge_and_apply(truncated_traj_assets_prod, "baseline")
-    truncated_traj_assets_prod = truncated_traj_assets_prod.rename(
-        columns=({"asset_trajectory_baseline": "asset_trajectory"})
-    )
+    traj_assets_baseline_prod = merge_and_apply(traj_assets_baseline_prod, "baseline")
 
     traj_assets_target_prod = traj_assets_target_prod[
         ["asset_id", "sector", "technology", "year", "asset_trajectory_target"]
     ]
 
-    return traj_assets_target_prod, truncated_traj_assets_prod
+    traj_assets_baseline_prod = traj_assets_baseline_prod[
+        ["asset_id", "sector", "technology", "year", "asset_trajectory_baseline"]
+    ]
+
+    traj_assets_prod = pd.merge(
+        traj_assets_target_prod,
+        traj_assets_baseline_prod,
+        on=["asset_id", "sector", "technology", "year"],
+        how="inner",
+    )
+
+    return traj_assets_prod
 
 
 def apply_compensation_shock(
-    assets_to_compensate: pd.DataFrame,
-    traj_assets_target_prod: pd.DataFrame,
+    traj_assets_prod: pd.DataFrame,
     shock_year: int,
 ) -> pd.DataFrame:
     group_cols = ["asset_id", "sector", "technology"]
-    late_sudden_data = traj_assets_target_prod
-
-    ls_data_to_compensate = late_sudden_data.merge(
-        assets_to_compensate, on=["asset_id"], how="inner"
-    )
+    ls_data_to_compensate = traj_assets_prod
 
     # Calculate late_sudden
     ls_data_to_compensate["late_sudden"] = np.where(
@@ -241,8 +253,7 @@ def apply_compensation_shock(
     # Calculate year_diff and adjust late_sudden
     ls_data_to_compensate["year_diff"] = ls_data_to_compensate["year"] - shock_year + 1
     ls_data_to_compensate["late_sudden"] = np.where(
-        (ls_data_to_compensate["year"] >= shock_year)
-        & (ls_data_to_compensate["year"] > ls_data_to_compensate["last_non_na_year"]),
+        (ls_data_to_compensate["year"] >= shock_year),
         ls_data_to_compensate["late_sudden_pre_shock_val"]
         - ls_data_to_compensate["year_diff"].clip(lower=0) * ls_data_to_compensate["x"],
         ls_data_to_compensate["late_sudden"],
@@ -274,7 +285,7 @@ def enforce_zero_after_first(
     return group
 
 
-def force_phase_out_target_baseline(traj_assets_target: pd.DataFrame) -> pd.DataFrame:
+def force_phase_out_traj_assets(traj_assets_target: pd.DataFrame) -> pd.DataFrame:
 
     traj_assets_target_clean = (
         traj_assets_target.groupby(["asset_id", "sector", "technology"])

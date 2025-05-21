@@ -16,6 +16,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                 inputs=[
                     "scenarios",
                     "params:target_scenario",
+                    "params:baseline_scenario",
                     "params:scenario_geography",
                 ],
                 outputs="traj_scenario",
@@ -30,27 +31,27 @@ def create_pipeline(**kwargs) -> Pipeline:
                 inputs=["plant_ownerships", "traj_assets"],
                 outputs="companies_ownership_tree",
             ),
-            node(
-                func=make_assets_data,
-                inputs=[
-                    "traj_assets",
-                ],
-                outputs="assets_data",
-            ),
-            node(
-                func=make_scenarios_data,
-                inputs="scenarios",
-                outputs="scenarios_data",
-            ),
-            node(
-                func=make_financial_data,
-                inputs=[
-                    "assets_data",
-                    "companies_ownership_tree",
-                    "financial_averages",
-                ],
-                outputs="financial_data",
-            ),
+            # node(
+            #     func=make_assets_data,
+            #     inputs=[
+            #         "traj_assets",
+            #     ],
+            #     outputs="assets_data",
+            # ),
+            # node(
+            #     func=make_scenarios_data,
+            #     inputs="scenarios",
+            #     outputs="scenarios_data",
+            # ),
+            # node(
+            #     func=make_financial_data,
+            #     inputs=[
+            #         "assets_data",
+            #         "companies_ownership_tree",
+            #         "financial_averages",
+            #     ],
+            #     outputs="financial_data",
+            # ),
         ],
         # inputs=[
         #     "assets_forecasts",
