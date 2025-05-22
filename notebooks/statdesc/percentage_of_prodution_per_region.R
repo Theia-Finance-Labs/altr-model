@@ -1,3 +1,10 @@
+library(dplyr)
+library(tidyr)
+library(readr)
+library(sf)
+library(rnaturalearth)
+library(ggplot2)
+library(viridis)
 # Parameters
 SCENARIO_REF <- "AR6_WITCH 5.0_EN_NoPolicy"
 YEAR_REF     <- 2025
@@ -44,11 +51,6 @@ region_country <- scenarios_filtered %>%
 
 # Also include Global → every country in the world
 world <- rnaturalearth::ne_countries(scale = "medium", returnclass = "sf")
-global_countries <- tibble::tibble(
-  region       = "Global",
-  country_iso2 = world$iso_a2
-)
-region_country <- dplyr::bind_rows(region_country, global_countries)
 
 # Sum scenario pathways by region & tech
 region_tech_scenario <- scenarios_filtered %>%
