@@ -7,7 +7,7 @@ library(viridis)
 unique_power_assets_loc <- readr::read_csv(file.path("data", "08_reporting", "assets_data.csv")) %>%
   distinct(asset_id, sector, latitude, longitude)
 
-unique_power_assets_loc %>% readr::write_csv(file.path(getwd(), "notebooks", "statdesc", "Number of companies per country", "unique_power_assets_loc.csv"))
+unique_power_assets_loc %>% readr::write_csv(file.path(getwd(), "workspace", "statdesc", "Number of companies per country", "unique_power_assets_loc.csv"))
 
 # Read the power assets data
 power_assets <- asset_data %>%
@@ -90,6 +90,6 @@ p <- ggplot2::ggplot() +
   )
 
 
-ggplot2::ggsave(file.path(getwd(), "notebooks", "statdesc", "Number of companies per country", "power_assets_map.png"), plot = p, width = 12, height = 6, dpi = 300)
+ggplot2::ggsave(file.path(getwd(), "workspace", "statdesc", "Number of companies per country", "power_assets_map.png"), plot = p, width = 12, height = 6, dpi = 300)
 
-print(paste("saved power assets map to", file.path(getwd(), "notebooks", "statdesc", "Number of companies per country", "power_assets_map.png")))
+print(paste("saved power assets map to", file.path(getwd(), "workspace", "statdesc", "Number of companies per country", "power_assets_map.png")))
