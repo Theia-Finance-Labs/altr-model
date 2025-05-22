@@ -3,23 +3,18 @@ This is a boilerplate pipeline 'inputs_processing'
 generated using Kedro 0.19.12
 """
 
-import ibis
 import pandas as pd
 from typing import List, Tuple
 
 
 def filter_assets(
-    assets_forecasts: ibis.expr.types.Table,
+    assets_forecasts: pd.DataFrame,
     asset_ids: List[str],
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
+) -> pd.DataFrame:
     if asset_ids:
-        filtered_assets = assets_forecasts.filter(
-            assets_forecasts.asset_id.isin(asset_ids)
-        )
+        filtered_assets = assets_forecasts[assets_forecasts.asset_id.isin(asset_ids)]
     else:
         filtered_assets = assets_forecasts
-
-    filtered_assets = filtered_assets.execute()
 
     filtered_assets.rename(columns={"production_year": "year"}, inplace=True)
     filtered_assets["asset_trajectory"] = filtered_assets["asset_trajectory"].astype(
@@ -30,28 +25,26 @@ def filter_assets(
 
 
 def filter_scenarios(
-    scenarios: ibis.expr.types.Table,
+    scenarios: pd.DataFrame,
     target_scenario: str,
     baseline_scenario: str,
     scenario_geography: str,
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    traj_scenario = scenarios.filter(
+) -> pd.DataFrame:
+    traj_scenario = scenarios[
         scenarios.scenario.isin([target_scenario, baseline_scenario])
         & scenarios.scenario_geography.isin([scenario_geography])
-    )
-    traj_scenario = traj_scenario.execute()
+    ]
 
     traj_scenario["scenario_pathway"] = traj_scenario["scenario_pathway"].astype(float)
     return traj_scenario
 
 
 def filter_companies(
-    plant_ownerships: ibis.expr.types.Table, filtered_plant_detail: pd.DataFrame
+    plant_ownerships: pd.DataFrame, filtered_plant_detail: pd.DataFrame
 ) -> pd.DataFrame:
     filtered_assets = filtered_plant_detail["asset_id"].unique()
-    plant_ownership_df = plant_ownerships.execute()
-    plant_ownership_df = plant_ownership_df.loc[
-        plant_ownership_df["asset_id"].isin(filtered_assets)
+    plant_ownership_df = plant_ownerships.loc[
+        plant_ownerships["asset_id"].isin(filtered_assets)
     ]
 
     # TODO : APPLY OWNERSHIP TREE ACCORDING TO EVENTS // ownership of events is ignored quick&dirty

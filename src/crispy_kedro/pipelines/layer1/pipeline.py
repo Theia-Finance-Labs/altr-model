@@ -65,10 +65,5 @@ def create_pipeline(**kwargs) -> Pipeline:
                 outputs=["traj_companies_shock", "traj_companies_baseline"],
             ),
         ],
-        # inputs=["traj_scenario", "traj_assets", "companies_ownership_tree"],
-        # outputs=["traj_companies_shock", "traj_companies_baseline"],
-        # parameters=[
-        #     "params:shock_year",
-        # ],
-        # namespace="layer1",
+        tags="trisk",
     )

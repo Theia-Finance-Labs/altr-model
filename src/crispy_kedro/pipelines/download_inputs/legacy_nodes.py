@@ -1,7 +1,9 @@
+import pandas as pd
 import ibis
 
 
-def make_assets_data(traj_assets_raw, forecast_horizon=5):
+def make_assets_data(traj_assets_raw: pd.DataFrame, forecast_horizon=5):
+    traj_assets_raw = traj_assets_raw.rename(columns={"production_year": "year"})
     traj_assets_raw_truncated = traj_assets_raw.loc[
         (traj_assets_raw.year <= 2025 + forecast_horizon)
         & (traj_assets_raw.year >= 2025),
@@ -10,17 +12,14 @@ def make_assets_data(traj_assets_raw, forecast_horizon=5):
     return traj_assets_raw_truncated
 
 
-def make_scenarios_data(scenarios: ibis.expr.types.Table):
-    # scenarios_data = scenarios.filter(
-    #     scenarios.scenario_provider.contains("GCAM")
-    # ).execute()
-    scenarios_data = scenarios.execute()
+def make_scenarios_data(scenarios: pd.DataFrame):
+    scenarios_data = scenarios
     return scenarios_data
 
 
 def make_financial_data(
-    traj_assets_raw_truncated,
-    companies_ownership_tree,
+    traj_assets_raw_truncated: pd.DataFrame,
+    companies_ownership_tree: pd.DataFrame,
     financial_averages: ibis.expr.types.Table,
 ):
     financial_averages_df = financial_averages.execute()
