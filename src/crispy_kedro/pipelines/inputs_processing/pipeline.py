@@ -1,0 +1,35 @@
+"""
+This is a boilerplate pipeline 'inputs_processing'
+generated using Kedro 0.19.12
+"""
+
+from kedro.pipeline import node, Pipeline, pipeline  # noqa
+from .nodes import filter_scenarios, filter_assets, filter_companies
+
+
+def create_pipeline(**kwargs) -> Pipeline:
+    return pipeline(
+        [
+            node(
+                func=filter_scenarios,
+                inputs=[
+                    "downloaded_scenarios",
+                    "params:target_scenario",
+                    "params:baseline_scenario",
+                    "params:scenario_geography",
+                ],
+                outputs="traj_scenario",
+            ),
+            node(
+                func=filter_assets,
+                inputs=["downloaded_assets", "params:asset_ids"],
+                outputs="traj_assets",
+            ),
+            node(
+                func=filter_companies,
+                inputs=["downloaded_companies", "traj_assets"],
+                outputs="companies_ownership_tree",
+            ),
+        ],
+        tags="trisk",
+    )

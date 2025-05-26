@@ -1,5 +1,5 @@
 """
-This is a boilerplate pipeline 'trisk'
+This is a boilerplate pipeline 'outputs_processing'
 generated using Kedro 0.19.12
 """
 

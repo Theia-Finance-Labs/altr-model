@@ -38,6 +38,22 @@ financial_averages:
     project_id: cloud-1in1000
 
 # ================================================
+# ================== INTERMEDIATE ================
+# ================================================
+
+downloaded_scenarios:
+  type: pandas.CSVDataset
+  filepath: data/05_model_input/downloaded_scenarios.csv
+
+downloaded_assets:
+  type: pandas.CSVDataset
+  filepath: data/05_model_input/downloaded_assets.csv
+
+downloaded_companies:
+  type: pandas.CSVDataset
+  filepath: data/05_model_input/downloaded_companies.csv
+
+# ================================================
 # ================== OUTPUTS =====================
 # ================================================
 
