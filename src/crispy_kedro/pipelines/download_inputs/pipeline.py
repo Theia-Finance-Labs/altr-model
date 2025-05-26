@@ -33,13 +33,11 @@ def create_pipeline(**kwargs) -> Pipeline:
                     "downloaded_assets",
                 ],
                 outputs="assets_data",
-                name="make_assets_data",
             ),
             node(
                 func=make_scenarios_data,
                 inputs="downloaded_scenarios",
                 outputs="scenarios_data",
-                name="make_scenarios_data",
             ),
             node(
                 func=make_financial_data,
@@ -49,7 +47,6 @@ def create_pipeline(**kwargs) -> Pipeline:
                     "financial_averages",
                 ],
                 outputs="financial_data",
-                name="make_financial_data",
             ),
         ],
         tags="download_inputs",
