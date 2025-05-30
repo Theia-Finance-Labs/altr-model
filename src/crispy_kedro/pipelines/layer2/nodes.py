@@ -214,10 +214,9 @@ def calculate_discounted_net_profits(
         profit_col="net_profits_baseline",
         discounted_col="discounted_net_profit_baseline",
     )
-    end_year_baseline = baseline_processed["year"].max()
+
     traj_companies_net_profits_baseline = calculate_terminal_value(
         baseline_processed,
-        end_year_baseline,
         growth_rate,
         discount_rate,
         profit_col="net_profits_baseline",
@@ -231,10 +230,9 @@ def calculate_discounted_net_profits(
         profit_col="net_profits_shock",
         discounted_col="discounted_net_profit_shock",
     )
-    end_year_shock = shock_processed["year"].max()
+
     traj_companies_net_profits_shock = calculate_terminal_value(
         shock_processed,
-        end_year_shock,
         growth_rate,
         discount_rate,
         profit_col="net_profits_shock",
@@ -280,7 +278,6 @@ def discount_dividend_model(
 
 def calculate_terminal_value(
     data: pd.DataFrame,
-    end_year: int,
     growth_rate: float,
     discount_rate: float,
     profit_col: str,
@@ -302,6 +299,7 @@ def calculate_terminal_value(
     Returns:
       DataFrame with an appended terminal value row.
     """
+    end_year = data["year"].max()
     # Filter for rows corresponding to the end year
     terminal_data = data[data["year"] == end_year].copy()
     # Prepare terminal rows for year end_year+1
