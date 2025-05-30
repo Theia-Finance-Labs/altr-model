@@ -1,3 +1,4 @@
+library(dplyr)
 # Parse command line arguments
 args <- commandArgs(trailingOnly = TRUE)
 
@@ -11,6 +12,12 @@ parse_args <- function(args) {
       value <- split_arg[2]
       # Remove surrounding quotes if they exist
       value <- gsub("^\"|\"$", "", value)
+      # Convert boolean strings to actual booleans
+      if (value %in% c("TRUE", "true", "True", "1")) {
+        value <- TRUE
+      } else if (value %in% c("FALSE", "false", "False", "0")) {
+        value <- FALSE
+      }
       args_list[[name]] <- value
     }
   }
@@ -32,6 +39,14 @@ if (is.null(parsed_args$shock_year)) {
   stop("Required argument missing. Please provide --shock_year argument.")
 }
 
+if (is.null(parsed_args$use_age_cutoff)) {
+  stop("Required argument missing. Please provide --use_age_cutoff argument (TRUE or FALSE).")
+}
+
+if (is.null(parsed_args$use_staggered_shock)) {
+  stop("Required argument missing. Please provide --use_staggered_shock argument (TRUE or FALSE).")
+}
+
 # Validate CCS status
 valid_ccs_statuses <- c("w/ CCS", "w/o CCS", "both")
 if (!parsed_args$ccs_status %in% valid_ccs_statuses) {
@@ -42,6 +57,15 @@ if (!parsed_args$ccs_status %in% valid_ccs_statuses) {
 shock_year <- as.numeric(parsed_args$shock_year)
 if (is.na(shock_year)) {
   stop("Invalid shock year. Must be a numeric value.")
+}
+
+# Validate boolean parameters
+if (!is.logical(parsed_args$use_age_cutoff)) {
+  stop("Invalid use_age_cutoff. Must be TRUE or FALSE.")
+}
+
+if (!is.logical(parsed_args$use_staggered_shock)) {
+  stop("Invalid use_staggered_shock. Must be TRUE or FALSE.")
 }
 
 # Parse the JSON configuration
@@ -250,6 +274,16 @@ assets_data <- readr::read_csv(file.path(data_dir, "assets_data.csv")) %>%
     plant_age_years = asset_age
   )
 message(sprintf("Loaded assets_data: %d rows, %d columns", nrow(assets_data), ncol(assets_data)))
+message("Columns in assets_data: ", paste(names(assets_data), collapse = ", "))
+
+# Load discount rates data
+discount_rates_data <- readr::read_csv(file.path(data_dir, "countries_discount_rate.csv"))
+message(sprintf("Loaded discount_rates_data: %d rows", nrow(discount_rates_data)))
+
+# Group countries by discount rate
+discount_rate_groups <- discount_rates_data %>%
+  group_by(discount_rate) %>%
+  summarise(countries = list(iso2), .groups = "drop")
 
 # Modify technology column based on CCS status
 if (parsed_args$ccs_status != "both") {
@@ -282,7 +316,8 @@ for (i in 1:nrow(json_data)) {
   # Set up progress bar
   total_scenarios <- length(target_scenarios)
   total_geographies <- nrow(available_scenario_geographies)
-  total_iterations <- total_scenarios * total_geographies
+  total_discount_rates <- nrow(discount_rate_groups)
+  total_iterations <- total_scenarios * total_geographies * total_discount_rates
   pb <- txtProgressBar(min = 0, max = total_iterations, style = 3)
   current_iteration <- 0
 
@@ -316,263 +351,331 @@ for (i in 1:nrow(json_data)) {
     }
   )
 
-  for (target_scenario in unique(target_scenarios)) {
-    for (scenario_geography in unique(available_scenario_geographies$scenario_geography)) {
-      # Update progress bar
-      current_iteration <- current_iteration + 1
-      setTxtProgressBar(pb, current_iteration)
+  # Initialize lists to store results for each discount rate
+  all_npv_results <- list()
+  all_pd_results <- list()
+  all_company_trajectories <- list()
 
-      # --- Check if this combination has already been run successfully ---
-      current_params_to_check <- list(
-        baseline_scenario = baseline_scenario, # From the outer loop over json_data
-        target_scenario = target_scenario, # From the loop over target_scenarios
-        scenario_geography = scenario_geography, # Current scenario_geography
-        shock_year = as.character(shock_year), # From command line argument
-        ccs_status = parsed_args$ccs_status # Add CCS status to parameters
-      )
+  # Loop through discount rates
+  for (discount_rate_idx in 1:nrow(discount_rate_groups)) {
+    current_discount_rate <- discount_rate_groups$discount_rate[discount_rate_idx]
+    current_countries <- unlist(discount_rate_groups$countries[discount_rate_idx])
+    
+    # Filter assets_data for current countries
+    filtered_assets_data <- assets_data %>%
+      filter(country_iso2 %in% current_countries)
+    
+    message(sprintf("Processing discount rate %.3f for %d countries", 
+                   current_discount_rate, length(current_countries)))
 
-      already_ran_successfully <- FALSE
-      if (length(existing_run_params_list) > 0) {
-        for (existing_run_id in names(existing_run_params_list)) {
-          params_from_existing_run <- existing_run_params_list[[existing_run_id]]
+    for (target_scenario in unique(target_scenarios)) {
+      # Get all geographies for this scenario
+      scenario_geographies <- scenarios_data %>%
+        filter(scenario == target_scenario) %>%
+        distinct(scenario_geography) %>%
+        pull(scenario_geography)
 
-          # Compare all relevant parameters
-          if (identical(params_from_existing_run$baseline_scenario, current_params_to_check$baseline_scenario) &&
-            identical(params_from_existing_run$target_scenario, current_params_to_check$target_scenario) &&
-            identical(params_from_existing_run$scenario_geography, current_params_to_check$scenario_geography) &&
-            identical(params_from_existing_run$shock_year, current_params_to_check$shock_year) &&
-            identical(params_from_existing_run$ccs_status, current_params_to_check$ccs_status)) {
-            if (!params_from_existing_run$had_error) {
-              already_ran_successfully <- TRUE
-              message(sprintf(
-                "Skipping: Baseline='%s', Target='%s', Geo='%s', ShockYear='%s', CCS='%s'. Found existing successful run: %s",
-                current_params_to_check$baseline_scenario,
-                current_params_to_check$target_scenario,
-                current_params_to_check$scenario_geography,
-                current_params_to_check$shock_year,
-                current_params_to_check$ccs_status,
-                existing_run_id
-              ))
-              break # Found a successful match, no need to check other existing runs
-            } else {
-              message(sprintf("Found existing run %s for parameters, but it had an error. Will re-run.", existing_run_id))
-              # Continue checking other runs, in case there's a successful one later, though unlikely for same params
+      # Filter geographies to only those containing countries from current discount rate group
+      valid_geographies <- scenarios_data %>%
+        filter(scenario == target_scenario,
+               scenario_geography %in% scenario_geographies) %>%
+        # Split country_iso2_list and check if any of the current countries are in the list
+        filter(sapply(strsplit(country_iso2_list, ","), function(x) any(trimws(x) %in% current_countries))) %>%
+        distinct(scenario_geography) %>%
+        pull(scenario_geography)
+
+      if (length(valid_geographies) == 0) {
+        message(sprintf("Skipping target scenario %s - no valid geographies found for discount rate %.3f", 
+                       target_scenario, current_discount_rate))
+        next
+      }
+
+      for (scenario_geography in valid_geographies) {
+        # Update progress bar
+        current_iteration <- current_iteration + 1
+        setTxtProgressBar(pb, current_iteration)
+
+        # --- Check if this combination has already been run successfully ---
+        current_params_to_check <- list(
+          baseline_scenario = baseline_scenario,
+          target_scenario = target_scenario,
+          scenario_geography = scenario_geography,
+          shock_year = as.character(shock_year),
+          ccs_status = parsed_args$ccs_status,
+          discount_rate = as.character(current_discount_rate)
+        )
+
+        already_ran_successfully <- FALSE
+        if (length(existing_run_params_list) > 0) {
+          for (existing_run_id in names(existing_run_params_list)) {
+            params_from_existing_run <- existing_run_params_list[[existing_run_id]]
+
+            # Compare all relevant parameters including discount rate
+            if (identical(params_from_existing_run$baseline_scenario, current_params_to_check$baseline_scenario) &&
+                identical(params_from_existing_run$target_scenario, current_params_to_check$target_scenario) &&
+                identical(params_from_existing_run$scenario_geography, current_params_to_check$scenario_geography) &&
+                identical(params_from_existing_run$shock_year, current_params_to_check$shock_year) &&
+                identical(params_from_existing_run$ccs_status, current_params_to_check$ccs_status) &&
+                identical(params_from_existing_run$discount_rate, current_params_to_check$discount_rate)) {
+              if (!params_from_existing_run$had_error) {
+                already_ran_successfully <- TRUE
+                message(sprintf(
+                  "Skipping: Baseline='%s', Target='%s', Geo='%s', ShockYear='%s', CCS='%s', DiscountRate='%.3f'. Found existing successful run: %s",
+                  current_params_to_check$baseline_scenario,
+                  current_params_to_check$target_scenario,
+                  current_params_to_check$scenario_geography,
+                  current_params_to_check$shock_year,
+                  current_params_to_check$ccs_status,
+                  current_discount_rate,
+                  existing_run_id
+                ))
+                break
+              } else {
+                message(sprintf("Found existing run %s for parameters, but it had an error. Will re-run.", existing_run_id))
+              }
             }
           }
         }
-      }
 
-      if (already_ran_successfully) {
-        next # Skip to the next iteration of the scenario_geography loop
-      }
-      # --- End of check ---
+        if (already_ran_successfully) {
+          next
+        }
 
-      # Sanitize target scenario name for use in filenames
-      safe_target_scenario <- gsub("[\\/:*?\"<>|]", "_", target_scenario)
-      base_filename <- paste0("npvs_", scenario_geography, "_", safe_target_scenario)
-      output_csv <- file.path(base_output_dir, paste0(base_filename, ".csv"))
-      output_txt <- file.path(base_output_dir, paste0(base_filename, ".txt"))
-      
-      params_overwrite <- list(
-        baseline_scenario = baseline_scenario,
-        target_scenario = target_scenario,
-        scenario_geography = scenario_geography,
-        shock_year = shock_year
-      )
-      trisk_params <- do.call(trisk.model::process_params, c(list(fun = trisk.model::run_trisk_model), params_overwrite))
-
-      # Start MLflow run with error handling
-      tryCatch({
-        # Start a new run with nested=TRUE to handle potential existing runs
-        run <- mlflow_start_run(nested = TRUE)
+        # Sanitize target scenario name for use in filenames
+        safe_target_scenario <- gsub("[\\/:*?\"<>|]", "_", target_scenario)
+        base_filename <- paste0("npvs_", scenario_geography, "_", safe_target_scenario)
+        output_csv <- file.path(base_output_dir, paste0(base_filename, ".csv"))
+        output_txt <- file.path(base_output_dir, paste0(base_filename, ".txt"))
         
-        # Log parameters
-        mlflow_log_param("baseline_scenario", baseline_scenario)
-        mlflow_log_param("target_scenario", target_scenario)
-        mlflow_log_param("scenario_geography", scenario_geography)
-        mlflow_log_param("shock_year", shock_year)
-        mlflow_log_param("scenario_provider", scenario_provider)
-        mlflow_log_param("trisk_model_commit", git_commit)
-        mlflow_log_param("trisk_model_commit_short", git_commit_short)
-        mlflow_log_param("ccs_status", parsed_args$ccs_status)  # Log CCS status
-        
-        # Try to run the model, catch any errors
+        params_overwrite <- list(
+          baseline_scenario = baseline_scenario,
+          target_scenario = target_scenario,
+          scenario_geography = scenario_geography,
+          shock_year = shock_year,
+          discount_rate = current_discount_rate,
+          use_age_cutoff = parsed_args$use_age_cutoff,
+          use_staggered_shock = parsed_args$use_staggered_shock
+        )
+        trisk_params <- do.call(trisk.model::process_params, c(list(fun = trisk.model::run_trisk_model), params_overwrite))
+
+        # Start MLflow run with error handling
         tryCatch({
-          st_results <- run_trisk_model(
-            assets_data = assets_data,
-            scenarios_data = scenarios_data,
-            financial_data = financial_data,
-            carbon_data = carbon_data,
-            baseline_scenario = baseline_scenario,
-            target_scenario = target_scenario,
-            scenario_geography = scenario_geography,
-            shock_year = shock_year
-          )
-
-          npv_results <- st_results$npv_results
-          pd_results <- st_results$pd_results
-          company_trajectories <- st_results$company_trajectories
-
-          # Add trisk_params to each output dataframe
-          npv_results <- npv_results %>%
-            dplyr::bind_cols(trisk_params)
+          # Start a new run with nested=TRUE to handle potential existing runs
+          run <- mlflow_start_run(nested = TRUE)
           
-          pd_results <- pd_results %>%
-            dplyr::bind_cols(trisk_params)
-        
+          # Log parameters
+          mlflow_log_param("baseline_scenario", baseline_scenario)
+          mlflow_log_param("target_scenario", target_scenario)
+          mlflow_log_param("scenario_geography", scenario_geography)
+          mlflow_log_param("shock_year", shock_year)
+          mlflow_log_param("scenario_provider", scenario_provider)
+          mlflow_log_param("trisk_model_commit", git_commit)
+          mlflow_log_param("trisk_model_commit_short", git_commit_short)
+          mlflow_log_param("ccs_status", parsed_args$ccs_status)
+          mlflow_log_param("discount_rate", current_discount_rate)
+          mlflow_log_param("use_age_cutoff", params_overwrite$use_age_cutoff)
+          mlflow_log_param("use_staggered_shock", params_overwrite$use_staggered_shock)
           
-          # Save individual NPV results file
-          readr::write_csv(npv_results, output_csv)
-          
-          # Save company trajectories
-          trajectories_csv <- file.path(base_output_dir, paste0(base_filename, "_trajectories.csv"))
-          readr::write_csv(company_trajectories, trajectories_csv)
-          
-          # Log artifacts to MLflow with retry logic
-          artifact_retry_count <- 0
-          max_artifact_retries <- 3
-          
-          while (artifact_retry_count < max_artifact_retries) {
-            tryCatch({
-              # Verify files exist and are readable before logging
-              if (!file.exists(output_csv)) {
-                stop("Output file does not exist: ", output_csv)
-              }
-              if (!file.exists(trajectories_csv)) {
-                stop("Trajectories file does not exist: ", trajectories_csv)
-              }
-              if (file.access(output_csv, mode = 4) != 0) {
-                stop("Output file is not readable: ", output_csv)
-              }
-              if (file.access(trajectories_csv, mode = 4) != 0) {
-                stop("Trajectories file is not readable: ", trajectories_csv)
-              }
-              
-              # Get file info for debugging
-              file_info <- file.info(output_csv)
-              message("File info for ", output_csv, ":")
-              message("  Size: ", file_info$size, " bytes")
-              message("  Permissions: ", file_info$mode)
-              message("  Owner: ", file_info$uname)
-              message("  Group: ", file_info$grname)
-              
-              # Try to log the artifacts
-              mlflow_log_artifact(output_csv)
-              mlflow_log_artifact(trajectories_csv)
-              message("Successfully logged artifacts: ", output_csv, " and ", trajectories_csv)
-              
-              # Delete the files after successful logging
-              if (file.exists(output_csv)) {
-                file.remove(output_csv)
-                message("Successfully deleted local file: ", output_csv)
-              }
-              if (file.exists(trajectories_csv)) {
-                file.remove(trajectories_csv)
-                message("Successfully deleted local file: ", trajectories_csv)
-              }
-              break
-            }, error = function(e) {
-              artifact_retry_count <<- artifact_retry_count + 1
-              if (artifact_retry_count == max_artifact_retries) {
-                message("Warning: Failed to log artifact after ", max_artifact_retries, " attempts: ", e$message)
-                message("Full error details:")
-                message("  Error message: ", e$message)
-                message("  Error class: ", class(e)[1])
-                message("  Call stack: ", paste(capture.output(sys.calls()), collapse = "\n"))
-              } else {
-                message("Attempt ", artifact_retry_count, " to log artifact failed. Retrying in 5 seconds...")
-                message("Error details: ", e$message)
-                Sys.sleep(5)
-              }
-            })
-          }
-          
-          # Log some summary metrics
-          mlflow_log_metric("total_assets", nrow(npv_results))
-          mlflow_log_metric("total_companies", length(unique(npv_results$company_name)))
-          
-          message("NPV results for ", scenario_geography, " - ", target_scenario, " saved to: ", output_csv)
-        },
-        error = function(e) {
-          # Save error message to text file
-          error_message <- paste0(
-            "Error running trisk model for:\n",
-            "Scenario geography: ", scenario_geography, "\n",
-            "Target scenario: ", target_scenario, "\n",
-            "CCS status: ", parsed_args$ccs_status, "\n",  # Add CCS status to error message
-            "Shock year: ", shock_year, "\n",  # Add shock year to error message
-            "Error message: ", e$message, "\n",
-            "Timestamp: ", format(Sys.time(), "%Y-%m-%d %H:%M:%S")
-          )
-          writeLines(error_message, output_txt)
-          
-          # Log error as a parameter with retry logic
-          error_retry_count <- 0
-          max_error_retries <- 3
-          
-          while (error_retry_count < max_error_retries) {
-            tryCatch({
-              mlflow_log_param("error", e$message)
-              mlflow_log_artifact(output_txt)
-              message("Successfully logged error artifact")
-              
-              # Delete the error file after successful logging
-              if (file.exists(output_txt)) {
-                file.remove(output_txt)
-                message("Successfully deleted local error file: ", output_txt)
-              }
-              break
-            }, error = function(e2) {
-              error_retry_count <<- error_retry_count + 1
-              if (error_retry_count == max_error_retries) {
-                message("Warning: Failed to log error artifact after ", max_error_retries, " attempts: ", e2$message)
-                message("Full error details:")
-                message("  Error message: ", e2$message)
-                message("  Error class: ", class(e2)[1])
-                message("  Call stack: ", paste(capture.output(sys.calls()), collapse = "\n"))
-              } else {
-                message("Attempt ", error_retry_count, " to log error artifact failed. Retrying in 5 seconds...")
-                message("Error details: ", e2$message)
-                Sys.sleep(5)
-              }
-            })
-          }
-          
-          message("ERROR for ", scenario_geography, " - ", target_scenario, ". Error saved to: ", output_txt)
-        })
-        
-        # End the run explicitly with retry logic
-        end_run_retry_count <- 0
-        max_end_run_retries <- 3
-        
-        while (end_run_retry_count < max_end_run_retries) {
+          # Try to run the model, catch any errors
           tryCatch({
+            st_results <- run_trisk_model(
+              assets_data = filtered_assets_data,
+              scenarios_data = scenarios_data,
+              financial_data = financial_data,
+              carbon_data = carbon_data,
+              baseline_scenario = baseline_scenario,
+              target_scenario = target_scenario,
+              scenario_geography = scenario_geography,
+              shock_year = shock_year,
+              discount_rate = current_discount_rate,
+              use_age_cutoff = params_overwrite$use_age_cutoff,
+              use_staggered_shock = params_overwrite$use_staggered_shock
+            )
+
+            npv_results <- st_results$npv_results
+            pd_results <- st_results$pd_results
+            company_trajectories <- st_results$company_trajectories
+
+            # Add trisk_params to each output dataframe
+            npv_results <- npv_results %>%
+              dplyr::bind_cols(trisk_params)
+            
+            pd_results <- pd_results %>%
+              dplyr::bind_cols(trisk_params)
+            
+            # Store results in lists
+            all_npv_results[[length(all_npv_results) + 1]] <- npv_results
+            all_pd_results[[length(all_pd_results) + 1]] <- pd_results
+            all_company_trajectories[[length(all_company_trajectories) + 1]] <- company_trajectories
+            
+            # Save individual NPV results file
+            readr::write_csv(npv_results, output_csv)
+            
+            # Save company trajectories
+            trajectories_csv <- file.path(base_output_dir, paste0(base_filename, "_trajectories.csv"))
+            readr::write_csv(company_trajectories, trajectories_csv)
+            
+            # Log artifacts to MLflow with retry logic
+            artifact_retry_count <- 0
+            max_artifact_retries <- 3
+            
+            while (artifact_retry_count < max_artifact_retries) {
+              tryCatch({
+                # Verify files exist and are readable before logging
+                if (!file.exists(output_csv)) {
+                  stop("Output file does not exist: ", output_csv)
+                }
+                if (!file.exists(trajectories_csv)) {
+                  stop("Trajectories file does not exist: ", trajectories_csv)
+                }
+                if (file.access(output_csv, mode = 4) != 0) {
+                  stop("Output file is not readable: ", output_csv)
+                }
+                if (file.access(trajectories_csv, mode = 4) != 0) {
+                  stop("Trajectories file is not readable: ", trajectories_csv)
+                }
+                
+                # Get file info for debugging
+                file_info <- file.info(output_csv)
+                message("File info for ", output_csv, ":")
+                message("  Size: ", file_info$size, " bytes")
+                message("  Permissions: ", file_info$mode)
+                message("  Owner: ", file_info$uname)
+                message("  Group: ", file_info$grname)
+                
+                # Try to log the artifacts
+                mlflow_log_artifact(output_csv)
+                mlflow_log_artifact(trajectories_csv)
+                message("Successfully logged artifacts: ", output_csv, " and ", trajectories_csv)
+                
+                # Delete the files after successful logging
+                if (file.exists(output_csv)) {
+                  file.remove(output_csv)
+                  message("Successfully deleted local file: ", output_csv)
+                }
+                if (file.exists(trajectories_csv)) {
+                  file.remove(trajectories_csv)
+                  message("Successfully deleted local file: ", trajectories_csv)
+                }
+                break
+              }, error = function(e) {
+                artifact_retry_count <<- artifact_retry_count + 1
+                if (artifact_retry_count == max_artifact_retries) {
+                  message("Warning: Failed to log artifact after ", max_artifact_retries, " attempts: ", e$message)
+                  message("Full error details:")
+                  message("  Error message: ", e$message)
+                  message("  Error class: ", class(e)[1])
+                  message("  Call stack: ", paste(capture.output(sys.calls()), collapse = "\n"))
+                } else {
+                  message("Attempt ", artifact_retry_count, " to log artifact failed. Retrying in 5 seconds...")
+                  message("Error details: ", e$message)
+                  Sys.sleep(5)
+                }
+              })
+            }
+            
+            # Log some summary metrics
+            mlflow_log_metric("total_assets", nrow(npv_results))
+            mlflow_log_metric("total_companies", length(unique(npv_results$company_name)))
+            
+            message("NPV results for ", scenario_geography, " - ", target_scenario, " saved to: ", output_csv)
+            
+            # End the run successfully
             mlflow_end_run()
             message("Successfully ended MLflow run")
-            break
-          }, error = function(e) {
-            end_run_retry_count <<- end_run_retry_count + 1
-            if (end_run_retry_count == max_end_run_retries) {
-              message("Warning: Failed to end MLflow run after ", max_end_run_retries, " attempts: ", e$message)
-            } else {
-              message("Attempt ", end_run_retry_count, " to end run failed. Retrying in 5 seconds...")
-              Sys.sleep(5)
+          },
+          error = function(e) {
+            # Save error message to text file
+            error_message <- paste0(
+              "Error running trisk model for:\n",
+              "Scenario geography: ", scenario_geography, "\n",
+              "Target scenario: ", target_scenario, "\n",
+              "CCS status: ", parsed_args$ccs_status, "\n",
+              "Shock year: ", shock_year, "\n",
+              "Discount rate: ", current_discount_rate, "\n",
+              "Error message: ", e$message, "\n",
+              "Timestamp: ", format(Sys.time(), "%Y-%m-%d %H:%M:%S")
+            )
+            writeLines(error_message, output_txt)
+            
+            # Log error as a parameter with retry logic
+            error_retry_count <- 0
+            max_error_retries <- 3
+            
+            while (error_retry_count < max_error_retries) {
+              tryCatch({
+                # Log error as a parameter
+                mlflow_log_param("error", e$message)
+                
+                # Log error file as artifact
+                mlflow_log_artifact(output_txt)
+                
+                message("Successfully logged error artifact")
+                
+                # Delete the error file after successful logging
+                if (file.exists(output_txt)) {
+                  file.remove(output_txt)
+                  message("Successfully deleted local error file: ", output_txt)
+                }
+                break
+              }, error = function(e2) {
+                error_retry_count <<- error_retry_count + 1
+                if (error_retry_count == max_error_retries) {
+                  message("Warning: Failed to log error artifact after ", max_error_retries, " attempts: ", e2$message)
+                  message("Full error details:")
+                  message("  Error message: ", e2$message)
+                  message("  Error class: ", class(e2)[1])
+                  message("  Call stack: ", paste(capture.output(sys.calls()), collapse = "\n"))
+                } else {
+                  message("Attempt ", error_retry_count, " to log error artifact failed. Retrying in 5 seconds...")
+                  message("Error details: ", e2$message)
+                  Sys.sleep(5)
+                }
+              })
             }
+            
+            message("ERROR for ", scenario_geography, " - ", target_scenario, ". Error saved to: ", output_txt)
+            
+            # End the run with failed status
+            mlflow_set_tag("status", "failed")
+            mlflow_set_tag("error_message", e$message)
+            mlflow_end_run(status = "FAILED")
+            message("Successfully marked run as failed")
           })
-        }
-      }, error = function(e) {
-        message("Error in MLflow run: ", e$message)
-        message("Current GOOGLE_APPLICATION_CREDENTIALS: ", Sys.getenv("GOOGLE_APPLICATION_CREDENTIALS"))
-        # Try to end any active run if there is one
-        tryCatch({
-          mlflow_end_run()
         }, error = function(e) {
-          message("Warning: Could not end MLflow run: ", e$message)
+          message("Error in MLflow run: ", e$message)
+          message("Current GOOGLE_APPLICATION_CREDENTIALS: ", Sys.getenv("GOOGLE_APPLICATION_CREDENTIALS"))
+          # Try to end any active run if there is one
+          tryCatch({
+            mlflow_end_run()
+          }, error = function(e) {
+            message("Warning: Could not end MLflow run: ", e$message)
+          })
+          # Continue with next iteration even if MLflow fails
         })
-        # Continue with next iteration even if MLflow fails
-      })
+      }
     }
   }
+  
+  # Combine all results after processing all discount rates
+  if (length(all_npv_results) > 0) {
+    combined_npv_results <- dplyr::bind_rows(all_npv_results)
+    combined_pd_results <- dplyr::bind_rows(all_pd_results)
+    combined_company_trajectories <- dplyr::bind_rows(all_company_trajectories)
+    
+    # Save combined results
+    combined_npv_file <- file.path(base_output_dir, paste0("combined_npvs_", safe_target_scenario, ".csv"))
+    combined_pd_file <- file.path(base_output_dir, paste0("combined_pd_", safe_target_scenario, ".csv"))
+    combined_trajectories_file <- file.path(base_output_dir, paste0("combined_trajectories_", safe_target_scenario, ".csv"))
+    
+    readr::write_csv(combined_npv_results, combined_npv_file)
+    readr::write_csv(combined_pd_results, combined_pd_file)
+    readr::write_csv(combined_company_trajectories, combined_trajectories_file)
+    
+    message(sprintf("Saved combined results for %s with %d discount rates", 
+                   safe_target_scenario, length(all_npv_results)))
+  }
+  
   # Close progress bar
   close(pb)
 }

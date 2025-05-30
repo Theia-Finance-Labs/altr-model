@@ -65,7 +65,7 @@ def split_by_ccs_status(
     if other_runs:
         other_techs = df[df["run_id"].isin(other_runs)]
 
-    return {"with_ccs": with_ccs, "without_ccs": without_ccs, "other": other_techs}
+    return {"with_ccs": with_ccs, "without_ccs": without_ccs, "both": other_techs}
 
 
 def save_trisk_results(df: pd.DataFrame, output_dir: str, filename: str):
@@ -89,9 +89,9 @@ def save_trisk_results(df: pd.DataFrame, output_dir: str, filename: str):
 
 if __name__ == "__main__":
     # Assuming the artifacts are in workspace/mlflow_results/artifacts
-    artifacts_dir = "workspace/mlflow_results/artifacts"
+    artifacts_dir = "workspace/mlflow_results_v2.1/artifacts"
     # Save one level up from artifacts directory
-    output_dir = "workspace/mlflow_results"
+    output_dir = "workspace/mlflow_results_v2.1"
 
     # Define CCS technologies
     ccs_technologies = ["GasCap", "CoalCap", "OilCap"]

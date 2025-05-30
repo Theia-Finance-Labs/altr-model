@@ -6,10 +6,11 @@ import os
 from pathlib import Path
 import shutil
 import argparse
+import tempfile
 
 # MLflow configuration
 mlflow_tracking_uri = "https://mlflow.1in1000.com:443"
-experiment_name = "age_impact_v1"
+experiment_name = "age_impact_v2.1"
 
 # Available target scenarios:
 #   "AR6_WITCH 5.0_EN_INDCi2030_1000"
@@ -97,7 +98,8 @@ def download_run_artifacts(run_id: str, output_dir: str) -> Dict[str, str]:
 
             # Determine the new filename based on the artifact type
             if "trajectories" in artifact.path.lower():
-                new_filename = f"trajectories_{run_id}.csv"
+                continue
+                # new_filename = f"trajectories_{run_id}.csv"
             else:
                 new_filename = f"npvs_{run_id}.csv"
 
@@ -109,6 +111,46 @@ def download_run_artifacts(run_id: str, output_dir: str) -> Dict[str, str]:
 
             downloaded_files[artifact.path] = new_path
             print(f"Downloaded and renamed {artifact.path} to {new_filename}")
+
+    return downloaded_files
+
+
+def download_run_artifacts(run_id: str, output_dir: str) -> Dict[str, str]:
+    """
+    Download only the CSV artifacts we care about into output_dir,
+    renaming them to include the run_id, and never leaving the
+    original files behind.
+    """
+    downloaded_files = {}
+
+    # List all artifacts in the run
+    artifacts = mlflow.artifacts.list_artifacts(run_id=run_id)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        for artifact in artifacts:
+            if not artifact.path.lower().endswith(".csv"):
+                continue
+
+            # Determine the new filename based on the artifact type
+            if "trajectories" in artifact.path.lower():
+                continue
+                # new_filename = f"trajectories_{run_id}.csv"
+            else:
+                new_filename = f"npvs_{run_id}.csv"
+
+            # download into tmp_dir
+            temp_path = mlflow.artifacts.download_artifacts(
+                run_id=run_id,
+                artifact_path=artifact.path,
+                dst_path=tmp_dir,
+            )
+
+            new_path = os.path.join(output_dir, new_filename)
+
+            # move *from* tmp_dir into your real artifacts folder
+            shutil.move(temp_path, new_path)
+            downloaded_files[artifact.path] = new_path
+            print(f"Downloaded and renamed {artifact.path} → {new_filename}")
 
     return downloaded_files
 
@@ -212,7 +254,7 @@ def main(output_path: str, target_scenario: str = None):
 
 
 if __name__ == "__main__":
-    output_path = "workspace/mlflow_results"
+    output_path = "workspace/mlflow_results_v2.1"
 
     # Available target scenarios :
     #   "AR6_WITCH 5.0_EN_INDCi2030_1000"
