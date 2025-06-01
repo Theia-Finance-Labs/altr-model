@@ -44,14 +44,20 @@ financial_averages:
 downloaded_scenarios:
   type: pandas.CSVDataset
   filepath: data/05_model_input/downloaded_scenarios.csv
+  save_args:
+    mlflow: false  # Don't log intermediate data
 
 downloaded_assets:
   type: pandas.CSVDataset
   filepath: data/05_model_input/downloaded_assets.csv
+  save_args:
+    mlflow: false  # Don't log intermediate data
 
 downloaded_companies:
   type: pandas.CSVDataset
   filepath: data/05_model_input/downloaded_companies.csv
+  save_args:
+    mlflow: false  # Don't log intermediate data
 
 # ================================================
 # ================== OUTPUTS =====================
@@ -60,26 +66,30 @@ downloaded_companies:
 assets_data:
   type: pandas.CSVDataset
   filepath: data/08_reporting/assets_data.csv
+  # MLflow logging enabled (default)
 
 scenarios_data:
   type: pandas.CSVDataset
   filepath: data/08_reporting/scenarios_data.csv
+  # MLflow logging enabled (default)
 
 financial_data:
   type: pandas.CSVDataset
   filepath: data/08_reporting/financial_data.csv
-
-
+  # MLflow logging enabled (default)
 
 merged_companies_net_profits_excel:
   type: pandas.ExcelDataset
   filepath: data/08_reporting/companies_net_profits.xlsx
+  # MLflow logging enabled (default)
 
 companies_npvs_excel:
   type: pandas.ExcelDataset
   filepath: data/08_reporting/companies_npvs.xlsx
+  # MLflow logging enabled (default)
 
 npvs_kde_plot:
   type: matplotlib.MatplotlibWriter
   filepath: data/08_reporting/npvs_kde_plot.png
   versioned: true
+  # MLflow logging enabled (default)

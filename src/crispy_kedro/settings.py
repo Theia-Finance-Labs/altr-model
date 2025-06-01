@@ -2,11 +2,22 @@
 from the Kedro defaults. For further information, including these default values, see
 https://docs.kedro.org/en/stable/kedro_project_setup/settings.html."""
 
+import os
+
 # Instantiated project hooks.
 # For example, after creating a hooks.py and defining a ProjectHooks class there, do
 # from crispy_kedro.hooks import ProjectHooks
 # Hooks are executed in a Last-In-First-Out (LIFO) order.
-# HOOKS = (ProjectHooks(),)
+HOOKS = []
+
+# Conditionally add MLflow hook based on environment variable
+if os.getenv("ENABLE_MLFLOW", "false").lower() == "true":
+    try:
+        from kedro_mlflow.framework.hooks import MlflowHook
+
+        HOOKS.append(MlflowHook())
+    except ImportError:
+        pass
 
 # Installed plugins for which to disable hook auto-registration.
 # DISABLE_HOOKS_FOR_PLUGINS = ("kedro-viz",)

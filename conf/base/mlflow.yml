@@ -1,0 +1,16 @@
+server:
+  mlflow_tracking_uri: "http://mlflow:8080"
+
+tracking:
+  experiment:
+    name: "crispy-trisk-experiments"
+    restore_if_deleted: true
+  run:
+    name: null
+    nested: false
+  params:
+    dict_params:
+      flatten: false
+      recursive: true
+      sep: "."
+    long_params_strategy: "fail" 
