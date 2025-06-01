@@ -84,6 +84,6 @@ financial_data:
 companies_npvs_excel:
   type: kedro_mlflow.io.artifacts.MlflowArtifactDataset
   dataset:
-    type: pandas.ExcelDataset
-    filepath: data/08_reporting/companies_npvs.xlsx
+    type: pandas.CSVDataset
+    filepath: data/08_reporting/companies_npvs.csv
 

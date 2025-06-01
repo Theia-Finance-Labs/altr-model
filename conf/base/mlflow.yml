@@ -3,7 +3,7 @@ server:
 
 tracking:
   experiment:
-    name: "the-experiment" #${runtime_params:mlflow_experiment_name, "crispy-trisk-experiments"}
+    name: "${runtime_params:mlflow_experiment_name, the-experiment}" # Use runtime param with fallback to default
     restore_if_deleted: true
   run:
     # id: null  # Always create new runs - never reuse
