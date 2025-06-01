@@ -1,5 +1,5 @@
 # Use a lightweight Python base image
-FROM python:3.11-slim
+FROM python:3.10-slim
 
 # Set the working directory
 WORKDIR /app
@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Poetry
-RUN pip install poetry
+RUN pip install poetry==1.8.3
 
 # Copy all project files first
 COPY src ./src

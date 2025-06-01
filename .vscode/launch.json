@@ -23,7 +23,7 @@
         "module": "kedro",
         "args": [
           "run",
-          "--tags=download_data"
+          "--tags=download_inputs"
         ],
         "console": "integratedTerminal",
         "justMyCode": false,

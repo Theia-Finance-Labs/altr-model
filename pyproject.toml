@@ -12,16 +12,16 @@ packages = [{ include = "crispy_kedro", from = "src" }]
 ibis-framework = {extras = ["bigquery"], version = "^10.4.0"}
 # TODO proto-plus is forced because only common version for google-cloud-bigquery-storage and google-api-core
 proto-plus = "1.22.3"
-python = "^3.11"
+python = ">=3.10,<3.11.dev0"
 kedro = "^0.19.12"
 pandas = "2.1.*"
 numpy = "1.26.*"
-kedro-datasets = {extras = ["pandas", "ibis"], version = "^7.0.0"}
+kedro-datasets = {extras = ["pandas", "ibis"], version = "^6.0.0"}
 matplotlib = "^3.10.1"
 seaborn = "^0.13.2"
 openpyxl = "^3.1.5"
 kedro-viz = "^11.0.0"
-
+# kedro-mlflow = "^0.14.4"
 
 
 [tool.poetry.group.dev.dependencies]
