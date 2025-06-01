@@ -7,12 +7,12 @@ readme = "README.md"
 packages = [{ include = "crispy_kedro", from = "src" }]
 
 [tool.poetry.dependencies]
+python = ">=3.10,<3.11.dev0"
 # TODO : bigquery here forces the use of numpy 1.26.1 .
 #  If needed to upgrade to numpy >= 2.0.0 one day, then look into ibis-bigquery package
 ibis-framework = {extras = ["bigquery"], version = "^10.4.0"}
 # TODO proto-plus is forced because only common version for google-cloud-bigquery-storage and google-api-core
 proto-plus = "1.22.3"
-python = ">=3.10,<3.11.dev0"
 kedro = "^0.19.12"
 pandas = "2.1.*"
 numpy = "1.26.*"
