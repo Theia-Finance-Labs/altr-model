@@ -19,6 +19,11 @@ if os.getenv("ENABLE_MLFLOW", "false").lower() == "true":
     except ImportError:
         pass
 
+# Add custom MLflow cleanup hook AFTER MLflow hook so it executes FIRST (LIFO)
+from crispy_kedro.hooks import MlflowCleanupHook
+
+HOOKS.append(MlflowCleanupHook())
+
 # Installed plugins for which to disable hook auto-registration.
 # DISABLE_HOOKS_FOR_PLUGINS = ("kedro-viz",)
 
