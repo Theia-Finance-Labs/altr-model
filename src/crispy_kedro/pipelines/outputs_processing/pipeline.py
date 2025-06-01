@@ -18,7 +18,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                     "traj_companies_net_profits_baseline",
                     "traj_companies_net_profits_shock",
                 ],
-                outputs="companies_npvs",
+                outputs="companies_npvs_excel",
             ),
         ],
         tags="trisk",

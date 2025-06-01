@@ -8,21 +8,17 @@ import os
 # For example, after creating a hooks.py and defining a ProjectHooks class there, do
 # from crispy_kedro.hooks import ProjectHooks
 # Hooks are executed in a Last-In-First-Out (LIFO) order.
-HOOKS = []
+# HOOKS = []
 
-# Conditionally add MLflow hook based on environment variable
-if os.getenv("ENABLE_MLFLOW", "false").lower() == "true":
-    try:
-        from kedro_mlflow.framework.hooks import MlflowHook
+# # Conditionally add MLflow hook based on environment variable
+# if os.getenv("ENABLE_MLFLOW", "false").lower() == "true":
+#     try:
+#         from kedro_mlflow.framework.hooks import MlflowHook
 
-        HOOKS.append(MlflowHook())
-    except ImportError:
-        pass
+#         HOOKS.append(MlflowHook())
+#     except ImportError:
+#         pass
 
-# Add custom MLflow cleanup hook AFTER MLflow hook so it executes FIRST (LIFO)
-from crispy_kedro.hooks import MlflowCleanupHook
-
-HOOKS.append(MlflowCleanupHook())
 
 # Installed plugins for which to disable hook auto-registration.
 # DISABLE_HOOKS_FOR_PLUGINS = ("kedro-viz",)
