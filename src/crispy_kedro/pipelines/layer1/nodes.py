@@ -195,8 +195,8 @@ def apply_compensation_shock(
     group_cols = ["asset_id", "sector", "technology"]
     ls_data_to_compensate = traj_assets_prod
 
-    # Calculate late_sudden
-    ls_data_to_compensate["late_sudden"] = np.where(
+    # Calculate asset_trajectory_shock
+    ls_data_to_compensate["asset_trajectory_shock"] = np.where(
         ls_data_to_compensate["year"] <= shock_year,
         ls_data_to_compensate["asset_trajectory_baseline"],
         0,
@@ -207,8 +207,8 @@ def apply_compensation_shock(
         ls_data_to_compensate[ls_data_to_compensate["year"] <= (shock_year - 1)]
         .groupby(group_cols)
         .agg(
-            late_sudden_pre_shock_val=("late_sudden", "last"),
-            late_sudden_pre_shock_tot=("late_sudden", "sum"),
+            late_sudden_pre_shock_val=("asset_trajectory_shock", "last"),
+            late_sudden_pre_shock_tot=("asset_trajectory_shock", "sum"),
         )
         .reset_index()
     )
@@ -250,18 +250,18 @@ def apply_compensation_shock(
     ].fillna(0)
     ls_data_to_compensate["x"] = ls_data_to_compensate["x"].fillna(0)
 
-    # Calculate year_diff and adjust late_sudden
+    # Calculate year_diff and adjust asset_trajectory_shock
     ls_data_to_compensate["year_diff"] = ls_data_to_compensate["year"] - shock_year + 1
-    ls_data_to_compensate["late_sudden"] = np.where(
+    ls_data_to_compensate["asset_trajectory_shock"] = np.where(
         (ls_data_to_compensate["year"] >= shock_year),
         ls_data_to_compensate["late_sudden_pre_shock_val"]
         - ls_data_to_compensate["year_diff"].clip(lower=0) * ls_data_to_compensate["x"],
-        ls_data_to_compensate["late_sudden"],
+        ls_data_to_compensate["asset_trajectory_shock"],
     )
 
     # Select relevant columns
     assets_compensated_shocked = ls_data_to_compensate[
-        ["asset_id", "sector", "technology", "year", "late_sudden"]
+        ["asset_id", "sector", "technology", "year", "asset_trajectory_shock"]
     ]
 
     return assets_compensated_shocked

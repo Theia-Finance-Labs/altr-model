@@ -62,7 +62,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                     "traj_assets_prod",
                     "traj_assets_shocked_phased_out",
                 ],
-                outputs=["traj_companies_shock", "traj_companies_baseline"],
+                outputs=["traj_companies_baseline", "traj_companies_shock"],
             ),
         ],
         tags="trisk",
