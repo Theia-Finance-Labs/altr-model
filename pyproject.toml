@@ -21,7 +21,7 @@ matplotlib = "^3.10.1"
 seaborn = "^0.13.2"
 openpyxl = "^3.1.5"
 kedro-viz = "^11.0.0"
-kedro-mlflow = "0.14.4"
+
 
 
 [tool.poetry.group.dev.dependencies]

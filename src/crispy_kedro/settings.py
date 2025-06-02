@@ -10,16 +10,6 @@ import os
 # Hooks are executed in a Last-In-First-Out (LIFO) order.
 # HOOKS = []
 
-# # Conditionally add MLflow hook based on environment variable
-# if os.getenv("ENABLE_MLFLOW", "false").lower() == "true":
-#     try:
-#         from kedro_mlflow.framework.hooks import MlflowHook
-
-#         HOOKS.append(MlflowHook())
-#     except ImportError:
-#         pass
-
-
 # Installed plugins for which to disable hook auto-registration.
 # DISABLE_HOOKS_FOR_PLUGINS = ("kedro-viz",)
 

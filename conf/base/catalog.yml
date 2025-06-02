@@ -44,20 +44,14 @@ financial_averages:
 downloaded_scenarios:
   type: pandas.CSVDataset
   filepath: data/05_model_input/downloaded_scenarios.csv
-  save_args:
-    mlflow: false  # Don't log intermediate data
 
 downloaded_assets:
   type: pandas.CSVDataset
   filepath: data/05_model_input/downloaded_assets.csv
-  save_args:
-    mlflow: false  # Don't log intermediate data
 
 downloaded_companies:
   type: pandas.CSVDataset
   filepath: data/05_model_input/downloaded_companies.csv
-  save_args:
-    mlflow: false  # Don't log intermediate data
 
 # ================================================
 # ================== OUTPUTS =====================
@@ -80,10 +74,8 @@ financial_data:
   type: pandas.CSVDataset
   filepath: data/08_reporting/financial_data.csv
 
-
+# For compatibility with tests expecting "companies_npvs_excel"
 companies_npvs_excel:
-  type: kedro_mlflow.io.artifacts.MlflowArtifactDataset
-  dataset:
-    type: pandas.CSVDataset
-    filepath: data/08_reporting/companies_npvs.csv
+  type: pandas.CSVDataset
+  filepath: data/08_reporting/companies_npvs.csv
 
