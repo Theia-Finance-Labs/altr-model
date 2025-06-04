@@ -249,7 +249,7 @@ for (baseline_target_pairs in BASELINE_TARGET_PAIR) {
     dir.create(base_output_dir, recursive = TRUE)
   }
 
-  devtools::load_all()
+  devtools::load_all("packages/crispy-kedro/pkg/trisk.model")
   for (target_scenario in unique(target_scenarios)) {  
     for (scenario_geography in unique(available_scenario_geographies$scenario_geography)) {
       # Update progress bar
