@@ -1,4 +1,5 @@
 library(dplyr)
+library(yaml)
 # Parse command line arguments
 args <- commandArgs(trailingOnly = TRUE)
 
@@ -27,8 +28,8 @@ parse_args <- function(args) {
 # Parse the arguments
 parsed_args <- parse_args(args)
 
-if (is.null(parsed_args$config)) {
-  stop("Required argument missing. Please provide --config argument with baseline-target pairs JSON.")
+if (is.null(parsed_args$baseline_target_pairs)) {
+  stop("Required argument missing. Please provide --baseline_target_pairs argument with baseline-target pairs YAML string.")
 }
 
 if (is.null(parsed_args$ccs_status)) {
@@ -68,13 +69,23 @@ if (!is.logical(parsed_args$use_staggered_shock)) {
   stop("Invalid use_staggered_shock. Must be TRUE or FALSE.")
 }
 
-# Parse the JSON configuration
-library(jsonlite)
-json_data <- fromJSON(parsed_args$config)
-if (!is.data.frame(json_data)) {
-  # Convert list to data frame if necessary
-  json_data <- as.data.frame(do.call(rbind, json_data))
-}
+# Parse the YAML configuration from the environment variable
+tryCatch({
+  baseline_target_pairs <- yaml::yaml.load(parsed_args$baseline_target_pairs)
+  if (!is.list(baseline_target_pairs)) {
+    stop("Invalid YAML format. Expected a list of baseline-target pairs.")
+  }
+}, error = function(e) {
+  stop("Failed to parse baseline-target pairs YAML: ", e$message)
+})
+
+# Convert to data frame format for processing
+json_data <- do.call(rbind, lapply(baseline_target_pairs, function(x) {
+  data.frame(
+    baseline = x$baseline,
+    targets = I(list(x$targets))
+  )
+}))
 
 # run kedro run --tags=legacy to get the data
 library(readxl)
