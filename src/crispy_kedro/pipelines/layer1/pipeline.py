@@ -12,6 +12,7 @@ from .nodes import (
     apply_capacity_factors,
     apply_compensation_shock,
     allocate_production_to_companies,
+    capex_function,
 )
 
 
@@ -64,7 +65,11 @@ def create_pipeline(**kwargs) -> Pipeline:
                 ],
                 outputs=["traj_companies_baseline", "traj_companies_shock"],
             ),
-            node(capex_function, inputs=["downloaded_ar6_prices"]),
+            node(
+                func=capex_function,
+                inputs=["downloaded_ar6_prices"],
+                outputs="downloaded_ar6_prices_capex",
+            ),
         ],
         tags="trisk",
     )
