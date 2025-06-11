@@ -361,3 +361,7 @@ def allocate_production_to_companies(
     )
 
     return traj_companies_baseline, traj_companies_shock
+
+
+def capex_function(downloaded_ar6_prices: pd.DataFrame) -> pd.DataFrame:
+    return downloaded_ar6_prices

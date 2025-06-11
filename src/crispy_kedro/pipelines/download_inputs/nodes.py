@@ -17,3 +17,7 @@ def download_assets(assets_forecasts: ibis.expr.types.Table) -> pd.DataFrame:
 
 def download_companies(plant_ownerships: ibis.expr.types.Table) -> pd.DataFrame:
     return plant_ownerships.execute()
+
+
+def download_ar6_prices(ar6_prices: ibis.expr.types.Table) -> pd.DataFrame:
+    return ar6_prices.execute()

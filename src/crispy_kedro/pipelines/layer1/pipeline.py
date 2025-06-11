@@ -64,6 +64,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                 ],
                 outputs=["traj_companies_baseline", "traj_companies_shock"],
             ),
+            node(capex_function, inputs=["downloaded_ar6_prices"]),
         ],
         tags="trisk",
     )

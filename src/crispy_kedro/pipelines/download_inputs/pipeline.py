@@ -4,7 +4,12 @@ generated using Kedro 0.19.12
 """
 
 from kedro.pipeline import node, Pipeline, pipeline  # noqa
-from .nodes import download_scenarios, download_assets, download_companies
+from .nodes import (
+    download_scenarios,
+    download_assets,
+    download_companies,
+    download_ar6_prices,
+)
 from .legacy_nodes import make_assets_data, make_scenarios_data, make_financial_data
 
 
@@ -21,6 +26,11 @@ def create_pipeline(**kwargs) -> Pipeline:
                 download_assets,
                 inputs=["assets_forecasts"],
                 outputs="downloaded_assets",
+            ),
+            node(
+                download_ar6_prices,
+                inputs=["ar6_prices"],
+                outputs="downloaded_ar6_prices",
             ),
             node(
                 download_companies,

@@ -37,9 +37,22 @@ financial_averages:
     backend: bigquery
     project_id: cloud-1in1000
 
+
+ar6_prices:
+  type: ibis.TableDataset
+  table_name: stg_ngfs_ar6_scenario_database_iso3_v1-1
+  database: maxim_staging_scenarios
+  connection:
+    backend: bigquery
+    project_id: cloud-1in1000    
+
 # ================================================
 # ================== INTERMEDIATE ================
 # ================================================
+
+downloaded_ar6_prices:
+  type: pandas.CSVDataset
+  filepath: data/05_model_input/downloaded_ar6_prices.csv
 
 downloaded_scenarios:
   type: pandas.CSVDataset
