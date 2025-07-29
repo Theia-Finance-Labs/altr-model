@@ -17,7 +17,7 @@ def create_pipeline(**kwargs) -> Pipeline:
             node(
                 func=build_price_trajectory,
                 inputs=[
-                    "traj_scenario",
+                    "scenarios_pathways",
                     "params:shock_year",
                 ],
                 outputs="traj_technology_prices",

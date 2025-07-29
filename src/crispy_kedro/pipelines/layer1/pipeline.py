@@ -20,12 +20,12 @@ def create_pipeline(**kwargs) -> Pipeline:
         [
             node(
                 func=calculate_fair_share_perc,
-                inputs=["traj_scenario"],
+                inputs=["scenarios_pathways"],
                 outputs="traj_scenario_fair_share",
             ),
             node(
                 func=compute_target_trajectory,
-                inputs=["traj_assets", "traj_scenario_fair_share"],
+                inputs=["assets_forecasts", "traj_scenario_fair_share"],
                 outputs="traj_assets_target",
             ),
             node(
@@ -38,7 +38,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                 inputs=[
                     "traj_scenario_fair_share",
                     "traj_assets_target_clean",
-                    "traj_assets",
+                    "assets_forecasts",
                 ],
                 outputs="traj_assets_prod",
             ),

@@ -9,11 +9,11 @@ from typing import List, Tuple
 
 def filter_assets(
     assets_forecasts: pd.DataFrame,
-    asset_ids: List[str],
+    company_ids: List[str],
 ) -> pd.DataFrame:
-    if asset_ids:
+    if company_ids:
         filtered_assets_forecasts = assets_forecasts.loc[
-            assets_forecasts.asset_id.isin(asset_ids), :
+            assets_forecasts.company_id.isin(company_ids), :
         ]
     else:
         filtered_assets_forecasts = assets_forecasts
@@ -35,10 +35,6 @@ def filter_assets(
     filtered_assets_forecasts.loc[:, "capacity"] = filtered_assets_forecasts.loc[
         :, "capacity"
     ].astype(float)
-
-    filtered_assets_forecasts = filtered_assets_forecasts.loc[
-        filtered_assets_forecasts["year"] <= 2030, :
-    ]
 
     return filtered_assets_forecasts
 

@@ -31,6 +31,13 @@ def assign_scenario_geographies_to_assets(
         == 0
     ), "Some assets are not assigned to a scenario geography"
 
+    # TODO: remove this after fixed in input data
+    assets_forecasts_with_scenario_geographies = (
+        assets_forecasts_with_scenario_geographies.loc[
+            assets_forecasts_with_scenario_geographies["year"] <= 2030, :
+        ]
+    )
+
     return assets_forecasts_with_scenario_geographies
 
 

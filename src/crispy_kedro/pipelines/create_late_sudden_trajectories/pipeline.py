@@ -11,6 +11,7 @@ from .nodes import (
     late_sudden_misaligned_low_carbon_companies,
     late_sudden_aligned_high_carbon_companies,
     late_sudden_aligned_low_carbon_companies,
+    concatenate_late_sudden_results,
 )
 
 
@@ -69,6 +70,23 @@ def create_pipeline(**kwargs) -> Pipeline:
                     alignment_year="params:alignment_year",
                 ),
                 outputs="late_sudden_aligned_low_carbon_companies",
+            ),
+            node(
+                concatenate_late_sudden_results,
+                inputs=dict(
+                    late_sudden_misaligned_high_carbon="late_sudden_misaligned_high_carbon_companies",
+                    late_sudden_misaligned_low_carbon="late_sudden_misaligned_low_carbon_companies",
+                    late_sudden_aligned_high_carbon="late_sudden_aligned_high_carbon_companies",
+                    late_sudden_aligned_low_carbon="late_sudden_aligned_low_carbon_companies",
+                    misaligned_high_carbon_companies="misaligned_high_carbon_companies",
+                    misaligned_low_carbon_companies="misaligned_low_carbon_companies",
+                    aligned_high_carbon_companies="aligned_high_carbon_companies",
+                    aligned_low_carbon_companies="aligned_low_carbon_companies",
+                ),
+                outputs=[
+                    "all_late_sudden_trajectories",
+                    "all_alignment_classifications",
+                ],
             ),
         ],
         tags="altrisk",

@@ -14,20 +14,16 @@ def build_price_trajectory(
 
     # Part 1: years > shock_year -1 (i.e., years >= shock_year)
     after_shock_target = traj_scenario.loc[
-        (traj_scenario["scenario_year"] >= shock_year)
+        (traj_scenario["year"] >= shock_year)
         & (traj_scenario["scenario_type"] == "target"),
-        ["sector", "technology", "scenario_year", "scenario_price"],
-    ].rename(
-        columns={"scenario_year": "year", "scenario_price": "scenario_price_target"}
-    )
+        ["sector", "technology", "year", "scenario_price"],
+    ].rename(columns={"scenario_price": "scenario_price_target"})
 
     after_shock_baseline = traj_scenario.loc[
-        (traj_scenario["scenario_year"] >= shock_year)
+        (traj_scenario["year"] >= shock_year)
         & (traj_scenario["scenario_type"] == "baseline"),
-        ["sector", "technology", "scenario_year", "scenario_price"],
-    ].rename(
-        columns={"scenario_year": "year", "scenario_price": "scenario_price_baseline"}
-    )
+        ["sector", "technology", "year", "scenario_price"],
+    ].rename(columns={"scenario_price": "scenario_price_baseline"})
     after_shock = pd.merge(
         after_shock_target,
         after_shock_baseline,
@@ -90,15 +86,10 @@ def build_price_trajectory(
     )
     # Part 2: years <= shock_year
     before_shock = traj_scenario.loc[
-        (traj_scenario["scenario_year"] <= shock_year)
+        (traj_scenario["year"] <= shock_year)
         & (traj_scenario["scenario_type"] == "baseline"),
-        ["sector", "technology", "scenario_year", "scenario_price"],
-    ].rename(
-        columns={
-            "scenario_year": "year",
-            "scenario_price": "scenario_price_late_sudden",
-        }
-    )
+        ["sector", "technology", "year", "scenario_price"],
+    ].rename(columns={"scenario_price": "scenario_price_late_sudden"})
 
     # Combine both parts
     final_result = pd.concat([before_shock, interpolated_prices], ignore_index=True)
@@ -111,10 +102,8 @@ def build_price_trajectory(
     # Add baseline price
     traj_price_baseline = traj_scenario.loc[
         traj_scenario["scenario_type"] == "baseline",
-        ["sector", "technology", "scenario_year", "scenario_price"],
-    ].rename(
-        columns={"scenario_year": "year", "scenario_price": "scenario_price_baseline"}
-    )
+        ["sector", "technology", "year", "scenario_price"],
+    ].rename(columns={"scenario_price": "scenario_price_baseline"})
 
     traj_price_late_sudden = pd.merge(
         traj_price_late_sudden,

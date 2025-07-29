@@ -686,3 +686,133 @@ def late_sudden_aligned_low_carbon_companies(
     )
 
     return result
+
+
+def concatenate_late_sudden_results(
+    late_sudden_misaligned_high_carbon: pd.DataFrame,
+    late_sudden_misaligned_low_carbon: pd.DataFrame,
+    late_sudden_aligned_high_carbon: pd.DataFrame,
+    late_sudden_aligned_low_carbon: pd.DataFrame,
+    misaligned_high_carbon_companies: pd.DataFrame,
+    misaligned_low_carbon_companies: pd.DataFrame,
+    aligned_high_carbon_companies: pd.DataFrame,
+    aligned_low_carbon_companies: pd.DataFrame,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Concatenate all late sudden trajectory results and all alignment classification results.
+
+    Parameters
+    ----------
+    late_sudden_misaligned_high_carbon : pd.DataFrame
+        Late sudden trajectories for misaligned high carbon companies
+    late_sudden_misaligned_low_carbon : pd.DataFrame
+        Late sudden trajectories for misaligned low carbon companies
+    late_sudden_aligned_high_carbon : pd.DataFrame
+        Late sudden trajectories for aligned high carbon companies
+    late_sudden_aligned_low_carbon : pd.DataFrame
+        Late sudden trajectories for aligned low carbon companies
+    misaligned_high_carbon_companies : pd.DataFrame
+        Classification results for misaligned high carbon companies
+    misaligned_low_carbon_companies : pd.DataFrame
+        Classification results for misaligned low carbon companies
+    aligned_high_carbon_companies : pd.DataFrame
+        Classification results for aligned high carbon companies
+    aligned_low_carbon_companies : pd.DataFrame
+        Classification results for aligned low carbon companies
+
+    Returns
+    -------
+    Tuple[pd.DataFrame, pd.DataFrame]
+        First dataframe: All late sudden trajectories concatenated with alignment_type column
+        Second dataframe: All alignment classifications concatenated with alignment_type column
+    """
+
+    # Concatenate late sudden trajectories with alignment type labels
+    late_sudden_dfs = []
+
+    if not late_sudden_misaligned_high_carbon.empty:
+        df = late_sudden_misaligned_high_carbon.copy()
+        df["alignment_type"] = "misaligned_high_carbon"
+        late_sudden_dfs.append(df)
+
+    if not late_sudden_misaligned_low_carbon.empty:
+        df = late_sudden_misaligned_low_carbon.copy()
+        df["alignment_type"] = "misaligned_low_carbon"
+        late_sudden_dfs.append(df)
+
+    if not late_sudden_aligned_high_carbon.empty:
+        df = late_sudden_aligned_high_carbon.copy()
+        df["alignment_type"] = "aligned_high_carbon"
+        late_sudden_dfs.append(df)
+
+    if not late_sudden_aligned_low_carbon.empty:
+        df = late_sudden_aligned_low_carbon.copy()
+        df["alignment_type"] = "aligned_low_carbon"
+        late_sudden_dfs.append(df)
+
+    # Concatenate all late sudden results
+    if late_sudden_dfs:
+        all_late_sudden = pd.concat(late_sudden_dfs, ignore_index=True)
+    else:
+        # Create empty dataframe with expected columns if no data
+        all_late_sudden = pd.DataFrame(
+            columns=[
+                "company_id",
+                "scenario_geography",
+                "sector",
+                "technology",
+                "year",
+                "company_activity",
+                "company_trajectory_baseline",
+                "company_trajectory_target",
+                "company_trajectory_latesudden",
+                "late_sudden_phase",
+                "alignment_type",
+            ]
+        )
+
+    # Concatenate alignment classifications with alignment type labels
+    alignment_dfs = []
+
+    if not misaligned_high_carbon_companies.empty:
+        df = misaligned_high_carbon_companies.copy()
+        df["alignment_type"] = "misaligned_high_carbon"
+        alignment_dfs.append(df)
+
+    if not misaligned_low_carbon_companies.empty:
+        df = misaligned_low_carbon_companies.copy()
+        df["alignment_type"] = "misaligned_low_carbon"
+        alignment_dfs.append(df)
+
+    if not aligned_high_carbon_companies.empty:
+        df = aligned_high_carbon_companies.copy()
+        df["alignment_type"] = "aligned_high_carbon"
+        alignment_dfs.append(df)
+
+    if not aligned_low_carbon_companies.empty:
+        df = aligned_low_carbon_companies.copy()
+        df["alignment_type"] = "aligned_low_carbon"
+        alignment_dfs.append(df)
+
+    # Concatenate all alignment results
+    if alignment_dfs:
+        all_alignments = pd.concat(alignment_dfs, ignore_index=True)
+    else:
+        # Create empty dataframe with expected columns if no data
+        all_alignments = pd.DataFrame(
+            columns=[
+                "company_id",
+                "scenario_geography",
+                "sector",
+                "technology",
+                "increasing",
+                "sum_forecast",
+                "sum_target",
+                "end_forecast",
+                "end_target",
+                "aligned",
+                "alignment_type",
+            ]
+        )
+
+    return all_late_sudden, all_alignments

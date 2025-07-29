@@ -13,9 +13,7 @@ def calculate_fair_share_perc(
 ) -> pd.DataFrame:
 
     # Sort the DataFrame by scenario_year so that the first value in each group is the earliest year
-    scenarios_fair_share = scenarios.sort_values("scenario_year").rename(
-        columns={"scenario_year": "year"}
-    )
+    scenarios_fair_share = scenarios.sort_values("year")
 
     # Compute the first scenario_pathway value for each group
     # This ensures we capture the value after sorting by scenario_year
@@ -54,12 +52,6 @@ def calculate_fair_share_perc(
             "scenario_capacity_factor",
         ],
     ]
-
-    # scenario_traj_target = (
-    #     scenarios.loc[scenarios["scenario_type"] == "target"]
-    #     .sort_values(["technology", "scenario_year"])
-    #     .rename(columns={"scenario_year": "year"})
-    # )
 
     return scenarios_fair_share
 

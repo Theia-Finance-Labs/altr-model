@@ -25,7 +25,7 @@ def create_pipeline(**kwargs) -> Pipeline:
             ),
             node(
                 func=filter_assets,
-                inputs=["downloaded_assets", "params:asset_ids"],
+                inputs=["downloaded_assets", "params:company_ids"],
                 outputs="assets_forecasts",
             ),
             node(

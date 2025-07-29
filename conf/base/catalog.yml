@@ -79,3 +79,12 @@ companies_npvs_excel:
   type: pandas.CSVDataset
   filepath: data/08_reporting/companies_npvs.csv
 
+# Combined late sudden trajectories and alignment classifications
+all_late_sudden_trajectories:
+  type: pandas.CSVDataset
+  filepath: data/08_reporting/all_late_sudden_trajectories.csv
+
+all_alignment_classifications:
+  type: pandas.CSVDataset
+  filepath: data/08_reporting/all_alignment_classifications.csv
+
