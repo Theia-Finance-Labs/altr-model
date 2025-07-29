@@ -57,13 +57,10 @@ def filter_scenarios(
 
 
 def filter_companies(
-    plant_ownerships: pd.DataFrame, filtered_plant_detail: pd.DataFrame
+    companies_ownership_tree: pd.DataFrame, company_ids: List[str]
 ) -> pd.DataFrame:
-    filtered_assets = filtered_plant_detail["asset_id"].unique().tolist()
-    plant_ownership_df = plant_ownerships.loc[
-        plant_ownerships["asset_id"].isin(filtered_assets)
+    companies_ownership_tree_filtered = companies_ownership_tree.loc[
+        companies_ownership_tree["company_id"].isin(company_ids)
     ]
 
-    return plant_ownership_df.loc[
-        :, ["asset_id", "owner_name", "company_id", "normalized_ownership"]
-    ]
+    return companies_ownership_tree_filtered

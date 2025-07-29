@@ -12,6 +12,7 @@ from .nodes import (
     late_sudden_aligned_high_carbon_companies,
     late_sudden_aligned_low_carbon_companies,
     concatenate_late_sudden_results,
+    plot_late_sudden_trajectories,
 )
 
 
@@ -87,6 +88,14 @@ def create_pipeline(**kwargs) -> Pipeline:
                     "all_late_sudden_trajectories",
                     "all_alignment_classifications",
                 ],
+            ),
+            node(
+                plot_late_sudden_trajectories,
+                inputs=dict(
+                    late_sudden_trajectories="all_late_sudden_trajectories",
+                    assets_forecasts="assets_forecasts",
+                ),
+                outputs=None,
             ),
         ],
         tags="altrisk",

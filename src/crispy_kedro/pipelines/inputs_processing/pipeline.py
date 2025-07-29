@@ -30,7 +30,7 @@ def create_pipeline(**kwargs) -> Pipeline:
             ),
             node(
                 func=filter_companies,
-                inputs=["downloaded_companies", "assets_forecasts"],
+                inputs=["downloaded_companies", "params:company_ids"],
                 outputs="companies_ownership_tree",
             ),
         ],
