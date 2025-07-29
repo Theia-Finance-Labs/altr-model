@@ -5,9 +5,11 @@
 # Link: https://docs.kedro.org/en/0.19.12/configuration/parameters.html
 
 
-baseline_scenario: "NGFS2024_GCAM_CP"
-target_scenario: "NGFS2024_GCAM_NZ2050"
-scenario_geography: "Global"
+baseline_scenario: "AR6_WITCH 5.0_EN_INDCi2030_1000_NDCp"
+target_scenario: "AR6_WITCH 5.0_CO_CurPol"
+
+# baseline_scenario: "NGFS2024_GCAM_CP"
+# target_scenario: "NGFS2024_GCAM_NZ2050"
 
 asset_ids:
   - L100000104929

@@ -16,7 +16,7 @@ from .nodes import (
 
 
 def create_pipeline(**kwargs) -> Pipeline:
-    return pipeline(
+    return Pipeline(
         [
             node(
                 func=calculate_fair_share_perc,

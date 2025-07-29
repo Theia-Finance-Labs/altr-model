@@ -39,7 +39,8 @@ def calculate_fair_share_perc(
         "fair_share_perc"
     ].fillna(0)
 
-    scenarios_fair_share = scenarios_fair_share[
+    scenarios_fair_share = scenarios_fair_share.loc[
+        :,
         [
             "scenario",
             "scenario_type",
@@ -51,7 +52,7 @@ def calculate_fair_share_perc(
             "fair_share_perc",
             "scenario_price",
             "scenario_capacity_factor",
-        ]
+        ],
     ]
 
     # scenario_traj_target = (
@@ -128,8 +129,8 @@ def compute_target_trajectory(
     )
 
     # Return only the desired columns
-    return target_trajectory_final[
-        ["asset_id", "sector", "technology", "year", "asset_trajectory_target"]
+    return target_trajectory_final.loc[
+        :, ["asset_id", "sector", "technology", "year", "asset_trajectory_target"]
     ]
 
 
@@ -137,7 +138,7 @@ def apply_capacity_factors(
     traj_scenario: pd.DataFrame,
     traj_assets_target_clean: pd.DataFrame,
     traj_assets: pd.DataFrame,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+) -> pd.DataFrame:
     def merge_and_apply(df_assets: pd.DataFrame, scenario_type: str) -> pd.DataFrame:
         capfac = traj_scenario.loc[
             traj_scenario["scenario_type"] == scenario_type,
@@ -258,8 +259,8 @@ def apply_compensation_shock(
     )
 
     # Select relevant columns
-    assets_compensated_shocked = ls_data_to_compensate[
-        ["asset_id", "sector", "technology", "year", "asset_trajectory_shock"]
+    assets_compensated_shocked = ls_data_to_compensate.loc[
+        :, ["asset_id", "sector", "technology", "year", "asset_trajectory_shock"]
     ]
 
     return assets_compensated_shocked

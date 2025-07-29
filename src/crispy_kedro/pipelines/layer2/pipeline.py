@@ -12,7 +12,7 @@ from .nodes import (
 
 
 def create_pipeline(**kwargs) -> Pipeline:
-    return pipeline(
+    return Pipeline(
         [
             node(
                 func=build_price_trajectory,
