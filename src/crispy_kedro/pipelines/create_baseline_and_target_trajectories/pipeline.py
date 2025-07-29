@@ -9,7 +9,7 @@ from .nodes import (
     aggregate_assets_to_company_level,
     calculate_tmsr,
     compute_scenarios_trajectories,
-    compute_companies_trajectories,
+    create_companies_trajectories,
 )
 
 
@@ -45,12 +45,12 @@ def create_pipeline(**kwargs) -> Pipeline:
                 outputs="scenarios_trajectories",
             ),
             node(
-                compute_companies_trajectories,
+                create_companies_trajectories,
                 inputs=dict(
                     companies_forecasts="companies_technology_forecasts",
                     scenarios_trajectories="scenarios_trajectories",
                 ),
-                outputs="assets_trajectories",
+                outputs="companies_trajectories",
             ),
         ],
         tags="altrisk",

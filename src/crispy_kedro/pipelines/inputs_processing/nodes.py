@@ -53,6 +53,10 @@ def filter_scenarios(
     scenarios_pathways_filtered.loc[:, "scenario_pathway"] = (
         scenarios_pathways_filtered.loc[:, "scenario_pathway"].astype(float)
     )
+
+    scenarios_pathways_filtered = scenarios_pathways_filtered.rename(
+        columns={"scenario_year": "year"}
+    )
     return scenarios_pathways_filtered
 
 

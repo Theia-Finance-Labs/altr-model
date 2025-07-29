@@ -5,11 +5,13 @@ generated using Kedro 0.19.12
 
 import pandas as pd
 import numpy as np
+from typing import Tuple, cast
 
 
 def assign_scenario_geographies_to_assets(
     assets_forecasts: pd.DataFrame, scenarios_pathways: pd.DataFrame
 ) -> pd.DataFrame:
+    """Assign scenario geographies to assets based on country mapping."""
     geographies_to_countries_mapping = (
         scenarios_pathways[["scenario_geography", "country_iso2_list"]]
         .drop_duplicates()
@@ -33,7 +35,7 @@ def assign_scenario_geographies_to_assets(
 
 
 def aggregate_assets_to_company_level(assets_forecasts: pd.DataFrame) -> pd.DataFrame:
-
+    """Aggregate asset-level data to company level by calculating total activity."""
     assets_forecasts["asset_activity"] = (
         assets_forecasts["capacity"] * assets_forecasts["capacity_factor"]
     )
@@ -60,14 +62,12 @@ def aggregate_assets_to_company_level(assets_forecasts: pd.DataFrame) -> pd.Data
 def calculate_tmsr(
     scenarios_pathways: pd.DataFrame,
 ) -> pd.DataFrame:
-
-    # Sort the DataFrame by scenario_year so that the first value in each group is the earliest year
-    scenarios_fair_share = scenarios_pathways.sort_values("scenario_year").rename(
-        columns={"scenario_year": "year"}
-    )
+    """Calculate Technology Market Share Rate (TMSR) for scenarios."""
+    # Sort the DataFrame by year so that the first value in each group is the earliest year
+    scenarios_fair_share = scenarios_pathways.sort_values("year")
 
     # Compute the first scenario_pathway value for each group
-    # This ensures we capture the value after sorting by scenario_year
+    # This ensures we capture the value after sorting by year
     scenarios_fair_share["first_pathway"] = scenarios_fair_share.groupby(
         ["scenario", "sector", "scenario_geography", "technology"]
     )["scenario_pathway"].transform("first")
@@ -88,8 +88,8 @@ def calculate_tmsr(
 
 def compute_scenarios_trajectories(
     scenarios_pathways: pd.DataFrame, companies_forecasts: pd.DataFrame
-):
-
+) -> pd.DataFrame:
+    """Compute scenario trajectories by merging pathways with company forecasts."""
     companies_activity_first_year = (
         companies_forecasts.sort_values("year")
         .groupby(
@@ -129,7 +129,7 @@ def compute_scenarios_trajectories(
 
     # Compute the lagged production scenario
     scenarios_trajectories["activity_change_scenario"] = scenarios_trajectories.groupby(
-        ["scenario", "scenario_geography", "sector", "technology"]
+        ["company_id", "scenario", "scenario_geography", "sector", "technology"]
     )["scenario_activity"].transform(lambda x: x - x.shift(1))
 
     scenarios_trajectories["scenario_activity_change"] = scenarios_trajectories[
@@ -152,55 +152,58 @@ def compute_scenarios_trajectories(
         ]
     ]
 
+    def pivot_scenarios_trajectories(
+        scenarios_trajectories: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """
+        Pivot scenarios trajectories from long to wide format in a single elegant operation.
+        Converts baseline and target scenario types into separate columns.
+        """
+
+        # Define index columns and values to pivot
+        index_cols = [
+            "company_id",
+            "scenario_geography",
+            "sector",
+            "technology",
+            "year",
+        ]
+
+        values_to_pivot = [
+            "scenario_price",
+            "scenario_capacity_factor",
+            "scenario_activity",
+            "scenario_activity_change",
+        ]
+
+        # Single pivot operation for both baseline and target
+        pivoted_scenarios = scenarios_trajectories.pivot_table(
+            index=index_cols,
+            columns="scenario_type",
+            values=values_to_pivot,
+            aggfunc="first",
+        )
+
+        # Flatten MultiIndex columns elegantly
+        pivoted_scenarios.columns = [
+            f"{value}_{scenario_type}"
+            for value, scenario_type in pivoted_scenarios.columns.values
+        ]
+
+        # Reset index to get regular DataFrame
+        pivoted_scenarios = pivoted_scenarios.reset_index()
+
+        return pivoted_scenarios
+
     # First pivot the scenarios trajectories
-    pivoted_scenarios = pivot_scenarios_trajectories(scenarios_trajectories)
-
-    return pivoted_scenarios
-
-
-def pivot_scenarios_trajectories(scenarios_trajectories):
-    """
-    Pivot scenarios trajectories from long to wide format in a single elegant operation.
-    Converts baseline and target scenario types into separate columns.
-    """
-
-    # Define index columns and values to pivot
-    index_cols = [
-        "company_id",
-        "scenario_geography",
-        "sector",
-        "technology",
-        "year",
-    ]
-
-    values_to_pivot = [
-        "scenario_price",
-        "scenario_capacity_factor",
-        "scenario_activity",
-        "scenario_activity_change",
-    ]
-
-    # Single pivot operation for both baseline and target
-    pivoted_scenarios = scenarios_trajectories.pivot_table(
-        index=index_cols,
-        columns="scenario_type",
-        values=values_to_pivot,
-        aggfunc="first",
+    pivoted_scenarios = pivot_scenarios_trajectories(
+        cast(pd.DataFrame, scenarios_trajectories)
     )
 
-    # Flatten MultiIndex columns elegantly
-    pivoted_scenarios.columns = [
-        f"{value}_{scenario_type}"
-        for value, scenario_type in pivoted_scenarios.columns.values
-    ]
-
-    # Reset index to get regular DataFrame
-    pivoted_scenarios = pivoted_scenarios.reset_index()
-
     return pivoted_scenarios
 
 
-def compute_companies_trajectories(
+def create_companies_trajectories(
     companies_forecasts: pd.DataFrame, scenarios_trajectories: pd.DataFrame
 ) -> pd.DataFrame:
     """
@@ -221,14 +224,40 @@ def compute_companies_trajectories(
     # Sort to ensure proper ordering
     companies_trajectories = companies_trajectories.sort_values(group_cols + ["year"])
 
-    # TARGET TRAJECTORY: straightforward approach
-    # Forward fill company_activity and apply cumsum
+    # TARGET TRAJECTORY: constrained cumsum approach (no extra raw columns)
     companies_trajectories["_company_activity_filled"] = companies_trajectories.groupby(
         group_cols
     )["company_activity"].transform("ffill")
+
+    # Compute initial cumsum of target changes
     companies_trajectories["_target_cumsum"] = companies_trajectories.groupby(
         group_cols
     )["scenario_activity_change_target"].transform("cumsum")
+
+    # Determine where trajectory would drop to or below zero
+    _target_traj_unconstrained = (
+        companies_trajectories["_company_activity_filled"]
+        + companies_trajectories["_target_cumsum"]
+    )
+    companies_trajectories["_temp_target_zero"] = (
+        _target_traj_unconstrained <= 0
+    ).astype(int)
+    companies_trajectories["_target_zero_reached"] = (
+        companies_trajectories.groupby(group_cols)["_temp_target_zero"]
+        .transform("cummax")
+        .astype(bool)
+    )
+
+    # Apply zero‐floor constraint directly on the cumsum values
+    companies_trajectories["_target_cumsum"] = np.where(
+        companies_trajectories["_target_zero_reached"],
+        -companies_trajectories[
+            "_company_activity_filled"
+        ],  # ensures trajectory hits 0 exactly
+        companies_trajectories["_target_cumsum"],
+    )
+
+    # Final target trajectory
     companies_trajectories["company_trajectory_target"] = (
         companies_trajectories["_company_activity_filled"]
         + companies_trajectories["_target_cumsum"]
@@ -254,13 +283,10 @@ def compute_companies_trajectories(
         companies_trajectories["year"] > companies_trajectories["_last_valid_year"]
     ).fillna(False)
 
-    # Compute cumsum only for projection period, starting fresh for each group
+    # Prepare masked baseline changes (only during projection period)
     companies_trajectories["_baseline_changes_masked"] = companies_trajectories[
         "scenario_activity_change_baseline"
     ].where(companies_trajectories["_is_projection_period"], 0)
-    companies_trajectories["_baseline_cumsum"] = companies_trajectories.groupby(
-        group_cols
-    )["_baseline_changes_masked"].transform("cumsum")
 
     # Get last valid value for projection
     companies_trajectories["_last_valid_value"] = companies_trajectories.groupby(
@@ -269,7 +295,31 @@ def compute_companies_trajectories(
         lambda x: x.dropna().iloc[-1] if x.notna().any() else np.nan
     )
 
-    # Build baseline trajectory: original where available, projected where not
+    # Compute baseline constrained cumsum (no extra raw column)
+    companies_trajectories["_baseline_cumsum"] = companies_trajectories.groupby(
+        group_cols
+    )["_baseline_changes_masked"].transform("cumsum")
+
+    _baseline_traj_unconstrained = (
+        companies_trajectories["_last_valid_value"]
+        + companies_trajectories["_baseline_cumsum"]
+    )
+    companies_trajectories["_temp_baseline_zero"] = (
+        _baseline_traj_unconstrained <= 0
+    ).astype(int)
+    companies_trajectories["_baseline_zero_reached"] = (
+        companies_trajectories.groupby(group_cols)["_temp_baseline_zero"]
+        .transform("cummax")
+        .astype(bool)
+    )
+
+    companies_trajectories["_baseline_cumsum"] = np.where(
+        companies_trajectories["_baseline_zero_reached"],
+        -companies_trajectories["_last_valid_value"],  # clamp so trajectory exactly 0
+        companies_trajectories["_baseline_cumsum"],
+    )
+
+    # Combine original data with constrained projections
     companies_trajectories["company_trajectory_baseline"] = np.where(
         companies_trajectories["_is_projection_period"],
         companies_trajectories["_last_valid_value"]
@@ -280,11 +330,15 @@ def compute_companies_trajectories(
     # Clean up temporary columns
     temp_cols = [
         "_company_activity_filled",
-        "_target_cumsum",
+        # "_target_cumsum",
+        "_temp_target_zero",
+        "_target_zero_reached",
         "_last_valid_year",
         "_is_projection_period",
         "_baseline_changes_masked",
-        "_baseline_cumsum",
+        # "_baseline_cumsum",
+        "_temp_baseline_zero",
+        "_baseline_zero_reached",
         "_last_valid_value",
     ]
     companies_trajectories = companies_trajectories.drop(columns=temp_cols)
