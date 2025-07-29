@@ -1,4 +1,4 @@
-# This is a boilerplate parameters config generated for pipeline 'layer1'
+# This is a boilerplate parameters config generated for pipeline 'create_baseline_and_target_trajectories'
 # using Kedro 0.19.12.
 #
 # Documentation for this file format can be found in "Parameters"

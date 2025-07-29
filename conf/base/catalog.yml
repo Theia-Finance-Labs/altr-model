@@ -3,7 +3,7 @@
 # ================================================
 
 
-assets_forecasts:
+db_assets_forecasts:
   type: ibis.TableDataset
   table_name: assets_forecasts
   database: bertrand_marts
@@ -21,7 +21,7 @@ plant_ownerships:
     project_id: cloud-1in1000
 
 
-scenarios:
+db_scenarios_pathways:
   type: ibis.TableDataset
   table_name: scenarios
   database: bertrand_marts
@@ -78,4 +78,13 @@ financial_data:
 companies_npvs_excel:
   type: pandas.CSVDataset
   filepath: data/08_reporting/companies_npvs.csv
+
+# Combined late sudden trajectories and alignment classifications
+all_late_sudden_trajectories:
+  type: pandas.CSVDataset
+  filepath: data/08_reporting/all_late_sudden_trajectories.csv
+
+all_alignment_classifications:
+  type: pandas.CSVDataset
+  filepath: data/08_reporting/all_alignment_classifications.csv
 
