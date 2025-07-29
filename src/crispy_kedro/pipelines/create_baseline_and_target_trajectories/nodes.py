@@ -4,40 +4,42 @@ generated using Kedro 0.19.12
 """
 
 import pandas as pd
+import numpy as np
 
 
 def assign_scenario_geographies_to_assets(
-    assets_data: pd.DataFrame, scenarios_data: pd.DataFrame
+    assets_forecasts: pd.DataFrame, scenarios_pathways: pd.DataFrame
 ) -> pd.DataFrame:
     geographies_to_countries_mapping = (
-        scenarios_data[["scenario_geography", "country_iso2_list"]]
+        scenarios_pathways[["scenario_geography", "country_iso2_list"]]
         .drop_duplicates()
         .assign(country_iso2_list=lambda x: x.country_iso2_list.str.split(","))
         .explode("country_iso2_list")
         .rename(columns={"country_iso2_list": "country_iso2"})
     )
 
-    assets_data_with_scenario_geographies = assets_data.merge(
+    assets_forecasts_with_scenario_geographies = assets_forecasts.merge(
         geographies_to_countries_mapping,
         on="country_iso2",
         how="left",
     )
 
     assert (
-        assets_data_with_scenario_geographies["scenario_geography"].isna().sum() == 0
+        assets_forecasts_with_scenario_geographies["scenario_geography"].isna().sum()
+        == 0
     ), "Some assets are not assigned to a scenario geography"
 
-    return assets_data_with_scenario_geographies
+    return assets_forecasts_with_scenario_geographies
 
 
-def aggregate_assets_to_company_level(assets_data: pd.DataFrame) -> pd.DataFrame:
+def aggregate_assets_to_company_level(assets_forecasts: pd.DataFrame) -> pd.DataFrame:
 
-    assets_data["asset_activity"] = (
-        assets_data["capacity"] * assets_data["capacity_factor"]
+    assets_forecasts["asset_activity"] = (
+        assets_forecasts["capacity"] * assets_forecasts["capacity_factor"]
     )
 
-    assets_data_aggregated = (
-        assets_data.groupby(
+    companies_forecasts = (
+        assets_forecasts.groupby(
             [
                 "company_id",
                 "company_name",
@@ -48,22 +50,19 @@ def aggregate_assets_to_company_level(assets_data: pd.DataFrame) -> pd.DataFrame
             ]
         )
         .agg({"asset_activity": "sum"})
+        .rename({"asset_activity": "company_activity"}, axis=1)
         .reset_index()
     )
 
-    assets_data_aggregated["asset_activity"] = assets_data_aggregated[
-        "asset_activity"
-    ].astype(float)
-
-    return assets_data_aggregated
+    return companies_forecasts
 
 
 def calculate_tmsr(
-    scenarios_data: pd.DataFrame,
+    scenarios_pathways: pd.DataFrame,
 ) -> pd.DataFrame:
 
     # Sort the DataFrame by scenario_year so that the first value in each group is the earliest year
-    scenarios_fair_share = scenarios_data.sort_values("scenario_year").rename(
+    scenarios_fair_share = scenarios_pathways.sort_values("scenario_year").rename(
         columns={"scenario_year": "year"}
     )
 
@@ -88,11 +87,11 @@ def calculate_tmsr(
 
 
 def compute_scenarios_trajectories(
-    scenarios_data: pd.DataFrame, assets_data: pd.DataFrame
+    scenarios_pathways: pd.DataFrame, companies_forecasts: pd.DataFrame
 ):
 
-    asset_activity_first_year = (
-        assets_data.sort_values("year")
+    companies_activity_first_year = (
+        companies_forecasts.sort_values("year")
         .groupby(
             ["company_id", "scenario_geography", "sector", "technology"], as_index=False
         )
@@ -102,36 +101,192 @@ def compute_scenarios_trajectories(
                 "scenario_geography",
                 "sector",
                 "technology",
-                "asset_activity",
+                "year",
+                "company_activity",
             ]
         ]
-        .rename({"asset_activity": "initial_technology_production"}, axis=1)
+        .rename(
+            {
+                "company_activity": "initial_company_activity",
+                "year": "first_year_of_activity",
+            },
+            axis=1,
+        )
     )
 
-    scenarios_data = scenarios_data.merge(
-        asset_activity_first_year, on=["sector", "technology", "scenario_geography"]
+    scenarios_trajectories = scenarios_pathways.merge(
+        companies_activity_first_year, on=["sector", "technology", "scenario_geography"]
     )
 
     # Apply TMSR/SMSP scenario targets
-    scenarios_data["scenario_activity"] = scenarios_data[
-        "initial_technology_production"
-    ] * (1 + scenarios_data["tmsr"])
+    scenarios_trajectories["scenario_activity"] = scenarios_trajectories[
+        "initial_company_activity"
+    ] * (1 + scenarios_trajectories["tmsr"])
 
-    scenarios_data["production"] = (
-        scenarios_data["production"] * scenarios_data["fair_share_perc"]
-    )
-    return
-
-
-def compute_assets_trajectories(
-    assets_data: pd.DataFrame, scenarios_trajectories: pd.DataFrame
-):
-    assets_data = assets_data.merge(
-        scenarios_trajectories,
-        on=["company_id", "company_name", "sector", "technology", "year"],
+    scenarios_trajectories = scenarios_trajectories.sort_values(
+        by=["scenario", "company_id", "sector", "technology", "year"]
     )
 
-    assets_data["production"] = (
-        assets_data["production"] * assets_data["fair_share_perc"]
+    # Compute the lagged production scenario
+    scenarios_trajectories["activity_change_scenario"] = scenarios_trajectories.groupby(
+        ["scenario", "scenario_geography", "sector", "technology"]
+    )["scenario_activity"].transform(lambda x: x - x.shift(1))
+
+    scenarios_trajectories["scenario_activity_change"] = scenarios_trajectories[
+        "activity_change_scenario"
+    ].fillna(0)
+
+    scenarios_trajectories = scenarios_trajectories[
+        [
+            "company_id",
+            "scenario",
+            "scenario_type",
+            "scenario_geography",
+            "sector",
+            "technology",
+            "year",
+            "scenario_price",
+            "scenario_capacity_factor",
+            "scenario_activity",
+            "scenario_activity_change",
+        ]
+    ]
+
+    # First pivot the scenarios trajectories
+    pivoted_scenarios = pivot_scenarios_trajectories(scenarios_trajectories)
+
+    return pivoted_scenarios
+
+
+def pivot_scenarios_trajectories(scenarios_trajectories):
+    """
+    Pivot scenarios trajectories from long to wide format in a single elegant operation.
+    Converts baseline and target scenario types into separate columns.
+    """
+
+    # Define index columns and values to pivot
+    index_cols = [
+        "company_id",
+        "scenario_geography",
+        "sector",
+        "technology",
+        "year",
+    ]
+
+    values_to_pivot = [
+        "scenario_price",
+        "scenario_capacity_factor",
+        "scenario_activity",
+        "scenario_activity_change",
+    ]
+
+    # Single pivot operation for both baseline and target
+    pivoted_scenarios = scenarios_trajectories.pivot_table(
+        index=index_cols,
+        columns="scenario_type",
+        values=values_to_pivot,
+        aggfunc="first",
     )
-    return
+
+    # Flatten MultiIndex columns elegantly
+    pivoted_scenarios.columns = [
+        f"{value}_{scenario_type}"
+        for value, scenario_type in pivoted_scenarios.columns.values
+    ]
+
+    # Reset index to get regular DataFrame
+    pivoted_scenarios = pivoted_scenarios.reset_index()
+
+    return pivoted_scenarios
+
+
+def compute_companies_trajectories(
+    companies_forecasts: pd.DataFrame, scenarios_trajectories: pd.DataFrame
+) -> pd.DataFrame:
+    """
+    Compute asset trajectories by merging with pivoted scenarios trajectories.
+    Uses clean year-based logic for baseline projection starting point.
+    """
+
+    # Merge with assets forecasts
+    companies_trajectories = scenarios_trajectories.merge(
+        companies_forecasts.drop(columns=["company_name"]),
+        on=["company_id", "scenario_geography", "sector", "technology", "year"],
+        how="left",
+    )
+
+    # Define groupby columns
+    group_cols = ["company_id", "scenario_geography", "sector", "technology"]
+
+    # Sort to ensure proper ordering
+    companies_trajectories = companies_trajectories.sort_values(group_cols + ["year"])
+
+    # TARGET TRAJECTORY: straightforward approach
+    # Forward fill company_activity and apply cumsum
+    companies_trajectories["_company_activity_filled"] = companies_trajectories.groupby(
+        group_cols
+    )["company_activity"].transform("ffill")
+    companies_trajectories["_target_cumsum"] = companies_trajectories.groupby(
+        group_cols
+    )["scenario_activity_change_target"].transform("cumsum")
+    companies_trajectories["company_trajectory_target"] = (
+        companies_trajectories["_company_activity_filled"]
+        + companies_trajectories["_target_cumsum"]
+    )
+
+    # BASELINE TRAJECTORY: preserve original data, project only after it ends
+    # Find last year with valid company_activity for each group
+    companies_trajectories["_last_valid_year"] = (
+        companies_trajectories.groupby(group_cols)
+        .apply(
+            lambda group: (
+                group.loc[group["company_activity"].notna(), "year"].max()
+                if group["company_activity"].notna().any()
+                else None
+            )
+        )
+        .reindex(companies_trajectories.set_index(group_cols).index)
+        .values
+    )
+
+    # Create mask for years after the last valid data year
+    companies_trajectories["_is_projection_period"] = (
+        companies_trajectories["year"] > companies_trajectories["_last_valid_year"]
+    ).fillna(False)
+
+    # Compute cumsum only for projection period, starting fresh for each group
+    companies_trajectories["_baseline_changes_masked"] = companies_trajectories[
+        "scenario_activity_change_baseline"
+    ].where(companies_trajectories["_is_projection_period"], 0)
+    companies_trajectories["_baseline_cumsum"] = companies_trajectories.groupby(
+        group_cols
+    )["_baseline_changes_masked"].transform("cumsum")
+
+    # Get last valid value for projection
+    companies_trajectories["_last_valid_value"] = companies_trajectories.groupby(
+        group_cols
+    )["company_activity"].transform(
+        lambda x: x.dropna().iloc[-1] if x.notna().any() else np.nan
+    )
+
+    # Build baseline trajectory: original where available, projected where not
+    companies_trajectories["company_trajectory_baseline"] = np.where(
+        companies_trajectories["_is_projection_period"],
+        companies_trajectories["_last_valid_value"]
+        + companies_trajectories["_baseline_cumsum"],
+        companies_trajectories["company_activity"],
+    )
+
+    # Clean up temporary columns
+    temp_cols = [
+        "_company_activity_filled",
+        "_target_cumsum",
+        "_last_valid_year",
+        "_is_projection_period",
+        "_baseline_changes_masked",
+        "_baseline_cumsum",
+        "_last_valid_value",
+    ]
+    companies_trajectories = companies_trajectories.drop(columns=temp_cols)
+
+    return companies_trajectories

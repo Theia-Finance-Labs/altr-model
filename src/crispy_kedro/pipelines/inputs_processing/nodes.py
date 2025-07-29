@@ -12,31 +12,48 @@ def filter_assets(
     asset_ids: List[str],
 ) -> pd.DataFrame:
     if asset_ids:
-        filtered_assets = assets_forecasts.loc[
+        filtered_assets_forecasts = assets_forecasts.loc[
             assets_forecasts.asset_id.isin(asset_ids), :
         ]
     else:
-        filtered_assets = assets_forecasts
+        filtered_assets_forecasts = assets_forecasts
 
-    filtered_assets = filtered_assets.rename({"production_year": "year"}, axis=1)
-    filtered_assets.loc[:, "capacity"] = filtered_assets.loc[:, "capacity"].astype(
-        float
+    assert (
+        len(
+            filtered_assets_forecasts.groupby(["asset_id", "technology"])[
+                "production_year"
+            ]
+            .transform("min")
+            .unique()
+        )
+        == 1
+    ), "first production_year should be the same for all assets and technologies"
+
+    filtered_assets_forecasts = filtered_assets_forecasts.rename(
+        {"production_year": "year"}, axis=1
     )
+    filtered_assets_forecasts.loc[:, "capacity"] = filtered_assets_forecasts.loc[
+        :, "capacity"
+    ].astype(float)
 
-    return filtered_assets
+    filtered_assets_forecasts = filtered_assets_forecasts.loc[
+        filtered_assets_forecasts["year"] <= 2030, :
+    ]
+
+    return filtered_assets_forecasts
 
 
 def filter_scenarios(
-    scenarios: pd.DataFrame, target_scenario: str, baseline_scenario: str
+    scenarios_pathways: pd.DataFrame, target_scenario: str, baseline_scenario: str
 ) -> pd.DataFrame:
-    traj_scenario = scenarios.loc[
-        scenarios.scenario.isin([target_scenario, baseline_scenario]), :
+    scenarios_pathways_filtered = scenarios_pathways.loc[
+        scenarios_pathways.scenario.isin([target_scenario, baseline_scenario]), :
     ]
 
-    traj_scenario.loc[:, "scenario_pathway"] = traj_scenario.loc[
-        :, "scenario_pathway"
-    ].astype(float)
-    return traj_scenario
+    scenarios_pathways_filtered.loc[:, "scenario_pathway"] = (
+        scenarios_pathways_filtered.loc[:, "scenario_pathway"].astype(float)
+    )
+    return scenarios_pathways_filtered
 
 
 def filter_companies(

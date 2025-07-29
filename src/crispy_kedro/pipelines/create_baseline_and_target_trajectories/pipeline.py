@@ -9,7 +9,7 @@ from .nodes import (
     aggregate_assets_to_company_level,
     calculate_tmsr,
     compute_scenarios_trajectories,
-    compute_assets_trajectories,
+    compute_companies_trajectories,
 )
 
 
@@ -18,31 +18,36 @@ def create_pipeline(**kwargs) -> Pipeline:
         [
             node(
                 assign_scenario_geographies_to_assets,
-                inputs=dict(assets_data="traj_assets", scenarios_data="traj_scenario"),
-                outputs="assets_data_with_scenario_geographies",
+                inputs=dict(
+                    assets_forecasts="assets_forecasts",
+                    scenarios_pathways="scenarios_pathways",
+                ),
+                outputs="assets_forecasts_with_scenario_geographies",
             ),
             node(
                 aggregate_assets_to_company_level,
-                inputs=dict(assets_data="assets_data_with_scenario_geographies"),
+                inputs=dict(
+                    assets_forecasts="assets_forecasts_with_scenario_geographies"
+                ),
                 outputs="companies_technology_forecasts",
             ),
             node(
                 func=calculate_tmsr,
-                inputs=dict(scenarios_data="traj_scenario"),
+                inputs=dict(scenarios_pathways="scenarios_pathways"),
                 outputs="traj_scenario_tmsr",
             ),
             node(
                 compute_scenarios_trajectories,
                 inputs=dict(
-                    scenarios_data="traj_scenario_tmsr",
-                    assets_data="companies_technology_forecasts",
+                    scenarios_pathways="traj_scenario_tmsr",
+                    companies_forecasts="companies_technology_forecasts",
                 ),
                 outputs="scenarios_trajectories",
             ),
             node(
-                compute_assets_trajectories,
+                compute_companies_trajectories,
                 inputs=dict(
-                    assets_data="companies_technology_forecasts",
+                    companies_forecasts="companies_technology_forecasts",
                     scenarios_trajectories="scenarios_trajectories",
                 ),
                 outputs="assets_trajectories",

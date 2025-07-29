@@ -3,7 +3,7 @@
 # ================================================
 
 
-assets_forecasts:
+db_assets_forecasts:
   type: ibis.TableDataset
   table_name: assets_forecasts
   database: bertrand_marts
@@ -21,7 +21,7 @@ plant_ownerships:
     project_id: cloud-1in1000
 
 
-scenarios:
+db_scenarios_pathways:
   type: ibis.TableDataset
   table_name: scenarios
   database: bertrand_marts

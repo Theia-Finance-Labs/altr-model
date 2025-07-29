@@ -14,12 +14,12 @@ def create_pipeline(**kwargs) -> Pipeline:
         [
             node(
                 download_scenarios,
-                inputs=["scenarios"],
+                inputs=["db_scenarios_pathways"],
                 outputs="downloaded_scenarios",
             ),
             node(
                 download_assets,
-                inputs=["assets_forecasts"],
+                inputs=["db_assets_forecasts"],
                 outputs="downloaded_assets",
             ),
             node(
