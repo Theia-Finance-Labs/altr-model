@@ -17,9 +17,7 @@ def filter_assets(
         filtered_assets = assets_forecasts
 
     filtered_assets.rename(columns={"production_year": "year"}, inplace=True)
-    filtered_assets["asset_trajectory"] = filtered_assets["asset_trajectory"].astype(
-        float
-    )
+    filtered_assets["capacity"] = filtered_assets["capacity"].astype(float)
 
     return filtered_assets
 

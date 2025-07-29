@@ -79,7 +79,7 @@ def compute_target_trajectory(
         .groupby(["asset_id", "sector", "technology"], as_index=False)
         .first()
         .drop(columns="year")
-        .rename(columns={"asset_trajectory": "initial_asset_trajectory"})
+        .rename(columns={"capacity": "initial_asset_trajectory"})
     )
 
     # Merge the first-year values with the target scenario to get a row for every (technology, year)
@@ -106,9 +106,7 @@ def compute_target_trajectory(
     # Merge with raw_trajectory to recover the original asset_trajectory values where available
     target_trajectory_final = pd.merge(
         target_trajectory,
-        raw_trajectory[
-            ["asset_id", "sector", "technology", "year", "asset_trajectory"]
-        ],
+        raw_trajectory[["asset_id", "sector", "technology", "year", "capacity"]],
         how="left",
         on=["asset_id", "sector", "technology", "year"],
     )
@@ -121,7 +119,7 @@ def compute_target_trajectory(
     # For the first year, use the original asset_trajectory; for subsequent years, use the extended value.
     target_trajectory_final["asset_trajectory_target"] = np.where(
         target_trajectory_final["year"] == target_trajectory_final["first_year"],
-        target_trajectory_final["asset_trajectory"],
+        target_trajectory_final["capacity"],
         target_trajectory_final["asset_trajectory_extended"],
     )
 
@@ -166,7 +164,7 @@ def apply_capacity_factors(
     traj_assets_target_prod = merge_and_apply(traj_assets_target_clean, "target")
 
     traj_assets_baseline_prod = traj_assets.rename(
-        columns=({"asset_trajectory": "asset_trajectory_baseline"})
+        columns=({"capacity": "asset_trajectory_baseline"})
     )
     traj_assets_baseline_prod = merge_and_apply(traj_assets_baseline_prod, "baseline")
 
