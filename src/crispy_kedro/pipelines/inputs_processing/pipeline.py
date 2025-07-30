@@ -8,6 +8,7 @@ from .nodes import (
     filter_scenarios,
     filter_assets,
     filter_companies,
+    allocate_assets_to_companies,
 )
 
 
@@ -25,13 +26,21 @@ def create_pipeline(**kwargs) -> Pipeline:
             ),
             node(
                 func=filter_assets,
-                inputs=["downloaded_assets", "params:company_ids"],
+                inputs=["downloaded_assets", "companies_ownership_tree"],
                 outputs="assets_forecasts",
             ),
             node(
                 func=filter_companies,
                 inputs=["downloaded_companies", "params:company_ids"],
                 outputs="companies_ownership_tree",
+            ),
+            node(
+                func=allocate_assets_to_companies,
+                inputs=[
+                    "assets_forecasts",
+                    "companies_ownership_tree",
+                ],
+                outputs="allocated_assets_to_companies",
             ),
         ],
         tags=["altrisk", "trisk"],

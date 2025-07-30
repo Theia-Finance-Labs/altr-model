@@ -25,7 +25,7 @@ def create_pipeline(**kwargs) -> Pipeline:
             ),
             node(
                 func=compute_target_trajectory,
-                inputs=["assets_forecasts", "traj_scenario_fair_share"],
+                inputs=["allocated_assets_to_companies", "traj_scenario_fair_share"],
                 outputs="traj_assets_target",
             ),
             node(
@@ -38,7 +38,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                 inputs=[
                     "traj_scenario_fair_share",
                     "traj_assets_target_clean",
-                    "assets_forecasts",
+                    "allocated_assets_to_companies",
                 ],
                 outputs="traj_assets_prod",
             ),

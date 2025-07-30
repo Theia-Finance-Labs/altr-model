@@ -9,14 +9,12 @@ from typing import List, Tuple
 
 def filter_assets(
     assets_forecasts: pd.DataFrame,
-    company_ids: List[str],
+    companies_ownership_tree: pd.DataFrame,
 ) -> pd.DataFrame:
-    if company_ids:
-        filtered_assets_forecasts = assets_forecasts.loc[
-            assets_forecasts.company_id.isin(company_ids), :
-        ]
-    else:
-        filtered_assets_forecasts = assets_forecasts
+    owned_assets = companies_ownership_tree["asset_id"].unique().tolist()
+    filtered_assets_forecasts = assets_forecasts.loc[
+        assets_forecasts["asset_id"].isin(owned_assets), :
+    ].reset_index(drop=True)
 
     assert (
         len(
@@ -44,7 +42,7 @@ def filter_scenarios(
 ) -> pd.DataFrame:
     scenarios_pathways_filtered = scenarios_pathways.loc[
         scenarios_pathways.scenario.isin([target_scenario, baseline_scenario]), :
-    ]
+    ].reset_index(drop=True)
 
     scenarios_pathways_filtered.loc[:, "scenario_pathway"] = (
         scenarios_pathways_filtered.loc[:, "scenario_pathway"].astype(float)
@@ -59,8 +57,60 @@ def filter_scenarios(
 def filter_companies(
     companies_ownership_tree: pd.DataFrame, company_ids: List[str]
 ) -> pd.DataFrame:
-    companies_ownership_tree_filtered = companies_ownership_tree.loc[
-        companies_ownership_tree["company_id"].isin(company_ids)
-    ]
+    if company_ids:
+        filtered_companies_ownership_tree = companies_ownership_tree.loc[
+            companies_ownership_tree.company_id.isin(company_ids), :
+        ].reset_index(drop=True)
+    else:
+        filtered_companies_ownership_tree = companies_ownership_tree
 
-    return companies_ownership_tree_filtered
+    return filtered_companies_ownership_tree
+
+
+def allocate_assets_to_companies(
+    assets_data: pd.DataFrame,
+    companies_ownership: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Allocate asset capacities to companies based on ownership percentages.
+
+    This function joins assets with company ownership data and calculates
+    the owned asset capacity based on ownership percentages.
+
+    Args:
+        assets_data: DataFrame with asset information and capacities
+        companies_ownership: DataFrame with company ownership information
+
+    Returns:
+        DataFrame with allocated asset capacities to companies
+    """
+
+    # Prepare assets data - rename production_year to year for joining
+    assets_prepared = assets_data.rename(columns={"production_year": "year"})
+
+    # Prepare companies data - ensure we have the right column names
+    companies_prepared = companies_ownership.copy()
+
+    # Handle technology column naming - companies data uses 'technology_category'
+    if (
+        "technology_category" in companies_prepared.columns
+        and "technology" in assets_prepared.columns
+    ):
+        companies_prepared = companies_prepared.rename(
+            columns={"technology_category": "technology"}
+        )
+
+    # Merge assets with ownership data on asset_id, sector, technology, and year
+    merged_data = pd.merge(
+        assets_prepared,
+        companies_prepared,
+        on=["asset_id", "sector", "technology", "year"],
+        how="inner",
+    )
+
+    # Calculate owned asset capacity (allocated capacity based on ownership percentage)
+    merged_data["capacity"] = (
+        merged_data["capacity"] * merged_data["ownership_percentage"]
+    )
+
+    return merged_data

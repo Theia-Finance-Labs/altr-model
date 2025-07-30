@@ -14,8 +14,8 @@ db_assets_forecasts:
 
 plant_ownerships:
   type: ibis.TableDataset
-  table_name: int_ast_power_gem_plant_ownerships
-  database: bertrand_int_assets
+  table_name: companies_ownership_tree
+  database: bertrand_marts
   connection:
     backend: bigquery
     project_id: cloud-1in1000
@@ -52,6 +52,10 @@ downloaded_assets:
 downloaded_companies:
   type: pandas.CSVDataset
   filepath: data/05_model_input/downloaded_companies.csv
+
+allocated_assets_to_companies:
+  type: pandas.CSVDataset
+  filepath: data/06_model_output/allocated_assets_to_companies.csv
 
 # ================================================
 # ================== OUTPUTS =====================
