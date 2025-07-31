@@ -7,7 +7,7 @@
 
 baseline_scenario: "AR6_WITCH 5.0_EN_INDCi2030_1000_NDCp"
 target_scenario: "AR6_WITCH 5.0_CO_CurPol"
-
+max_forecast_horizon: 7
 # baseline_scenario: "NGFS2024_GCAM_CP"
 # target_scenario: "NGFS2024_GCAM_NZ2050"
 
@@ -71,6 +71,8 @@ company_ids:
   - CN_7722628059401344530
   - CP_8330338626919936863
   - CN_1360399328064062148
+  - CN_8681405977967504167 # big coalcap owner
+  - CN_3317751369345081384 # big coalcap owner
   # - CP_8946810093738744904
   # - CP_2797755769691290188
   # - CP_3950272361254819974

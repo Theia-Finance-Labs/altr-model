@@ -2,6 +2,21 @@
     "version": "0.2.0",
     "configurations": [
       {
+        "name": "Kedro Run AltRisk with reporting (Debug)",
+        "type": "debugpy",
+        "request": "launch",
+        "module": "kedro",
+        "args": [
+          "run",
+          "--tags=altrisk,reporting"
+        ],
+        "console": "integratedTerminal",
+        "justMyCode": false,
+        "env": {
+          "PYTHONBREAKPOINT": "ipdb.set_trace"
+        }
+      },
+      {
         "name": "Kedro Run AltRisk (Debug)",
         "type": "debugpy",
         "request": "launch",

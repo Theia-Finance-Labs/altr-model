@@ -5,14 +5,18 @@ generated using Kedro 0.19.12
 
 import pandas as pd
 from typing import List, Tuple
+import numpy as np
 
 
 def filter_scenarios(
     scenarios_pathways: pd.DataFrame, target_scenario: str, baseline_scenario: str
 ) -> pd.DataFrame:
+
     scenarios_pathways_filtered = scenarios_pathways.loc[
         scenarios_pathways.scenario.isin([target_scenario, baseline_scenario]), :
-    ].reset_index(drop=True)
+    ]
+
+    scenarios_pathways_filtered = scenarios_pathways_filtered.reset_index(drop=True)
 
     scenarios_pathways_filtered.loc[:, "scenario_pathway"] = (
         scenarios_pathways_filtered.loc[:, "scenario_pathway"].astype(float)
@@ -27,12 +31,19 @@ def filter_scenarios(
 def filter_companies(
     companies_ownership_tree: pd.DataFrame, company_ids: List[str]
 ) -> pd.DataFrame:
+
+    # TODO : remove with logic to handle multi-level ownerships,
+    # and/or fix in the data when owner=parent ie 1 company id matches 2 owewrnships levels
+    companies_owners = companies_ownership_tree[
+        companies_ownership_tree["ownership_level"] == 1
+    ]
+
     if company_ids:
-        filtered_companies_ownership_tree = companies_ownership_tree.loc[
-            companies_ownership_tree.company_id.isin(company_ids), :
+        filtered_companies_ownership_tree = companies_owners.loc[
+            companies_owners.company_id.isin(company_ids), :
         ].reset_index(drop=True)
     else:
-        filtered_companies_ownership_tree = companies_ownership_tree
+        filtered_companies_ownership_tree = companies_owners
 
     return filtered_companies_ownership_tree
 
@@ -40,11 +51,24 @@ def filter_companies(
 def filter_assets(
     assets_forecasts: pd.DataFrame,
     companies_ownership_tree: pd.DataFrame,
+    scenarios_pathways: pd.DataFrame,
+    max_forecast_horizon: int,
 ) -> pd.DataFrame:
     owned_assets = companies_ownership_tree["asset_id"].unique().tolist()
     filtered_assets_forecasts = assets_forecasts.loc[
         assets_forecasts["asset_id"].isin(owned_assets), :
-    ].reset_index(drop=True)
+    ]
+
+    scenario_start_year = scenarios_pathways.year.min()
+    forecast_end_year = scenario_start_year + max_forecast_horizon
+
+    filtered_assets_forecasts = filtered_assets_forecasts.loc[
+        (scenario_start_year <= filtered_assets_forecasts.production_year)
+        & (filtered_assets_forecasts.production_year <= forecast_end_year),
+        :,
+    ]
+
+    filtered_assets_forecasts = filtered_assets_forecasts.reset_index(drop=True)
 
     assert (
         len(
@@ -68,8 +92,8 @@ def filter_assets(
 
 
 def allocate_assets_to_companies(
-    assets_data: pd.DataFrame,
-    companies_ownership: pd.DataFrame,
+    assets_forecasts: pd.DataFrame,
+    companies_ownership_tree: pd.DataFrame,
 ) -> pd.DataFrame:
     """
     Allocate asset capacities to companies based on ownership percentages.
@@ -86,10 +110,10 @@ def allocate_assets_to_companies(
     """
 
     # Prepare assets data - rename production_year to year for joining
-    assets_prepared = assets_data.rename(columns={"production_year": "year"})
+    assets_prepared = assets_forecasts.rename(columns={"production_year": "year"})
 
     # Prepare companies data - ensure we have the right column names
-    companies_prepared = companies_ownership.copy()
+    companies_prepared = companies_ownership_tree.copy()
 
     # Handle technology column naming - companies data uses 'technology_category'
     if (
@@ -133,3 +157,55 @@ def determine_increasing_or_decreasing_techs(
     tech_trend = tech_first_last.loc[:, ["increasing"]].reset_index()
 
     return tech_trend
+
+
+def determine_lifetime_per_technology(
+    scenarios_pathways: pd.DataFrame,
+) -> pd.DataFrame:
+
+    # TODO: remove to replace by the real scenarios data
+
+    rng = np.random.RandomState(seed=42)
+
+    unique_combinations = scenarios_pathways[["sector", "technology"]].drop_duplicates()
+    unique_combinations["lifetime_years"] = rng.randint(
+        10, 20, size=len(unique_combinations)
+    )
+
+    return unique_combinations
+
+
+def determine_assets_retirement_dates(
+    assets_forecasts: pd.DataFrame,
+    lifetime_per_technology: pd.DataFrame,
+) -> pd.DataFrame:
+
+    assets_retirement_dates = pd.merge(
+        assets_forecasts,
+        lifetime_per_technology,
+        on=["sector", "technology"],
+        how="left",
+    )
+
+    assets_retirement_dates = assets_retirement_dates[
+        (
+            assets_retirement_dates["asset_age"]
+            <= assets_retirement_dates["lifetime_years"]
+        )
+        & (
+            assets_retirement_dates["asset_age"]
+            >= assets_retirement_dates["lifetime_years"]
+        )
+    ]
+
+    assert assets_retirement_dates.shape[0] == len(
+        assets_retirement_dates[
+            ["asset_id", "company_id", "technology"]
+        ].drop_duplicates()
+    )
+
+    assets_retirement_dates = assets_retirement_dates.loc[
+        :, ["asset_id", "company_id", "sector", "technology", "year", "capacity"]
+    ].rename(columns={"year": "retirement_year"})
+
+    return assets_retirement_dates
