@@ -9,6 +9,7 @@ from .nodes import (
     filter_assets,
     filter_companies,
     allocate_assets_to_companies,
+    determine_increasing_or_decreasing_techs,
 )
 
 
@@ -25,14 +26,14 @@ def create_pipeline(**kwargs) -> Pipeline:
                 outputs="scenarios_pathways",
             ),
             node(
-                func=filter_assets,
-                inputs=["downloaded_assets", "companies_ownership_tree"],
-                outputs="assets_forecasts",
-            ),
-            node(
                 func=filter_companies,
                 inputs=["downloaded_companies", "params:company_ids"],
                 outputs="companies_ownership_tree",
+            ),
+            node(
+                func=filter_assets,
+                inputs=["downloaded_assets", "companies_ownership_tree"],
+                outputs="assets_forecasts",
             ),
             node(
                 func=allocate_assets_to_companies,
@@ -41,6 +42,11 @@ def create_pipeline(**kwargs) -> Pipeline:
                     "companies_ownership_tree",
                 ],
                 outputs="allocated_assets_to_companies",
+            ),
+            node(
+                determine_increasing_or_decreasing_techs,
+                inputs=["scenarios_pathways"],
+                outputs="increasing_or_decreasing_techs",
             ),
         ],
         tags=["altrisk", "trisk"],

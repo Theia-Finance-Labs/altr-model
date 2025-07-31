@@ -7,36 +7,6 @@ import pandas as pd
 from typing import List, Tuple
 
 
-def filter_assets(
-    assets_forecasts: pd.DataFrame,
-    companies_ownership_tree: pd.DataFrame,
-) -> pd.DataFrame:
-    owned_assets = companies_ownership_tree["asset_id"].unique().tolist()
-    filtered_assets_forecasts = assets_forecasts.loc[
-        assets_forecasts["asset_id"].isin(owned_assets), :
-    ].reset_index(drop=True)
-
-    assert (
-        len(
-            filtered_assets_forecasts.groupby(["asset_id", "technology"])[
-                "production_year"
-            ]
-            .transform("min")
-            .unique()
-        )
-        == 1
-    ), "first production_year should be the same for all assets and technologies"
-
-    filtered_assets_forecasts = filtered_assets_forecasts.rename(
-        {"production_year": "year"}, axis=1
-    )
-    filtered_assets_forecasts.loc[:, "capacity"] = filtered_assets_forecasts.loc[
-        :, "capacity"
-    ].astype(float)
-
-    return filtered_assets_forecasts
-
-
 def filter_scenarios(
     scenarios_pathways: pd.DataFrame, target_scenario: str, baseline_scenario: str
 ) -> pd.DataFrame:
@@ -65,6 +35,36 @@ def filter_companies(
         filtered_companies_ownership_tree = companies_ownership_tree
 
     return filtered_companies_ownership_tree
+
+
+def filter_assets(
+    assets_forecasts: pd.DataFrame,
+    companies_ownership_tree: pd.DataFrame,
+) -> pd.DataFrame:
+    owned_assets = companies_ownership_tree["asset_id"].unique().tolist()
+    filtered_assets_forecasts = assets_forecasts.loc[
+        assets_forecasts["asset_id"].isin(owned_assets), :
+    ].reset_index(drop=True)
+
+    assert (
+        len(
+            filtered_assets_forecasts.groupby(["asset_id", "technology"])[
+                "production_year"
+            ]
+            .transform("min")
+            .unique()
+        )
+        == 1
+    ), "first production_year should be the same for all assets and technologies"
+
+    filtered_assets_forecasts = filtered_assets_forecasts.rename(
+        {"production_year": "year"}, axis=1
+    )
+    filtered_assets_forecasts.loc[:, "capacity"] = filtered_assets_forecasts.loc[
+        :, "capacity"
+    ].astype(float)
+
+    return filtered_assets_forecasts
 
 
 def allocate_assets_to_companies(
@@ -114,3 +114,22 @@ def allocate_assets_to_companies(
     )
 
     return merged_data
+
+
+def determine_increasing_or_decreasing_techs(
+    scenarios_pathways: pd.DataFrame,
+) -> pd.DataFrame:
+
+    # 1) Compute which techs are “increasing” (low‑carbon) vs “decreasing”:
+    target_only = scenarios_pathways.query("scenario_type == 'target'")
+    sorted_by_year = target_only.sort_values("year")
+    tech_first_last = sorted_by_year.groupby("technology")["scenario_pathway"].agg(
+        first="first", last="last"
+    )
+    tech_first_last.loc[:, "increasing"] = (
+        tech_first_last["last"] > tech_first_last["first"]
+    )
+
+    tech_trend = tech_first_last.loc[:, ["increasing"]].reset_index()
+
+    return tech_trend

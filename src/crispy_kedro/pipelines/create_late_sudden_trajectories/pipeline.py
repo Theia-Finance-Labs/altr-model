@@ -23,7 +23,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                 determine_companies_technologies_alignment,
                 inputs=dict(
                     companies_trajectories="companies_trajectories",
-                    scenarios_pathways="scenarios_pathways",
+                    increasing_or_decreasing_techs="increasing_or_decreasing_techs",
                 ),
                 outputs=[
                     "misaligned_high_carbon_companies",
@@ -89,14 +89,14 @@ def create_pipeline(**kwargs) -> Pipeline:
                     "all_alignment_classifications",
                 ],
             ),
-            node(
-                plot_late_sudden_trajectories,
-                inputs=dict(
-                    late_sudden_trajectories="all_late_sudden_trajectories",
-                    assets_forecasts="allocated_assets_to_companies",
-                ),
-                outputs=None,
-            ),
+            # node(
+            #     plot_late_sudden_trajectories,
+            #     inputs=dict(
+            #         late_sudden_trajectories="all_late_sudden_trajectories",
+            #         assets_forecasts="allocated_assets_to_companies",
+            #     ),
+            #     outputs=None,
+            # ),
         ],
         tags="altrisk",
     )

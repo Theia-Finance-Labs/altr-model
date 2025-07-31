@@ -14,29 +14,16 @@ import re
 
 def determine_companies_technologies_alignment(
     companies_trajectories: pd.DataFrame,
-    scenarios_pathways: pd.DataFrame,
+    increasing_or_decreasing_techs: pd.DataFrame,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     Decide whether each company-technology pathway is aligned with the target
     scenario and split results into four buckets.
     """
-    key_cols = ["company_id", "scenario_geography", "sector", "technology"]
-
-    # 1) Compute which techs are “increasing” (low‑carbon) vs “decreasing”:
-    target_only = scenarios_pathways.query("scenario_type == 'target'")
-    sorted_by_year = target_only.sort_values("year")
-    tech_first_last = sorted_by_year.groupby("technology")["scenario_pathway"].agg(
-        first="first", last="last"
-    )
-    tech_first_last.loc[:, "increasing"] = (
-        tech_first_last["last"] > tech_first_last["first"]
-    )
-
-    tech_trend = tech_first_last.loc[:, ["increasing"]].reset_index()
 
     # 2) Annotate the company trajectories with that flag:
     companies_with_trend = companies_trajectories.merge(
-        tech_trend, on="technology", how="left"
+        increasing_or_decreasing_techs, on="technology", how="left"
     )
 
     # 3) Keep only rows where we actually have company_activity:
@@ -45,7 +32,10 @@ def determine_companies_technologies_alignment(
     # 4) Aggregate per company×tech and grab sums + final‑year values:
     agg = (
         with_activity.sort_values("year")
-        .groupby(key_cols + ["increasing"], as_index=False)
+        .groupby(
+            ["company_id", "scenario_geography", "sector", "technology", "increasing"],
+            as_index=False,
+        )
         .agg(
             sum_forecast=("company_activity", "sum"),
             sum_target=("company_trajectory_target", "sum"),
