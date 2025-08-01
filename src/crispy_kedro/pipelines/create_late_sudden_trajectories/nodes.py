@@ -29,7 +29,7 @@ def determine_companies_technologies_alignment(
     # 3) Keep only rows where we actually have company_activity:
     with_activity = companies_with_trend.dropna(subset=["company_activity"])
 
-    # 4) Aggregate per company×tech and grab sums + final‑year values:
+    # 4) Aggregate per companyxtech and grab sums + final-year values:
     agg = (
         with_activity.sort_values("year")
         .groupby(
@@ -183,7 +183,7 @@ def late_sudden_misaligned_high_carbon_companies(
                 )
             )
 
-    # -------------------- Work per company × geography × sector × technology --------------------
+    # -------------------- Work per company x geography x sector x technology --------------------
     group_cols = ["company_id", "scenario_geography", "sector", "technology"]
     companies_for_case = companies_for_case.sort_values(group_cols + ["year"]).copy()
 
@@ -311,9 +311,9 @@ def late_sudden_misaligned_low_carbon_companies(
     alignment_year: int,
 ) -> pd.DataFrame:
     """
-    Build the Late & Sudden pathway for *misaligned low‑carbon* companies.
+    Build the Late & Sudden pathway for *misaligned low-carbon* companies.
 
-    Phases (per company_id × scenario_geography × sector × technology):
+    Phases (per company_id x scenario_geography x sector x technology):
       1) Forecast:    L&S = company_activity for years with available data (<= last GEM year);
                       if a value is missing inside that window, we fall back to baseline.
       2) BAU:         L&S = company_trajectory_baseline for (last_GEM_year, shock_year]
@@ -345,7 +345,7 @@ def late_sudden_misaligned_low_carbon_companies(
     """
 
     # ------------------------------------------------------------------
-    # 0) Filter to misaligned low‑carbon company‑technology pairs
+    # 0) Filter to misaligned low-carbon company-technology pairs
     # ------------------------------------------------------------------
     key_cols_for_filter = ["company_id", "technology"]
     pairs = misaligned_low_carbon_companies[key_cols_for_filter].drop_duplicates()
@@ -374,7 +374,7 @@ def late_sudden_misaligned_low_carbon_companies(
         target = g["company_trajectory_target"].to_numpy(dtype=float)
         activity = g["company_activity"].to_numpy(dtype=float)
 
-        # Identify last GEM year (last non‑NA company_activity)
+        # Identify last GEM year (last non-NA company_activity)
         valid_idx = np.where(~np.isnan(activity))[0]
         if valid_idx.size > 0:
             y_last_gem = int(years[valid_idx.max()])
@@ -431,7 +431,7 @@ def late_sudden_misaligned_low_carbon_companies(
             ls[mask_p4] = target[mask_p4]
             phase[mask_p4] = "aligned"
 
-        # Non‑negativity safeguard
+        # Non-negativity safeguard
         ls = np.clip(ls, a_min=0.0, a_max=None)
 
         # Attach outputs
@@ -456,9 +456,9 @@ def late_sudden_aligned_high_carbon_companies(
     alignment_year: int,
 ) -> pd.DataFrame:
     """
-    Build the Late & Sudden pathway for *aligned high‑carbon* (decreasing) companies.
+    Build the Late & Sudden pathway for *aligned high-carbon* (decreasing) companies.
 
-    Phases (per company_id × scenario_geography × sector × technology):
+    Phases (per company_id x scenario_geography x sector x technology):
       1) Forecast:    L&S = company_activity for years with available data (<= last GEM year);
                       if a value is missing inside that window, fall back to baseline.
       2) BAU:         L&S = company_trajectory_baseline for (last_GEM_year, shock_year]
@@ -489,7 +489,7 @@ def late_sudden_aligned_high_carbon_companies(
           - 'late_sudden_phase'
     """
 
-    # 0) Filter to aligned high‑carbon company‑technology pairs
+    # 0) Filter to aligned high-carbon company-technology pairs
     key_cols_for_filter = ["company_id", "technology"]
     pairs = aligned_high_carbon_companies[key_cols_for_filter].drop_duplicates()
 
@@ -516,7 +516,7 @@ def late_sudden_aligned_high_carbon_companies(
         target = g["company_trajectory_target"].to_numpy(dtype=float)
         activity = g["company_activity"].to_numpy(dtype=float)
 
-        # Last GEM year = last non‑NA company_activity
+        # Last GEM year = last non-NA company_activity
         valid_idx = np.where(~np.isnan(activity))[0]
         if valid_idx.size > 0:
             y_last_gem = int(years[valid_idx.max()])
@@ -541,7 +541,7 @@ def late_sudden_aligned_high_carbon_companies(
             ls[mask_p2] = baseline[mask_p2]
             phase[mask_p2] = "bau"
 
-        # Phase 3: Transition (downward for high‑carbon if baseline(shock) > target(align))
+        # Phase 3: Transition (downward for high-carbon if baseline(shock) > target(align))
         if alignment_year > shock_year:
             mask_p3 = (years >= shock_year) & (years < alignment_year)
             if mask_p3.any():
@@ -571,7 +571,7 @@ def late_sudden_aligned_high_carbon_companies(
             ls[mask_p4] = target[mask_p4]
             phase[mask_p4] = "aligned"
 
-        # Non‑negativity safeguard
+        # Non-negativity safeguard
         ls = np.clip(ls, a_min=0.0, a_max=None)
 
         g["company_trajectory_latesudden"] = ls
@@ -596,7 +596,7 @@ def late_sudden_aligned_low_carbon_companies(
     """
     Late-and-sudden pathway for *aligned low-carbon* company-technologies.
 
-    Phase logic (per company_id × geography × sector × technology)
+    Phase logic (per company_id x geography x sector x technology)
     --------------------------------------------------------------
     1) **Forecast**   – years ≤ last GEM year
          L&S = company_activity where available, else fallback to baseline.
@@ -645,7 +645,7 @@ def late_sudden_aligned_low_carbon_companies(
     subset = subset.sort_values(group_cols + ["year"])
 
     # ---------------------------------------------------------------
-    # helper that builds L&S for *one* company × tech × geo × sector
+    # helper that builds L&S for *one* company x tech x geo x sector
     # ---------------------------------------------------------------
     def _build_late_sudden(g: pd.DataFrame) -> pd.DataFrame:
         g = g.sort_values("year").copy()
