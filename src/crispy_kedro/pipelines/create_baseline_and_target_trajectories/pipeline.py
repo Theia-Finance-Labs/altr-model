@@ -19,7 +19,7 @@ def create_pipeline(**kwargs) -> Pipeline:
             node(
                 assign_scenario_geographies_to_assets,
                 inputs=dict(
-                    assets_forecasts="assets_forecasts",
+                    assets_forecasts="allocated_assets_to_companies",
                     scenarios_pathways="scenarios_pathways",
                 ),
                 outputs="assets_forecasts_with_scenario_geographies",
