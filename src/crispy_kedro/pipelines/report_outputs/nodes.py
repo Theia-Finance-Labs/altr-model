@@ -352,8 +352,10 @@ def plot_late_sudden_trajectories(
 
 def plot_staggered_shock(
     late_sudden_trajectories: pd.DataFrame,
+    assets_forecasts: pd.DataFrame,
     asset_level_df: pd.DataFrame,
     output_dir: str = "data/08_reporting/companies_staggered_shock_plots",
+    asset_prod_col: str = "capacity_after_shock",  # <-- set this to the true column name
 ):
     """
     For each unique (scenario_geography, company_id, technology) in the
@@ -361,31 +363,11 @@ def plot_staggered_shock(
       1) A plot of the original company‐level Late&SUDDEN trajectory vs.
          each asset and their sum,
       2) A plot of the year‐by‐year difference (asset sum − company).
-
-    Files are saved to `output_dir` with subfolders organized by alignment_type
-    with names:
-      {alignment_type}/{technology}-{company_name}-{scenario_geography}.png
-      {alignment_type}/{technology}-{company_name}-{scenario_geography}-diff.png
-
-    Parameters
-    ----------
-    late_sudden_trajectories : pd.DataFrame
-        Columns:
-          ['scenario_geography','company_id','sector','technology',
-           'year','company_trajectory_latesudden','alignment_type']
-    asset_level_df : pd.DataFrame
-        Columns:
-          ['company_id','sector','technology','asset_id','year',
-           'asset_plate_latesudden']
-    output_dir : str
-        Directory in which to save the plots. Will be created if it doesn't exist.
     """
-    # ensure output directory exists
+
     os.makedirs(output_dir, exist_ok=True)
 
-    # Helper to sanitise strings for use in file names (same logic as in
-    # `plot_late_sudden_trajectories`)
-    def _clean(name: str) -> str:  # local helper, keeps scope tight
+    def _clean(name: str) -> str:
         if pd.isna(name):
             return "Unknown"
         cleaned = re.sub(r'[<>:"/\\|?*]', "_", str(name))
@@ -393,75 +375,78 @@ def plot_staggered_shock(
         cleaned = re.sub(r"\s+", "_", cleaned)
         return cleaned[:100]
 
-    # Group by alignment type first to create subfolders
-    if "alignment_type" not in late_sudden_trajectories.columns:
-        print(
-            "Warning: alignment_type column not found in staggered shock plotting. Using single folder."
+    # pull company_name from trajectories (if present)
+    traj = late_sudden_trajectories.copy()
+    if "company_name" not in traj:
+        # fallback: try merging from assets_forecasts
+        traj = traj.merge(
+            assets_forecasts[["company_id", "company_name"]].drop_duplicates(),
+            on="company_id",
+            how="left",
         )
-        alignment_groups = [("general", late_sudden_trajectories)]
+
+    # group by alignment_type
+    if "alignment_type" in traj:
+        groups = traj.groupby("alignment_type")
     else:
-        alignment_groups = list(late_sudden_trajectories.groupby("alignment_type"))
+        groups = [("general", traj)]
 
-    for alignment_type, alignment_data in alignment_groups:
-        # Create subfolder for this alignment type
-        alignment_output_dir = os.path.join(output_dir, str(alignment_type))
-        os.makedirs(alignment_output_dir, exist_ok=True)
+    for alignment_type, df_align in groups:
+        subdir = os.path.join(output_dir, str(alignment_type))
+        os.makedirs(subdir, exist_ok=True)
 
-        # identify all combos within this alignment type
         combos = (
-            alignment_data[["scenario_geography", "company_id", "technology"]]
+            df_align[["scenario_geography", "company_id", "technology", "company_name"]]
             .drop_duplicates()
             .sort_values(["scenario_geography", "company_id", "technology"])
         )
 
-        for _, (geo, cid, tech) in combos.iterrows():
-            # filter company series
-            comp = alignment_data[
-                (alignment_data["scenario_geography"] == geo)
-                & (alignment_data["company_id"] == cid)
-                & (alignment_data["technology"] == tech)
+        for _, row in combos.iterrows():
+            geo, cid, tech, comp_name = (
+                row["scenario_geography"],
+                row["company_id"],
+                row["technology"],
+                row["company_name"],
+            )
+            comp = df_align[
+                (df_align["scenario_geography"] == geo)
+                & (df_align["company_id"] == cid)
+                & (df_align["technology"] == tech)
             ].sort_values("year")
             if comp.empty:
                 continue
 
-            # --- Prepare cleaned identifiers for file naming ---
-            tech_clean = _clean(tech)
-            geo_clean = _clean(geo)
-            comp_name_raw = (
-                comp["company_name"].iloc[0]
-                if "company_name" in comp.columns
-                else str(cid)
-            )
-            company_name_clean = _clean(comp_name_raw)
+            years = comp["year"].to_numpy()
+            company_vals = comp["company_trajectory_latesudden"].to_numpy()
 
-            years = comp["year"].values
-            company_vals = comp["company_trajectory_latesudden"].values
-
-            # filter asset-level series
             assets = asset_level_df[
                 (asset_level_df["company_id"] == cid)
                 & (asset_level_df["technology"] == tech)
-            ]
+            ].copy()
+            if assets.empty:
+                continue
 
-            # --- Plot 1: company + assets + sum ---
+            # --- Plot 1: company vs assets vs sum ---
             plt.figure(figsize=(10, 6))
             plt.plot(
-                years, company_vals, lw=2.5, label="Company Late&SUDDEN", color="black"
+                years, company_vals, lw=2.5, color="black", label="Company Late&SUDDEN"
             )
 
-            for aid in assets["asset_id"].unique():
-                df_a = assets[assets["asset_id"] == aid].sort_values("year")
+            # individual assets
+            for aid, df_a in assets.groupby("asset_id"):
+                df_a = df_a.sort_values("year")
                 plt.plot(
                     df_a["year"],
-                    df_a["asset_plate_latesudden"],
+                    df_a[asset_prod_col],
                     lw=1.2,
                     alpha=0.7,
                     label=f"Asset {aid}",
                 )
 
+            # sum of assets
             agg = (
                 assets.groupby("year", as_index=False)
-                .agg(total_asset_plate=("asset_plate_latesudden", "sum"))
+                .agg(total_asset_plate=(asset_prod_col, "sum"))
                 .sort_values("year")
             )
             plt.plot(
@@ -473,49 +458,45 @@ def plot_staggered_shock(
             )
 
             plt.xlabel("Year")
-            plt.ylabel("Production")
+            plt.ylabel("Production / Capacity")
             plt.title(
-                f"{tech} • {geo} • {cid}\nCompany vs. Asset trajectories\nAlignment Type: {alignment_type}"
+                f"{tech} • {geo} • {cid}\n"
+                f"Company vs Asset trajectories\nAlignment: {alignment_type}"
             )
             plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
             plt.tight_layout()
 
-            # save first figure
-            fname = f"{tech_clean}-{company_name_clean}-{geo_clean}.png"
-            save_path = os.path.join(alignment_output_dir, fname)
+            tech_clean = _clean(tech)
+            geo_clean = _clean(geo)
+            comp_clean = _clean(comp_name)
+            fname = f"{tech_clean}-{comp_clean}-{geo_clean}.png"
+            save_path = os.path.join(subdir, fname)
             plt.savefig(save_path, dpi=300)
-            print(f"Saved plot: {save_path}")
             plt.close()
+            print(f"Saved plot: {save_path}")
 
-            # --- Plot 2: difference over time ---
-            diff = []
-            for y, cval in zip(years, company_vals):
-                aval = (
-                    float(agg.loc[agg["year"] == y, "total_asset_plate"].iloc[0])
-                    if (agg["year"] == y).any()
-                    else 0.0
-                )
-                diff.append(aval - cval)
+            # --- Plot 2: difference (sum_assets − company) ---
+            sum_series = agg.set_index("year")["total_asset_plate"].reindex(
+                years, fill_value=0
+            )
+            diffs = sum_series.values - company_vals
 
             plt.figure(figsize=(8, 4))
-            plt.plot(years, diff, marker="o")
+            plt.plot(years, diffs, marker="o")
             plt.axhline(0, linestyle="--", color="grey")
             plt.xlabel("Year")
             plt.ylabel("Asset Sum − Company")
             plt.title(
-                f"{tech} • {geo} • {cid}\nDifference Over Time\nAlignment Type: {alignment_type}"
+                f"{tech} • {geo} • {cid}\n"
+                f"Difference Over Time\n"
+                f"Alignment: {alignment_type}"
             )
             plt.tight_layout()
 
-            # save second figure
-            fname_diff = f"{tech_clean}-{company_name_clean}-{geo_clean}-diff.png"
-            save_diff_path = os.path.join(alignment_output_dir, fname_diff)
-            plt.savefig(save_diff_path, dpi=300)
-            print(f"Saved plot: {save_diff_path}")
+            fname2 = f"{tech_clean}-{comp_clean}-{geo_clean}-diff.png"
+            save_path2 = os.path.join(subdir, fname2)
+            plt.savefig(save_path2, dpi=300)
             plt.close()
+            print(f"Saved plot: {save_path2}")
 
-    print(f"Staggered shock plotting completed. All plots saved in: {output_dir}")
-    alignment_dirs = [
-        d for d in os.listdir(output_dir) if os.path.isdir(os.path.join(output_dir, d))
-    ]
-    print(f"Subfolders created for alignment types: {alignment_dirs}")
+    print(f"All plots saved under {output_dir}")

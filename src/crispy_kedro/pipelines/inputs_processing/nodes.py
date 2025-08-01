@@ -79,7 +79,7 @@ def filter_assets(
             .unique()
         )
         == 1
-    ), "first production_year should be the same for all assets and technologies"
+    ), "First production_year should be the same for all assets and technologies"
 
     filtered_assets_forecasts = filtered_assets_forecasts.rename(
         {"production_year": "year"}, axis=1
@@ -110,7 +110,7 @@ def allocate_assets_to_companies(
     """
 
     # Prepare assets data - rename production_year to year for joining
-    assets_prepared = assets_forecasts.rename(columns={"production_year": "year"})
+    assets_prepared = assets_forecasts.copy()
 
     # Prepare companies data - ensure we have the right column names
     companies_prepared = companies_ownership_tree.copy()

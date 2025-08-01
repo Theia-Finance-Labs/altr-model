@@ -3,11 +3,41 @@ This is a boilerplate pipeline 'distribute_impacts_to_asset_level'
 generated using Kedro 0.19.12
 """
 
-import numpy as np
 import pandas as pd
-from typing import Dict, Tuple, Optional
-import matplotlib.pyplot as plt
-import os
+import numpy as np
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+def _compute_g_weights(
+    ages: pd.Series,
+    k: float,
+    min_active_share: float = 1e-12,
+    n_quantiles: int = 3,
+) -> pd.Series:
+    """
+    Compute and normalize g-factor weights for a series of asset ages.
+
+    g(a) = 1 - \sum_{j=1..n_quantiles} [1 / (1 + exp(-k*(age - age_quantile_j)))]
+    Clip to min_active_share and normalize to sum to 1. Fallback to uniform if degenerate.
+    """
+    # 1. Compute intermediate quantiles
+    qs = np.linspace(0, 1, n_quantiles + 1)[1:-1]
+    age_q = np.quantile(ages, qs)
+
+    # 2. Raw g computation
+    def g_val(age: float) -> float:
+        return 1.0 - sum(1.0 / (1.0 + np.exp(-k * (age - q))) for q in age_q)
+
+    raw = ages.map(g_val)
+    clipped = raw.clip(lower=min_active_share)
+    total = clipped.sum()
+
+    # 3. Normalize or fallback
+    if total <= min_active_share:
+        return pd.Series(1.0 / len(clipped), index=clipped.index)
+    return clipped / total
 
 
 def staggered_shock(
@@ -18,372 +48,248 @@ def staggered_shock(
     shock_year: int,
     g_k: float = 6.0,
     min_active_share: float = 1e-12,
+    max_recursion_depth: int = 100,
+    debug: bool = False,
 ) -> pd.DataFrame:
     """
-    Distribute company/technology-level Late&SUDDEN trajectories to assets using
-    a staggered-shock method with asset-level capacity ceilings.
+    Distribute company-tech level late-sudden shocks down to individual assets.
 
-    Steps implemented
-    -----------------
-    1) Seed asset P_{y0,a} at y0 = shock_year-1 from GEM:
-         - For each asset, take its last available GEM year y_gem_last and compute
-           P_gem_last = capacity * capacity_factor at that year.
-         - Extrapolate to y0 with BAU rate-of-change at (sector,technology) level:
-              P_{y0,a} = P_gem_last * [ S_baseline(y0,t) / S_baseline(y_gem_last,t) ]
-           where S_baseline is the sum of company_trajectory_baseline after dropping
-           company granularity (grouped by scenario_geography, sector, technology, year).
-         - If multiple assets exist for a (company,tech), rescale proportionally so that
-           sum_a P_{y0,a} == company_trajectory_latesudden(y0) for that (company,tech).
-           If all P_{y0,a} are 0, we fall back to equal split to hit the company total.
-         - Enforce capacity ceilings at y0 (clip to capacity if exceeded).
+    Input DataFrames must have:
+      - late_sudden_trajectories: ['company_id','technology','year','company_trajectory_latesudden']
+      - companies_ownership_tree: ['asset_id','company_id','technology_category','ownership_level','ownership_percentage','year']
+      - increasing_or_decreasing_techs: ['technology','increasing']
+      - assets_forecasts: ['asset_id','technology','year','capacity','asset_age','company_id']
 
-    2) For each year y >= shock_year, compute company-level shock:
-           Shock_y = Plate_y - Plate_{y-1}
-       and distribute to assets with min–max constraints:
+    The 'capacity' column in assets_forecasts serves both as the
+    baseline activity (or capacity) series and as the ceiling for increases.
 
-       Negative shock (production reduction):
-         - Allocation preference: older -> newer assets.
-         - Never drop an asset below 0 in that year.
-
-       Positive shock (production increase):
-         - Allocation preference: newer -> older assets (then older -> newer if needed).
-         - Never raise an asset above its capacity ceiling.
-         - Any remainder after all assets hit capacity is recorded as `new_asset_production`.
-
-    Parameters
-    ----------
-    late_sudden_trajectories : DataFrame
-        Required columns:
-          ['company_id','scenario_geography','sector','technology','year',
-           'company_trajectory_latesudden','company_trajectory_baseline']
-    companies_ownership_tree : DataFrame
-        Required columns:
-          ['asset_id','company_id','sector','technology_category','year','ownership_percentage']
-        Note: 'year' is taken as commissioning year (integer).
-    increasing_or_decreasing_techs : DataFrame
-        ['technology','increasing'] (not strictly required in this sign-driven allocation).
-    assets_forecasts : DataFrame
-        Required columns:
-          ['asset_id','sector','technology','year','capacity','capacity_factor',
-           'company_id','ownership_percentage']
-        Can contain multiple years per asset; the **max** capacity observed per asset is used
-        as the capacity ceiling for all post-shock years.
-        The **last** year per asset is used to seed P_{y0,a}.
-    shock_year : int
-        First year where the company-level delta is allocated to assets.
-    g_k : float
-        Steepness parameter for priority weights (larger → stronger priority).
-    min_active_share : float
-        Numerical floor to avoid zero weights.
-
-    Returns
-    -------
-    DataFrame with columns:
-      ['company_id','sector','technology','asset_id','year',
-       'asset_plate_latesudden','allocated_shock','unallocated_remainder','new_asset_production']
+    Returns:
+      - asset-level DataFrame with columns:
+         ['asset_id','company_id','technology','year',
+          'capacity','asset_age','capacity_after_shock']
+      - if debug=True, also returns a diagnostics DataFrame
     """
+    # --- 1) Validation ---
+    req_lt = {"company_id", "technology", "year", "company_trajectory_latesudden"}
+    req_ow = {
+        "asset_id",
+        "company_id",
+        "technology_category",
+        "ownership_level",
+        "ownership_percentage",
+        "year",
+    }
+    req_inc = {"technology", "increasing"}
+    req_af = {"asset_id", "technology", "year", "capacity", "asset_age", "company_id"}
 
-    # --------- small helpers -------------------------------------------------
-
-    def compute_g_weights(ages: np.ndarray, preference: str, k: float) -> np.ndarray:
-        """
-        Smooth weights that sum to 1. preference in {'older','newer'}.
-        Older: higher weight to larger ages; Newer: higher to smaller ages.
-        """
-        if ages.size == 0:
-            return np.array([])
-        order = np.argsort(ages)  # ascending age
-        ranks = np.empty_like(order, dtype=float)
-        ranks[order] = np.linspace(0.0, 1.0, len(ages), endpoint=True)
-        if preference == "older":
-            score = np.exp(k * ranks)
-        else:
-            score = np.exp(k * (1.0 - ranks))
-        score = np.clip(score, min_active_share, None)
-        return score / score.sum()
-
-    # capacities from assets_forecasts: max capacity observed per asset
-    af = assets_forecasts.copy()
-    af = af[af["ownership_percentage"] > 0].copy()
-    af["year"] = af["year"].astype(float)
-    cap_max = af.groupby("asset_id", as_index=True)["capacity"].max().to_dict()
-
-    # last GEM production per asset (capacity * CF at the last year we have)
-    # if CF is missing, assume 1.0 (as in the example)
-    af.loc[:, "capacity_factor"] = af.loc[:, "capacity_factor"].fillna(1.0)
-    last_idx = (
-        af.sort_values(["asset_id", "year"])
-        .groupby("asset_id", as_index=False)
-        .tail(1)[["asset_id", "year", "capacity", "capacity_factor"]]
-    )
-    last_idx["P_gem_last"] = last_idx["capacity"] * last_idx["capacity_factor"]
-    last_dict_year = dict(zip(last_idx["asset_id"], last_idx["year"]))
-    last_dict_prod = dict(zip(last_idx["asset_id"], last_idx["P_gem_last"]))
-
-    # commissioning year from ownership_tree (preferred)
-    ot = companies_ownership_tree.copy()
-    ot = ot[ot["ownership_percentage"] > 0].copy()
-    ot = ot.rename({"technology_category": "technology"}, axis=1)
-    ot["commissioning_year"] = ot["year"].astype(int)
-
-    # build (asset -> commissioning_year); if duplicates, take min year
-    com_year = (
-        ot.groupby("asset_id", as_index=False)["commissioning_year"]
-        .min()
-        .set_index("asset_id")["commissioning_year"]
-        .to_dict()
-    )
-
-    # ----- technology-level baseline S(y,t) after dropping company dimension ---
-    lts = late_sudden_trajectories.copy()
-    lts = lts.rename(columns={"technology_category": "technology"})
-    s_base = lts.groupby(["sector", "technology", "year"], as_index=False).agg(
-        S_baseline=("company_trajectory_baseline", "sum")
-    )
-    s_base = s_base.sort_values(["sector", "technology", "year"])
-
-    # ratio to y0 per (sector,technology)
-    def add_ratio(g):
-        y0 = shock_year - 1
-        if (g["year"] == y0).any():
-            base = g.loc[g["year"] == y0, "S_baseline"].iloc[0]
-            g["S_ratio_to_y0"] = g["S_baseline"] / (base if base != 0 else 1.0)
-        else:
-            g["S_ratio_to_y0"] = 1.0
-        return g
-
-    s_base = s_base.groupby(["sector", "technology"], group_keys=False).apply(add_ratio)
-    s_ratio = s_base.set_index(["sector", "technology", "year"])[
-        "S_ratio_to_y0"
-    ].to_dict()
-
-    # fast lookup for company series
-    key_cols = ["company_id", "scenario_geography", "sector", "technology", "year"]
-    lts_key = lts.set_index(key_cols)
-
-    # ------------ main allocation --------------------------------------------
-    out = []
-    group_cols = ["company_id", "scenario_geography", "sector", "technology"]
-
-    for (cid, geo, sec, tech), df_ct in lts.groupby(group_cols, sort=False):
-        df_ct = df_ct.sort_values("year")
-        years = df_ct["year"].unique().tolist()
-        if min(years) > shock_year - 1:
-            # need y0 present
-            continue
-
-        # assets belonging to this company-tech (direct ownership only)
-        # join via ownership tree, then intersect with assets_forecasts set
-        assets_ct = ot[(ot["company_id"] == cid) & (ot["technology"] == tech)][
-            ["asset_id", "commissioning_year"]
-        ].drop_duplicates()
-        if assets_ct.empty:
-            # still record company-level remainder if desired; skip asset allocation
-            continue
-
-        # seed P_{y0,a} from GEM last-year + BAU extrapolation to y0
-        y0 = shock_year - 1
-        plate_y0 = float(
-            lts_key.loc[(cid, geo, sec, tech, y0), "company_trajectory_latesudden"]
+    if not req_lt.issubset(late_sudden_trajectories.columns):
+        raise KeyError(
+            f"late_sudden_trajectories missing {req_lt - set(late_sudden_trajectories.columns)}"
         )
-        p0_raw = []
-        a_list = []
-        for a, cy in assets_ct.itertuples(index=False):
-            # if no GEM record for this asset, P_gem_last defaults to 0
-            P_last = float(last_dict_prod.get(a, 0.0))
-            y_last = last_dict_year.get(a, y0)  # if not present, treat as already at y0
-            ratio_y0 = s_ratio.get((sec, tech, y0), 1.0)
-            ratio_yl = s_ratio.get((sec, tech, int(y_last)), 1.0)
-            scale = ratio_y0 / (ratio_yl if ratio_yl != 0 else 1.0)
-            p0 = P_last * scale
-            # if asset is not yet commissioned by y0, it should not have production
-            if cy > y0:
-                p0 = 0.0
-            p0_raw.append(p0)
-            a_list.append(a)
+    if not req_ow.issubset(companies_ownership_tree.columns):
+        raise KeyError(
+            f"companies_ownership_tree missing {req_ow - set(companies_ownership_tree.columns)}"
+        )
+    if not req_inc.issubset(increasing_or_decreasing_techs.columns):
+        raise KeyError(
+            f"increasing_or_decreasing_techs missing {req_inc - set(increasing_or_decreasing_techs.columns)}"
+        )
+    if not req_af.issubset(assets_forecasts.columns):
+        raise KeyError(
+            f"assets_forecasts missing {req_af - set(assets_forecasts.columns)}"
+        )
 
-        p0_raw = np.array(p0_raw, dtype=float)
-        sum_raw = p0_raw.sum()
+    # Copy data
+    lt = late_sudden_trajectories.copy()
+    ow = companies_ownership_tree.copy()
+    inc = increasing_or_decreasing_techs.copy()
+    full_af = assets_forecasts.copy()
 
-        if sum_raw <= 1e-12:
-            # fallback: equal split across active assets (commissioned <= y0)
-            active_mask = np.array(
-                [com_year.get(a, y0) <= y0 for a in a_list], dtype=bool
-            )
-            n_active = int(active_mask.sum())
-            p0 = np.zeros_like(p0_raw)
-            if n_active > 0:
-                p0[active_mask] = plate_y0 / n_active
+    # Step 2: identify assets missing shock_year-1 or shock_year
+    min_years = [shock_year - 1, shock_year]
+    key_cols = ["asset_id", "technology"]
+
+    # Find last known record ≤ shock_year - 1
+    last_known = (
+        full_af[full_af["year"] <= shock_year - 1]
+        .sort_values("year")
+        .drop_duplicates(subset=key_cols, keep="last")
+    )
+
+    # Expand into missing years
+    filler = []
+    for y in min_years:
+        extended = last_known.copy()
+        extended["year"] = y
+        filler.append(extended)
+
+    # Combine filler rows with full data
+    af = pd.concat([full_af, *filler], ignore_index=True)
+
+    # Deduplicate by keeping latest real value or fallback
+    af = af.sort_values("year").drop_duplicates(subset=key_cols + ["year"], keep="last")
+
+    # Harmonize tech in ownership tree
+    ow = ow.rename(columns={"technology_category": "technology"})
+
+    # --- 2) Build ownership mapping at shock_year ---
+    ow_primary = (
+        ow[ow["year"] <= shock_year]
+        .sort_values("year")
+        .drop_duplicates(["asset_id"], keep="last")
+    )
+
+    # --- 3) Compute company-tech shocks ---
+    lt = lt.sort_values(["company_id", "technology", "year"]).copy()
+    lt["prev_val"] = lt.groupby(["company_id", "technology"])[
+        "company_trajectory_latesudden"
+    ].shift(1)
+    lt = lt[lt["year"] >= shock_year]
+    lt["shock"] = lt["company_trajectory_latesudden"] - lt["prev_val"]
+    lt = lt.merge(inc, on="technology", how="left").fillna({"increasing": True})
+
+    # --- 4) Prepare asset data ---
+    af = af[af["year"] >= shock_year - 1].copy()
+    if af.empty:
+        raise ValueError("No assets_forecasts entries for required years")
+
+    # Link to companies via ownership
+    af = af.merge(
+        ow_primary[["asset_id", "company_id", "technology"]],
+        on=["asset_id", "company_id", "technology"],
+        how="inner",
+    )
+
+    # Map ages once
+    age_map = af.drop_duplicates("asset_id").set_index("asset_id")["asset_age"]
+
+    outputs = []
+    diagnostics = []
+
+    # Loop by company-tech-year
+    for (cid, tech, year), sub in lt.groupby(["company_id", "technology", "year"]):
+        shock_val = float(sub["shock"].iloc[0])
+        is_inc = bool(sub["increasing"].iloc[0])
+
+        # Extract previous and current asset states
+        prev = af[
+            (af["company_id"] == cid)
+            & (af["technology"] == tech)
+            & (af["year"] == year - 1)
+        ].set_index("asset_id")
+        curr = af[
+            (af["company_id"] == cid)
+            & (af["technology"] == tech)
+            & (af["year"] == year)
+        ].set_index("asset_id")
+
+        # Handle no existing assets case
+        if prev.empty:
+            new_id = f"NEW_{cid}_{tech}_{year}"
+            alloc = shock_val if shock_val > 0 else 0.0
+            rec = {
+                "asset_id": new_id,
+                "company_id": cid,
+                "technology": tech,
+                "year": year,
+                "capacity": alloc,
+                "asset_age": 0.0,
+                "capacity_after_shock": alloc,
+            }
+            outputs.append(pd.DataFrame([rec]))
+            if debug:
+                diagnostics.append(
+                    {
+                        "company": cid,
+                        "technology": tech,
+                        "year": year,
+                        "residual": 0.0,
+                        "depth": 0,
+                    }
+                )
+            continue
+
+        # Compute g-weights
+        ages = age_map.reindex(prev.index)
+        g_w = _compute_g_weights(ages, k=g_k, min_active_share=min_active_share)
+
+        # Order assets by age
+        order = ages.sort_values(ascending=(not is_inc)).index
+
+        # Initialize allocation and loop
+        alloc = pd.Series(0.0, index=order)
+        remaining = shock_val
+        depth = 0
+
+        while (not np.isclose(remaining, 0.0)) and (depth < max_recursion_depth):
+            depth += 1
+            if shock_val < 0:
+                active = alloc.index[(prev["capacity"] + alloc) > 0]
             else:
-                # no active assets yet; nothing to allocate at y0
-                p0[:] = 0.0
-        else:
-            # proportional rescale to match company total at y0
-            p0 = p0_raw * (plate_y0 / sum_raw)
+                headroom = curr["capacity"] - prev["capacity"]
+                active = alloc.index[headroom.loc[alloc.index] > 0]
+            if len(active) == 0:
+                break
 
-        # enforce capacity ceilings at y0
-        caps = np.array([cap_max.get(a, float("inf")) for a in a_list], dtype=float)
-        p0 = np.minimum(p0, caps)
+            gw = g_w.reindex(active)
+            gw = gw / gw.sum()
+            delta = gw * remaining
 
-        # store previous-year vector
-        prod_prev = dict(zip(a_list, p0))
+            for aid in active:
+                base = prev.at[aid, "capacity"]
+                if shock_val < 0:
+                    lower = -base
+                    alloc[aid] += max(delta[aid], lower - alloc[aid])
+                else:
+                    hr = curr.at[aid, "capacity"] - base
+                    alloc[aid] += min(delta[aid], hr - alloc[aid])
+            remaining = shock_val - alloc.sum()
 
-        # write y0 rows
-        for a in a_list:
-            out.append(
+        # Synthetic asset for leftover positive shock
+        new_rows = []
+        if (remaining > 0) and is_inc:
+            new_id = f"NEW_{cid}_{tech}_{year}"
+            new_rows.append(
                 {
+                    "asset_id": new_id,
                     "company_id": cid,
-                    "sector": sec,
                     "technology": tech,
-                    "asset_id": a,
-                    "year": int(y0),
-                    "asset_plate_latesudden": float(prod_prev[a]),
-                    "allocated_shock": 0.0,
-                    "unallocated_remainder": 0.0,
-                    "new_asset_production": 0.0,
+                    "year": year,
+                    "capacity": remaining,
+                    "asset_age": 0.0,
+                    "capacity_after_shock": remaining,
+                }
+            )
+            alloc[new_id] = remaining
+
+        # Build output for existing
+        out = prev.copy()
+        out["company_id"] = cid
+        out["technology"] = tech
+        out["year"] = year
+        out["asset_age"] = ages
+        out["capacity_after_shock"] = prev["capacity"] + alloc.reindex(
+            prev.index
+        ).fillna(0.0)
+
+        # Append synthetic if any
+        if new_rows:
+            out = pd.concat([out, pd.DataFrame(new_rows).set_index("asset_id")], axis=0)
+
+        outputs.append(out.reset_index())
+        if debug:
+            diagnostics.append(
+                {
+                    "company": cid,
+                    "technology": tech,
+                    "year": year,
+                    "residual": remaining,
+                    "depth": depth,
                 }
             )
 
-        # iterate shock years
-        for y in [yy for yy in years if yy >= shock_year]:
-            plate_y = float(
-                lts_key.loc[(cid, geo, sec, tech, y), "company_trajectory_latesudden"]
-            )
-            plate_ym1 = float(
-                lts_key.loc[
-                    (cid, geo, sec, tech, y - 1), "company_trajectory_latesudden"
-                ]
-            )
-            shock = plate_y - plate_ym1
-
-            # active assets are those commissioned <= y-1
-            active_assets = [a for a in a_list if com_year.get(a, y) <= (y - 1)]
-            if len(active_assets) == 0:
-                # if positive shock with no active assets, treat as new builds
-                if shock > 0:
-                    out.append(
-                        {
-                            "company_id": cid,
-                            "sector": sec,
-                            "technology": tech,
-                            "asset_id": f"NEW_{cid}_{tech}_{y}",
-                            "year": int(y),
-                            "asset_plate_latesudden": float(shock),
-                            "allocated_shock": float(shock),
-                            "unallocated_remainder": 0.0,
-                            "new_asset_production": float(shock),
-                        }
-                    )
-                continue
-
-            ages = np.array(
-                [(y - 1) - com_year.get(a, (y - 1)) for a in active_assets], dtype=float
-            )
-            prev_vec = np.array([prod_prev[a] for a in active_assets], dtype=float)
-            caps_vec = np.array(
-                [cap_max.get(a, float("inf")) for a in active_assets], dtype=float
-            )
-
-            # allocator routines
-            def allocate_negative(shock_value: float):
-                remaining = shock_value  # negative
-                alloc = np.zeros_like(prev_vec)
-                active_mask = prev_vec > 0
-                guard = 0
-                while remaining < -1e-12 and active_mask.any():
-                    w = compute_g_weights(ages[active_mask], "older", g_k)
-                    prop = np.zeros_like(prev_vec)
-                    prop[active_mask] = w * remaining  # negative
-                    lower = -prev_vec
-                    capped = np.maximum(prop, lower)
-                    alloc += capped
-                    remaining = shock_value - alloc.sum()
-                    active_mask = (prev_vec + alloc) > 1e-12
-                    guard += 1
-                    if guard > 1000:
-                        break
-                return alloc, remaining
-
-            def allocate_positive(shock_value: float):
-                remaining = shock_value
-                alloc = np.zeros_like(prev_vec)
-
-                for pref in ["newer", "older"]:
-                    if remaining <= 1e-12:
-                        break
-                    headroom = np.maximum(caps_vec - (prev_vec + alloc), 0.0)
-                    active_mask = headroom > 1e-12
-                    guard = 0
-                    while remaining > 1e-12 and active_mask.any():
-                        w = compute_g_weights(ages[active_mask], pref, g_k)
-                        prop = np.zeros_like(prev_vec)
-                        prop[active_mask] = w * remaining
-                        capped = np.minimum(prop, headroom)
-                        alloc += capped
-                        remaining = shock_value - alloc.sum()
-                        headroom = np.maximum(caps_vec - (prev_vec + alloc), 0.0)
-                        active_mask = headroom > 1e-12
-                        guard += 1
-                        if guard > 1000:
-                            break
-
-                new_asset_vol = max(remaining, 0.0)
-                return alloc, max(remaining, 0.0), new_asset_vol
-
-            if abs(shock) <= 1e-12:
-                alloc_vec = np.zeros_like(prev_vec)
-                remainder = 0.0
-                new_vol = 0.0
-            elif shock < 0:
-                alloc_vec, remainder = allocate_negative(shock)
-                new_vol = 0.0
-            else:
-                alloc_vec, remainder, new_vol = allocate_positive(shock)
-
-            next_vec = prev_vec + alloc_vec
-
-            # write rows (store remainder/new_volume once)
-            for i, a in enumerate(active_assets):
-                out.append(
-                    {
-                        "company_id": cid,
-                        "sector": sec,
-                        "technology": tech,
-                        "asset_id": a,
-                        "year": int(y),
-                        "asset_plate_latesudden": float(next_vec[i]),
-                        "allocated_shock": float(alloc_vec[i]),
-                        "unallocated_remainder": float(remainder) if i == 0 else 0.0,
-                        "new_asset_production": float(new_vol) if i == 0 else 0.0,
-                    }
-                )
-
-            if new_vol > 1e-12:
-                out.append(
-                    {
-                        "company_id": cid,
-                        "sector": sec,
-                        "technology": tech,
-                        "asset_id": f"NEW_{cid}_{tech}_{y}",
-                        "year": int(y),
-                        "asset_plate_latesudden": float(new_vol),
-                        "allocated_shock": float(new_vol),
-                        "unallocated_remainder": 0.0,
-                        "new_asset_production": float(new_vol),
-                    }
-                )
-
-            # carry forward
-            for i, a in enumerate(active_assets):
-                prod_prev[a] = float(next_vec[i])
-
-    out_df = pd.DataFrame(out)
-    if not out_df.empty:
-        for c in [
-            "asset_plate_latesudden",
-            "allocated_shock",
-            "unallocated_remainder",
-            "new_asset_production",
-        ]:
-            out_df[c] = out_df[c].astype(float).round(12)
-    return out_df
+    # Concatenate all
+    asset_level = pd.concat(outputs, ignore_index=True)
+    if debug:
+        return asset_level, pd.DataFrame(diagnostics)
+    return asset_level

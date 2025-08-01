@@ -11,18 +11,19 @@ from .nodes import plot_late_sudden_trajectories, plot_staggered_shock
 def create_pipeline(**kwargs) -> Pipeline:
     return pipeline(
         [
-            node(
-                plot_late_sudden_trajectories,
-                inputs=dict(
-                    late_sudden_trajectories="all_late_sudden_trajectories",
-                    assets_forecasts="allocated_assets_to_companies",
-                ),
-                outputs=None,
-            ),
+            # node(
+            #     plot_late_sudden_trajectories,
+            #     inputs=dict(
+            #         late_sudden_trajectories="all_late_sudden_trajectories",
+            #         assets_forecasts="allocated_assets_to_companies",
+            #     ),
+            #     outputs=None,
+            # ),
             node(
                 plot_staggered_shock,
                 inputs=dict(
                     late_sudden_trajectories="all_late_sudden_trajectories",
+                    assets_forecasts="allocated_assets_to_companies",
                     asset_level_df="companies_staggered_lated_sudden",
                 ),
                 outputs=None,
