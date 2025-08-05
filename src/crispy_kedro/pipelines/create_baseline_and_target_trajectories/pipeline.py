@@ -5,7 +5,6 @@ generated using Kedro 0.19.12
 
 from kedro.pipeline import node, Pipeline  # noqa
 from .nodes import (
-    assign_scenario_geographies_to_assets,
     aggregate_assets_to_company_level,
     calculate_tmsr,
     compute_scenarios_trajectories,
@@ -17,18 +16,8 @@ def create_pipeline(**kwargs) -> Pipeline:
     return Pipeline(
         [
             node(
-                assign_scenario_geographies_to_assets,
-                inputs=dict(
-                    assets_forecasts="allocated_assets_to_companies",
-                    scenarios_pathways="scenarios_pathways",
-                ),
-                outputs="assets_forecasts_with_scenario_geographies",
-            ),
-            node(
                 aggregate_assets_to_company_level,
-                inputs=dict(
-                    assets_forecasts="assets_forecasts_with_scenario_geographies"
-                ),
+                inputs=dict(assets_forecasts="allocated_assets_to_companies"),
                 outputs="companies_technology_forecasts",
             ),
             node(

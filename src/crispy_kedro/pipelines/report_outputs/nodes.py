@@ -12,7 +12,6 @@ import os
 
 def plot_late_sudden_trajectories(
     late_sudden_trajectories: pd.DataFrame,
-    assets_forecasts: pd.DataFrame,
 ) -> None:
     """
     Plot the late sudden trajectories for each company-technology-geography combination.
@@ -28,17 +27,7 @@ def plot_late_sudden_trajectories(
         company_id, scenario_geography, technology, year,
         company_trajectory_target, company_trajectory_baseline, company_trajectory_latesudden,
         late_sudden_phase, alignment_type
-    assets_forecasts : pd.DataFrame
-        DataFrame containing company information with columns:
-        company_id, company_name
     """
-
-    # Merge with company names
-    late_sudden_trajectories_with_company_name = late_sudden_trajectories.merge(
-        assets_forecasts[["company_id", "company_name"]].drop_duplicates(),
-        on="company_id",
-        how="left",
-    )
 
     # Clean company names for folder creation (remove special characters)
     def clean_name_for_folder(name):
@@ -50,11 +39,9 @@ def plot_late_sudden_trajectories(
         cleaned = re.sub(r"\s+", "_", cleaned)
         return cleaned[:100]  # Limit length to avoid filesystem issues
 
-    late_sudden_trajectories_with_company_name["company_name_clean"] = (
-        late_sudden_trajectories_with_company_name["company_name"].apply(
-            clean_name_for_folder
-        )
-    )
+    late_sudden_trajectories["company_name_clean"] = late_sudden_trajectories[
+        "company_name"
+    ].apply(clean_name_for_folder)
 
     # Create base directory
     base_dir = Path("data/08_reporting/companies_trajectories_plots")
@@ -67,22 +54,18 @@ def plot_late_sudden_trajectories(
         "transition": "#2ca02c",  # Green
         "aligned": "#d62728",  # Red
         "aligned_compensation": "#9467bd",  # Purple
-        "aligned_retired": "#8c564b",  # Brown
-        "bau_retired": "#e377c2",  # Pink
-        "transition_retired": "#7f7f7f",  # Gray
-        "aligned_retired_compensation": "#bcbd22",  # Olive
+        "retirement": "#7f7f7f",  # Gray
+        "phased_out": "#bcbd22",  # Olive
     }
 
     # Group by alignment type first to create subfolders
-    if "alignment_type" not in late_sudden_trajectories_with_company_name.columns:
+    if "alignment_type" not in late_sudden_trajectories.columns:
         print(
             "Warning: alignment_type column not found. Creating plots in single folder."
         )
-        alignment_groups = [("general", late_sudden_trajectories_with_company_name)]
+        alignment_groups = [("general", late_sudden_trajectories)]
     else:
-        alignment_groups = list(
-            late_sudden_trajectories_with_company_name.groupby("alignment_type")
-        )
+        alignment_groups = list(late_sudden_trajectories.groupby("alignment_type"))
 
     for alignment_type, alignment_data in alignment_groups:
         # Create subfolder for this alignment type
@@ -205,12 +188,13 @@ def plot_late_sudden_trajectories(
                                 ):
                                     # End the previous phase at the current year to avoid gaps
                                     phase_spans.append(
-                                        (current_phase, phase_start, year)
+                                        (current_phase, phase_start, year - 1)
                                     )
 
-                                # Start new phase span
+                                # Start new phase span at the same year where previous phase ended
+                                # to ensure no gaps between phases
                                 current_phase = phase
-                                phase_start = year
+                                phase_start = year - 1
 
                         # Don't forget the last phase - extend it slightly beyond the last data point
                         if current_phase is not None and phase_start is not None:
