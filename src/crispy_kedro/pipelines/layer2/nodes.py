@@ -9,21 +9,25 @@ import ibis.expr.types
 
 
 def build_price_trajectory(
-    traj_scenario: pd.DataFrame, shock_year: int
+    traj_scenario_ar6: pd.DataFrame, shock_year: int
 ) -> pd.DataFrame:
 
     # Part 1: years > shock_year -1 (i.e., years >= shock_year)
-    after_shock_target = traj_scenario.loc[
-        (traj_scenario["year"] >= shock_year)
-        & (traj_scenario["scenario_type"] == "target"),
-        ["sector", "technology", "year", "scenario_price"],
-    ].rename(columns={"scenario_price": "scenario_price_target"})
+    after_shock_target = traj_scenario_ar6.loc[
+        (traj_scenario_ar6["scenario_year"] >= shock_year)
+        & (traj_scenario_ar6["scenario_type"] == "target"),
+        ["sector", "technology", "scenario_year", "scenario_price"],
+    ].rename(
+        columns={"scenario_year": "year", "scenario_price": "scenario_price_target"}
+    )
 
-    after_shock_baseline = traj_scenario.loc[
-        (traj_scenario["year"] >= shock_year)
-        & (traj_scenario["scenario_type"] == "baseline"),
-        ["sector", "technology", "year", "scenario_price"],
-    ].rename(columns={"scenario_price": "scenario_price_baseline"})
+    after_shock_baseline = traj_scenario_ar6.loc[
+        (traj_scenario_ar6["scenario_year"] >= shock_year)
+        & (traj_scenario_ar6["scenario_type"] == "baseline"),
+        ["sector", "technology", "scenario_year", "scenario_price"],
+    ].rename(
+        columns={"scenario_year": "year", "scenario_price": "scenario_price_baseline"}
+    )
     after_shock = pd.merge(
         after_shock_target,
         after_shock_baseline,
@@ -85,11 +89,16 @@ def build_price_trajectory(
         else pd.DataFrame()
     )
     # Part 2: years <= shock_year
-    before_shock = traj_scenario.loc[
-        (traj_scenario["year"] <= shock_year)
-        & (traj_scenario["scenario_type"] == "baseline"),
-        ["sector", "technology", "year", "scenario_price"],
-    ].rename(columns={"scenario_price": "scenario_price_late_sudden"})
+    before_shock = traj_scenario_ar6.loc[
+        (traj_scenario_ar6["scenario_year"] <= shock_year)
+        & (traj_scenario_ar6["scenario_type"] == "baseline"),
+        ["sector", "technology", "scenario_year", "scenario_price"],
+    ].rename(
+        columns={
+            "scenario_year": "year",
+            "scenario_price": "scenario_price_late_sudden",
+        }
+    )
 
     # Combine both parts
     final_result = pd.concat([before_shock, interpolated_prices], ignore_index=True)
@@ -100,10 +109,12 @@ def build_price_trajectory(
     ]
 
     # Add baseline price
-    traj_price_baseline = traj_scenario.loc[
-        traj_scenario["scenario_type"] == "baseline",
-        ["sector", "technology", "year", "scenario_price"],
-    ].rename(columns={"scenario_price": "scenario_price_baseline"})
+    traj_price_baseline = traj_scenario_ar6.loc[
+        traj_scenario_ar6["scenario_type"] == "baseline",
+        ["sector", "technology", "scenario_year", "scenario_price"],
+    ].rename(
+        columns={"scenario_year": "year", "scenario_price": "scenario_price_baseline"}
+    )
 
     traj_price_late_sudden = pd.merge(
         traj_price_late_sudden,
@@ -115,61 +126,201 @@ def build_price_trajectory(
     return traj_price_late_sudden
 
 
-def calculate_net_profits(
-    financial_averages: ibis.expr.types.Table,
-    traj_companies_baseline: pd.DataFrame,
-    traj_companies_shock: pd.DataFrame,
-    traj_technology_prices: pd.DataFrame,
+def calculate_asset_level_net_profits(
+    assets_baseline: pd.DataFrame,
+    assets_shock: pd.DataFrame,
+    ar6_scenarios: pd.DataFrame,
+    shock_year: int,
+    market_passthrough: float = 0.5,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    # Execute the financial averages query and ensure margin is float
-    financial_averages_df = financial_averages.execute()
-    financial_averages_df["net_profit_margin"] = financial_averages_df[
-        "net_profit_margin"
-    ].astype(float)
+    """
+    Calculate net profits at asset level using sector-specific equations:
+    - Power: Netprofits = (Capacity*CapFactor)*((Price-FuelCost/Efficiency-OpMgmtCost)-(EmissionFactor*MarketPassthrough*CarbonTax))-(dCapacity/dyears*CapitalCost)
+    - Oil&Gas, Coal: Netprofits = Production*((Price-OpMgmtCost)-(EmissionFactor*MarketPassthrough*CarbonTax))-(dCapacity/dyears*CapitalCost)
+    - Automotive, Steel: Netprofits = Production*((Price-FuelCost/Efficiency-OpMgmtCost)-(EmissionFactor*MarketPassthrough*CarbonTax))-(dCapacity/dyears*CapitalCost)
+    """
+    
+    def calculate_sector_net_profits(assets_df: pd.DataFrame, scenario_type: str) -> pd.DataFrame:
+        # Merge with AR6 scenario data for prices and other parameters
+        assets_with_ar6 = assets_df.merge(
+            ar6_scenarios, 
+            on=["sector", "technology", "year"], 
+            how="inner"
+        )
+        
+        # Initialize net profits column
+        assets_with_ar6["net_profits"] = 0.0
+        
+        # Power Sector calculation
+        power_mask = assets_with_ar6["sector"] == "Power"
+        if power_mask.any():
+            power_data = assets_with_ar6[power_mask].copy()
+            
+            # Production volume = Capacity * Capacity Factor
+            power_data["production_volume"] = (
+                power_data["capacity"] * power_data["scenario_capacity_factor"]
+            )
+            
+            # Revenue = Production * Price
+            power_data["revenue"] = (
+                power_data["production_volume"] * power_data["scenario_price"]
+            )
+            
+            # Operating costs = FuelCost/Efficiency + OpMgmtCost
+            power_data["fuel_cost_per_unit"] = power_data.get("fuel_cost", 0) / power_data.get("efficiency_decimal", 1)
+            power_data["operating_cost"] = (
+                power_data["fuel_cost_per_unit"] + power_data.get("om_cost_usd_per_mw_per_yr", 0)
+            )
+            
+            # Carbon tax cost (only applies after shock year)
+            power_data["carbon_cost"] = 0.0
+            post_shock_mask = power_data["year"] > shock_year
+            if post_shock_mask.any():
+                power_data.loc[post_shock_mask, "carbon_cost"] = (
+                    power_data.loc[post_shock_mask, "production_volume"] *
+                    power_data.loc[post_shock_mask].get("emission_factor", 0) *
+                    (1 - market_passthrough) *
+                    power_data.loc[post_shock_mask].get("carbon_price_usd_per_tco2", 0)
+                )
+            
+            # Capital costs (dCapacity/dyears * CapitalCost)
+            power_data["capital_cost"] = (
+                power_data.get("capacity_additions_mw_per_yr", 0) * 
+                power_data.get("capital_cost_usd_per_mw", 0)
+            )
+            
+            # Net profits
+            power_data["net_profits"] = (
+                power_data["revenue"] - 
+                power_data["operating_cost"] * power_data["production_volume"] -
+                power_data["carbon_cost"] -
+                power_data["capital_cost"]
+            )
+            
+            assets_with_ar6.loc[power_mask, "net_profits"] = power_data["net_profits"]
+        
+        # Oil & Gas, Coal Sectors calculation
+        oil_gas_coal_mask = assets_with_ar6["sector"].isin(["Oil&Gas", "Coal"])
+        if oil_gas_coal_mask.any():
+            ogc_data = assets_with_ar6[oil_gas_coal_mask].copy()
+            
+            # Production volume from asset production pathways
+            ogc_data["production_volume"] = ogc_data["production"]  # Assuming this column exists
+            
+            # Revenue = Production * Price
+            ogc_data["revenue"] = ogc_data["production_volume"] * ogc_data["scenario_price"]
+            
+            # Operating costs
+            ogc_data["operating_cost"] = ogc_data.get("om_cost_usd_per_mw_per_yr", 0)
+            
+            # Carbon tax cost (only applies after shock year)
+            ogc_data["carbon_cost"] = 0.0
+            post_shock_mask = ogc_data["year"] > shock_year
+            if post_shock_mask.any():
+                ogc_data.loc[post_shock_mask, "carbon_cost"] = (
+                    ogc_data.loc[post_shock_mask, "production_volume"] *
+                    ogc_data.loc[post_shock_mask].get("emission_factor", 0) *
+                    (1 - market_passthrough) *
+                    ogc_data.loc[post_shock_mask].get("carbon_price_usd_per_tco2", 0)
+                )
+            
+            # Capital costs
+            ogc_data["capital_cost"] = (
+                ogc_data.get("capacity_additions_mw_per_yr", 0) * 
+                ogc_data.get("capital_cost_usd_per_mw", 0)
+            )
+            
+            # Net profits
+            ogc_data["net_profits"] = (
+                ogc_data["revenue"] - 
+                ogc_data["operating_cost"] * ogc_data["production_volume"] -
+                ogc_data["carbon_cost"] -
+                ogc_data["capital_cost"]
+            )
+            
+            assets_with_ar6.loc[oil_gas_coal_mask, "net_profits"] = ogc_data["net_profits"]
+        
+        # Automotive, Steel Sectors calculation
+        auto_steel_mask = assets_with_ar6["sector"].isin(["Automotive", "Steel"])
+        if auto_steel_mask.any():
+            as_data = assets_with_ar6[auto_steel_mask].copy()
+            
+            # Production volume from asset production pathways
+            as_data["production_volume"] = as_data["production"]  # Assuming this column exists
+            
+            # Revenue = Production * Price
+            as_data["revenue"] = as_data["production_volume"] * as_data["scenario_price"]
+            
+            # Operating costs = FuelCost/Efficiency + OpMgmtCost
+            as_data["fuel_cost_per_unit"] = as_data.get("fuel_cost", 0) / as_data.get("efficiency_decimal", 1)
+            as_data["operating_cost"] = (
+                as_data["fuel_cost_per_unit"] + as_data.get("om_cost_usd_per_mw_per_yr", 0)
+            )
+            
+            # Carbon tax cost (only applies after shock year)
+            as_data["carbon_cost"] = 0.0
+            post_shock_mask = as_data["year"] > shock_year
+            if post_shock_mask.any():
+                as_data.loc[post_shock_mask, "carbon_cost"] = (
+                    as_data.loc[post_shock_mask, "production_volume"] *
+                    as_data.loc[post_shock_mask].get("emission_factor", 0) *
+                    (1 - market_passthrough) *
+                    as_data.loc[post_shock_mask].get("carbon_price_usd_per_tco2", 0)
+                )
+            
+            # Capital costs
+            as_data["capital_cost"] = (
+                as_data.get("capacity_additions_mw_per_yr", 0) * 
+                as_data.get("capital_cost_usd_per_mw", 0)
+            )
+            
+            # Net profits
+            as_data["net_profits"] = (
+                as_data["revenue"] - 
+                as_data["operating_cost"] * as_data["production_volume"] -
+                as_data["carbon_cost"] -
+                as_data["capital_cost"]
+            )
+            
+            assets_with_ar6.loc[auto_steel_mask, "net_profits"] = as_data["net_profits"]
+        
+        return assets_with_ar6
+    
+    # Calculate net profits for baseline and shock scenarios
+    assets_net_profits_baseline = calculate_sector_net_profits(assets_baseline, "baseline")
+    assets_net_profits_shock = calculate_sector_net_profits(assets_shock, "shock")
+    
+    return assets_net_profits_baseline, assets_net_profits_shock
 
-    # Calculate net profits for the baseline scenario
-    traj_companies_revenue_baseline = traj_companies_baseline.merge(
-        traj_technology_prices, on=["sector", "technology", "year"], how="inner"
-    ).merge(financial_averages_df, on=["sector", "technology"], how="inner")
-    traj_companies_revenue_baseline["net_profits_baseline"] = (
-        traj_companies_revenue_baseline["company_trajectory_baseline"]
-        * traj_companies_revenue_baseline["scenario_price_baseline"]
-        * traj_companies_revenue_baseline["net_profit_margin"]
-    )
 
-    # Calculate net profits for the shock (target) scenario
-    traj_companies_revenue_shock = traj_companies_shock.merge(
-        traj_technology_prices, on=["sector", "technology", "year"], how="inner"
-    ).merge(financial_averages_df, on=["sector", "technology"], how="inner")
-    traj_companies_revenue_shock["net_profits_shock"] = (
-        traj_companies_revenue_shock["company_trajectory_shock"]
-        * traj_companies_revenue_shock["scenario_price_late_sudden"]
-        * traj_companies_revenue_shock["net_profit_margin"]
-    )
+def aggregate_assets_to_company_technology(
+    assets_net_profits: pd.DataFrame
+) -> pd.DataFrame:
+    """Aggregate asset-level net profits to company-technology level."""
+    company_tech_profits = assets_net_profits.groupby([
+        "company_id", "sector", "technology", "year"
+    ]).agg({
+        "net_profits": "sum",
+        "production_volume": "sum",
+        "capacity": "sum"
+    }).reset_index()
+    
+    return company_tech_profits
 
-    traj_companies_revenue_baseline = traj_companies_revenue_baseline[
-        [
-            "company_id",
-            "sector",
-            "technology",
-            "year",
-            "company_trajectory_baseline",
-            "net_profits_baseline",
-        ]
-    ]
 
-    traj_companies_revenue_shock = traj_companies_revenue_shock[
-        [
-            "company_id",
-            "sector",
-            "technology",
-            "year",
-            "company_trajectory_shock",
-            "net_profits_shock",
-        ]
-    ]
-
-    return traj_companies_revenue_baseline, traj_companies_revenue_shock
+def aggregate_company_technology_to_company(
+    company_tech_profits: pd.DataFrame
+) -> pd.DataFrame:
+    """Aggregate company-technology level net profits to whole company level."""
+    company_profits = company_tech_profits.groupby([
+        "company_id", "year"
+    ]).agg({
+        "net_profits": "sum",
+        "production_volume": "sum",
+        "capacity": "sum"
+    }).reset_index()
+    
+    return company_profits
 
 
 def calculate_discounted_net_profits(
