@@ -9,6 +9,12 @@ import re
 from pathlib import Path
 import os
 
+import os
+import re
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
 
 def plot_late_sudden_trajectories(
     late_sudden_trajectories: pd.DataFrame,
@@ -339,14 +345,24 @@ def plot_staggered_shock(
     assets_forecasts: pd.DataFrame,
     asset_level_df: pd.DataFrame,
     output_dir: str = "data/08_reporting/companies_staggered_shock_plots",
-    asset_prod_col: str = "capacity_after_shock",  # <-- set this to the true column name
+    asset_after_col: str = "capacity_after_shock",
+    asset_before_col: str = "capacity_before_shock",
+    include_before_sum: bool = True,
+    include_synthetic: bool = True,
+    min_points_for_asset: int = 1,
 ):
     """
-    For each unique (scenario_geography, company_id, technology) in the
-    late_sudden_trajectories, generates and saves:
-      1) A plot of the original company‐level Late&SUDDEN trajectory vs.
-         each asset and their sum,
-      2) A plot of the year‐by‐year difference (asset sum − company).
+    For each unique (scenario_geography, company_id, technology) in late_sudden_trajectories, save:
+      1) Company L&S vs. per-asset after-shock trajectories + sums (optionally also the sum of 'before' series),
+      2) The year-by-year difference: (sum of assets after-shock – company L&S).
+
+    Notes
+    -----
+    - Uses 'scenario_geography' at all times (geo-aware).
+    - Annotates each asset's line at its first plotted year with the age at that year.
+    - Can optionally include synthetic assets (is_synthetic==True) or drop them.
+    - Expects asset_level_df to include: ['asset_id','company_id','scenario_geography','technology','year',
+                                          'asset_age', asset_before_col, asset_after_col, 'is_synthetic'].
     """
 
     os.makedirs(output_dir, exist_ok=True)
@@ -357,20 +373,45 @@ def plot_staggered_shock(
         cleaned = re.sub(r'[<>:"/\\|?*]', "_", str(name))
         cleaned = re.sub(r"[^\w\s-]", "_", cleaned)
         cleaned = re.sub(r"\s+", "_", cleaned)
-        return cleaned[:100]
+        return cleaned[:120]
 
-    # pull company_name from trajectories (if present)
+    # add company_name if missing (best-effort)
     traj = late_sudden_trajectories.copy()
-    if "company_name" not in traj:
-        # fallback: try merging from assets_forecasts
+    if "company_name" not in traj.columns:
         traj = traj.merge(
             assets_forecasts[["company_id", "company_name"]].drop_duplicates(),
             on="company_id",
             how="left",
         )
 
-    # group by alignment_type
-    if "alignment_type" in traj:
+    # guarantee required cols exist
+    needed_traj = {
+        "scenario_geography",
+        "company_id",
+        "technology",
+        "year",
+        "company_trajectory_latesudden",
+    }
+    missing_t = needed_traj - set(traj.columns)
+    if missing_t:
+        raise KeyError(f"late_sudden_trajectories missing columns: {missing_t}")
+
+    needed_assets = {
+        "asset_id",
+        "company_id",
+        "scenario_geography",
+        "technology",
+        "year",
+        "asset_age",
+        asset_before_col,
+        asset_after_col,
+    }
+    missing_a = needed_assets - set(asset_level_df.columns)
+    if missing_a:
+        raise KeyError(f"asset_level_df missing columns: {missing_a}")
+
+    # group by alignment type for folder structure (if present)
+    if "alignment_type" in traj.columns:
         groups = traj.groupby("alignment_type")
     else:
         groups = [("general", traj)]
@@ -386,99 +427,202 @@ def plot_staggered_shock(
         )
 
         for _, row in combos.iterrows():
-            geo, cid, tech, comp_name = (
-                row["scenario_geography"],
-                row["company_id"],
-                row["technology"],
-                row["company_name"],
+            geo = row["scenario_geography"]
+            cid = row["company_id"]
+            tech = row["technology"]
+            comp_name = row.get("company_name", np.nan)
+
+            # company-level
+            comp = (
+                df_align[
+                    (df_align["scenario_geography"] == geo)
+                    & (df_align["company_id"] == cid)
+                    & (df_align["technology"] == tech)
+                ]
+                .sort_values("year")
+                .copy()
             )
-            comp = df_align[
-                (df_align["scenario_geography"] == geo)
-                & (df_align["company_id"] == cid)
-                & (df_align["technology"] == tech)
-            ].sort_values("year")
             if comp.empty:
                 continue
 
-            years = comp["year"].to_numpy()
-            company_vals = comp["company_trajectory_latesudden"].to_numpy()
+            years = comp["year"].to_numpy(dtype=int)
+            company_vals = comp["company_trajectory_latesudden"].to_numpy(dtype=float)
 
-            assets = asset_level_df[
-                (asset_level_df["company_id"] == cid)
+            # asset-level (filter geo-aware, optionally drop synthetic)
+            aset = asset_level_df[
+                (asset_level_df["scenario_geography"] == geo)
+                & (asset_level_df["company_id"] == cid)
                 & (asset_level_df["technology"] == tech)
             ].copy()
-            if assets.empty:
+            if not include_synthetic and "is_synthetic" in aset.columns:
+                aset = aset[~aset["is_synthetic"].fillna(False)].copy()
+
+            if aset.empty:
+                # still plot company curve alone + zero diffs
+                plt.figure(figsize=(10, 6))
+                plt.plot(years, company_vals, lw=2.5, label="Company L&S")
+                plt.xlabel("Year")
+                plt.ylabel("Production / Capacity")
+                plt.title(
+                    f"{tech} • {geo} • {cid}\nCompany Late & Sudden (no assets found)\nAlignment: {alignment_type}"
+                )
+                plt.legend()
+                plt.tight_layout()
+                tech_clean = _clean(tech)
+                geo_clean = _clean(geo)
+                comp_clean = _clean(comp_name)
+                save_path = os.path.join(
+                    subdir, f"{tech_clean}-{comp_clean}-{geo_clean}.png"
+                )
+                plt.savefig(save_path, dpi=300)
+                plt.close()
+
+                # diff (assets sum is zero)
+                plt.figure(figsize=(8, 4))
+                plt.plot(years, -company_vals, marker="o")
+                plt.axhline(0, linestyle="--", color="grey")
+                plt.xlabel("Year")
+                plt.ylabel("Asset Sum − Company")
+                plt.title(
+                    f"{tech} • {geo} • {cid}\nDifference Over Time\nAlignment: {alignment_type}"
+                )
+                plt.tight_layout()
+                save_path2 = os.path.join(
+                    subdir, f"{tech_clean}-{comp_clean}-{geo_clean}-diff.png"
+                )
+                plt.savefig(save_path2, dpi=300)
+                plt.close()
                 continue
 
-            # --- Plot 1: company vs assets vs sum ---
-            plt.figure(figsize=(10, 6))
-            plt.plot(
-                years, company_vals, lw=2.5, color="black", label="Company Late&SUDDEN"
-            )
-
-            # individual assets
-            for aid, df_a in assets.groupby("asset_id"):
-                df_a = df_a.sort_values("year")
-                plt.plot(
-                    df_a["year"],
-                    df_a[asset_prod_col],
-                    lw=1.2,
-                    alpha=0.7,
-                    label=f"Asset {aid}",
+            # aggregate sums
+            aset_year = (
+                aset.groupby("year", as_index=False)
+                .agg(
+                    total_after=(asset_after_col, "sum"),
+                    total_before=(asset_before_col, "sum"),
                 )
-
-            # sum of assets
-            agg = (
-                assets.groupby("year", as_index=False)
-                .agg(total_asset_plate=(asset_prod_col, "sum"))
                 .sort_values("year")
             )
+
+            # --- Plot 1: company vs assets (per-asset after_shock) + sums ---
+            plt.figure(figsize=(11, 6))
+            # company L&S
+            plt.plot(years, company_vals, lw=2.8, label="Company L&S")
+
+            # sum of assets after
             plt.plot(
-                agg["year"],
-                agg["total_asset_plate"],
-                lw=2,
+                aset_year["year"].to_numpy(dtype=int),
+                aset_year["total_after"].to_numpy(dtype=float),
+                lw=2.0,
                 linestyle="--",
-                label="Sum of Assets",
+                label="Sum of assets (after-shock)",
             )
+
+            # optional: sum of assets before (helps see “baseline” before allocation each year)
+            if include_before_sum:
+                plt.plot(
+                    aset_year["year"].to_numpy(dtype=int),
+                    aset_year["total_before"].to_numpy(dtype=float),
+                    lw=1.5,
+                    linestyle=":",
+                    label="Sum of assets (before-shock)",
+                )
+
+            # individual asset lines (after-shock)
+            # annotate first point with age for quick sanity (why this asset took shock)
+            for aid, df_a in (
+                aset[["asset_id", "year", "asset_age", asset_after_col]]
+                .dropna(subset=["year"])
+                .groupby("asset_id")
+            ):
+                df_a = df_a.sort_values("year")
+                if len(df_a) < min_points_for_asset:
+                    continue
+                plt.plot(
+                    df_a["year"].to_numpy(dtype=int),
+                    df_a[asset_after_col].to_numpy(dtype=float),
+                    lw=1.0,
+                    alpha=0.8,
+                    label=f"Asset {aid}",
+                )
+                # annotate age at first plotted year
+                try:
+                    y0 = int(df_a["year"].iloc[0])
+                    a0 = float(df_a["asset_age"].iloc[0])
+                    v0 = float(df_a[asset_after_col].iloc[0])
+                    plt.text(
+                        y0,
+                        v0,
+                        f"age≈{int(round(a0))}",
+                        fontsize=8,
+                        va="bottom",
+                        ha="left",
+                        alpha=0.8,
+                    )
+                except Exception:
+                    pass
 
             plt.xlabel("Year")
             plt.ylabel("Production / Capacity")
+            title_name = comp_name if pd.notna(comp_name) else cid
             plt.title(
-                f"{tech} • {geo} • {cid}\n"
-                f"Company vs Asset trajectories\nAlignment: {alignment_type}"
+                f"{tech} • {geo} • {title_name}\nCompany vs assets (after-shock) "
+                + ("+ before sum " if include_before_sum else "")
+                + f"| Alignment: {alignment_type}"
             )
-            plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
-            plt.tight_layout()
+            # keep legend sane: limit entries if massive
+            handles, labels = plt.gca().get_legend_handles_labels()
+            max_legend = 20
+            if len(labels) > max_legend:
+                # keep first few + collapse asset entries
+                kept = []
+                kept_labels = []
+                asset_count = 0
+                for h, lab in zip(handles, labels):
+                    if lab.startswith("Asset "):
+                        asset_count += 1
+                        continue
+                    kept.append(h)
+                    kept_labels.append(lab)
+                kept_labels.append(f"{asset_count} assets (lines hidden in legend)")
+                plt.legend(
+                    kept, kept_labels, bbox_to_anchor=(1.05, 1), loc="upper left"
+                )
+            else:
+                plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
 
+            plt.tight_layout()
             tech_clean = _clean(tech)
             geo_clean = _clean(geo)
-            comp_clean = _clean(comp_name)
-            fname = f"{tech_clean}-{comp_clean}-{geo_clean}.png"
-            save_path = os.path.join(subdir, fname)
+            comp_clean = _clean(title_name)
+            save_path = os.path.join(
+                subdir, f"{tech_clean}-{comp_clean}-{geo_clean}.png"
+            )
             plt.savefig(save_path, dpi=300)
             plt.close()
             print(f"Saved plot: {save_path}")
 
-            # --- Plot 2: difference (sum_assets − company) ---
-            sum_series = agg.set_index("year")["total_asset_plate"].reindex(
-                years, fill_value=0
+            # --- Plot 2: difference (sum_after − company) ---
+            # align on the company horizon for the diff
+            aset_sum_on_company = (
+                aset_year.set_index("year")["total_after"]
+                .reindex(years, fill_value=0.0)
+                .to_numpy(dtype=float)
             )
-            diffs = sum_series.values - company_vals
+            diffs = aset_sum_on_company - company_vals
 
-            plt.figure(figsize=(8, 4))
+            plt.figure(figsize=(9, 4))
             plt.plot(years, diffs, marker="o")
-            plt.axhline(0, linestyle="--", color="grey")
+            plt.axhline(0, linestyle="--")
             plt.xlabel("Year")
-            plt.ylabel("Asset Sum − Company")
+            plt.ylabel("Asset Sum (after) − Company L&S")
             plt.title(
-                f"{tech} • {geo} • {cid}\n"
-                f"Difference Over Time\n"
-                f"Alignment: {alignment_type}"
+                f"{tech} • {geo} • {title_name}\nDifference over time | Alignment: {alignment_type}"
             )
             plt.tight_layout()
-
-            fname2 = f"{tech_clean}-{comp_clean}-{geo_clean}-diff.png"
-            save_path2 = os.path.join(subdir, fname2)
+            save_path2 = os.path.join(
+                subdir, f"{tech_clean}-{comp_clean}-{geo_clean}-diff.png"
+            )
             plt.savefig(save_path2, dpi=300)
             plt.close()
             print(f"Saved plot: {save_path2}")

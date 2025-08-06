@@ -17,7 +17,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                     allocated_assets_to_companies="allocated_assets_to_companies",
                     shock_year="params:shock_year",
                 ),
-                outputs="companies_staggered_lated_sudden",
+                outputs="asset_level_staggered_shock",
             ),
         ],
         tags="altrisk",
