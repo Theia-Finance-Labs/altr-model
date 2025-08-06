@@ -92,3 +92,34 @@ all_alignment_classifications:
   type: pandas.CSVDataset
   filepath: data/08_reporting/all_alignment_classifications.csv
 
+# ================================================
+# ======= FINANCIAL MODEL PIPELINE OUTPUTS =======
+# ================================================
+
+# Company-technology level net profits (baseline and shock scenarios)
+company_net_profits_baseline:
+  type: pandas.CSVDataset
+  filepath: data/07_model_output/company_net_profits_baseline.csv
+
+company_net_profits_shock:
+  type: pandas.CSVDataset
+  filepath: data/07_model_output/company_net_profits_shock.csv
+
+# Company-level aggregated net profits
+company_profits_baseline:
+  type: pandas.CSVDataset
+  filepath: data/07_model_output/company_profits_baseline.csv
+
+company_profits_shock:
+  type: pandas.CSVDataset
+  filepath: data/07_model_output/company_profits_shock.csv
+
+# Discounted net profits with terminal values
+company_discounted_net_profits_baseline:
+  type: pandas.CSVDataset
+  filepath: data/08_reporting/company_discounted_net_profits_baseline.csv
+
+company_discounted_net_profits_shock:
+  type: pandas.CSVDataset
+  filepath: data/08_reporting/company_discounted_net_profits_shock.csv
+
