@@ -71,14 +71,6 @@ def create_pipeline(**kwargs) -> Pipeline:
                 ),
                 outputs="assets_retirement_dates",
             ),
-            node(
-                func=allocate_assets_to_companies,
-                inputs=[
-                    "assets_forecasts",
-                    "companies_ownership_tree",
-                ],
-                outputs="allocated_assets_to_companies",
-            ),
         ],
         tags=["altrisk", "trisk"],
     )
