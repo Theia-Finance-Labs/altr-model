@@ -6,6 +6,7 @@ from kedro.pipeline import node, Pipeline, pipeline
 
 from .nodes import (
     calculate_asset_level_net_profits,
+    aggregate_assets_to_company_technology,
     aggregate_company_technology_to_company,
     calculate_discounted_net_profits,
 )
@@ -27,12 +28,19 @@ def create_pipeline(**kwargs) -> Pipeline:
                 outputs=["company_net_profits_baseline", "company_net_profits_shock"],
                 name="calculate_company_level_net_profits_node",
             ),
-            # Aggregate to whole company level (sum across technologies)
+            # Aggregate assets to company-technology level
+            node(
+                func=aggregate_assets_to_company_technology,
+                inputs=["company_net_profits_baseline", "company_net_profits_shock"],
+                outputs=["company_tech_profits_baseline", "company_tech_profits_shock"],
+                name="aggregate_assets_to_company_technology_node",
+            ),
+            # Aggregate company-technology to whole company level
             node(
                 func=aggregate_company_technology_to_company,
-                inputs=["company_net_profits_baseline", "company_net_profits_shock"],
+                inputs=["company_tech_profits_baseline", "company_tech_profits_shock"],
                 outputs=["company_profits_baseline", "company_profits_shock"],
-                name="aggregate_to_company_level_node",
+                name="aggregate_company_technology_to_company_node",
             ),
             # Calculate discounted net profits and terminal values
             node(

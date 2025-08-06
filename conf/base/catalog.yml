@@ -100,14 +100,23 @@ asset_level_staggered_shock:
 # ======= FINANCIAL MODEL PIPELINE OUTPUTS =======
 # ================================================
 
-# Company-technology level net profits (baseline and shock scenarios)
+# Asset-level net profits (baseline and shock scenarios)
 company_net_profits_baseline:
   type: pandas.CSVDataset
-  filepath: data/07_model_output/company_net_profits_baseline.csv
+  filepath: data/07_model_output/assets_net_profits_baseline.csv
 
 company_net_profits_shock:
   type: pandas.CSVDataset
-  filepath: data/07_model_output/company_net_profits_shock.csv
+  filepath: data/07_model_output/assets_net_profits_shock.csv
+
+# Company-technology level aggregated net profits
+company_tech_profits_baseline:
+  type: pandas.CSVDataset
+  filepath: data/07_model_output/company_tech_profits_baseline.csv
+
+company_tech_profits_shock:
+  type: pandas.CSVDataset
+  filepath: data/07_model_output/company_tech_profits_shock.csv
 
 # Company-level aggregated net profits
 company_profits_baseline:

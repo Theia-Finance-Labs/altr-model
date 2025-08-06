@@ -9,7 +9,7 @@ from typing import Tuple
 
 
 def calculate_asset_level_net_profits(
-    all_late_sudden_trajectories: pd.DataFrame,
+    asset_level_staggered_shock: pd.DataFrame,
     downloaded_scenarios_ar6: pd.DataFrame,
     shock_year: int,
     market_passthrough: float = 0.5,
@@ -20,42 +20,38 @@ def calculate_asset_level_net_profits(
     - Oil&Gas, Coal: Netprofits = Production*((Price-OpMgmtCost)-(EmissionFactor*MarketPassthrough*CarbonTax))-(dCapacity/dyears*CapitalCost)
     - Automotive, Steel: Netprofits = Production*((Price-FuelCost/Efficiency-OpMgmtCost)-(EmissionFactor*MarketPassthrough*CarbonTax))-(dCapacity/dyears*CapitalCost)
     
-    Note: The all_late_sudden_trajectories contains company-level trajectories.
-    This function needs to work with asset-level data for the net profit calculations.
+    Note: Uses asset_level_staggered_shock with capacity_after_shock for actual asset-level calculations.
     """
     
     def calculate_sector_net_profits(
-        trajectories_df: pd.DataFrame, 
+        asset_data: pd.DataFrame, 
         ar6_scenarios_filtered: pd.DataFrame,
         scenario_type: str
     ) -> pd.DataFrame:
         """
-        Calculate net profits for a specific scenario type (baseline or target).
+        Calculate net profits for a specific scenario type using asset-level data with capacity_after_shock.
         """
         
-        # Merge trajectories with AR6 scenario data for prices and other parameters
-        # Match on sector, technology, and year
-        assets_with_ar6 = trajectories_df.merge(
+        # Merge asset-level data with AR6 scenario data for prices and other parameters
+        # Match on technology and year (sector comes from AR6 data)
+        assets_with_ar6 = asset_data.merge(
             ar6_scenarios_filtered, 
-            on=["sector", "technology", "year"], 
+            on=["technology", "year"], 
             how="inner"
         )
         
         # Initialize net profits column
         assets_with_ar6["net_profits"] = 0.0
         
-        # Power Sector calculation
+        # Power Sector calculation - uses capacity_after_shock * capacity_factor
         power_mask = assets_with_ar6["sector"] == "Power"
         if power_mask.any():
             power_data = assets_with_ar6[power_mask].copy()
             
-            # For power sector, use capacity and capacity factor from trajectories
-            # Production volume = Capacity * Capacity Factor
-            capacity_col = f"scenario_activity_{scenario_type}" if f"scenario_activity_{scenario_type}" in power_data.columns else "company_trajectory_baseline"
-            cap_factor_col = f"scenario_capacity_factor_{scenario_type}" if f"scenario_capacity_factor_{scenario_type}" in power_data.columns else "scenario_capacity_factor"
-            
+            # For power sector: Production volume = capacity_after_shock * Capacity Factor (from AR6)
+            # Use capacity_after_shock for both scenarios (it already reflects the shock)
             power_data["production_volume"] = (
-                power_data.get(capacity_col, 0) * power_data.get(cap_factor_col, power_data.get("scenario_capacity_factor", 1))
+                power_data["capacity_after_shock"] * power_data.get("scenario_capacity_factor", 1)
             )
             
             # Revenue = Production * Price
@@ -96,14 +92,13 @@ def calculate_asset_level_net_profits(
             
             assets_with_ar6.loc[power_mask, "net_profits"] = power_data["net_profits"]
         
-        # Oil & Gas, Coal Sectors calculation
+        # Oil & Gas, Coal Sectors calculation - uses capacity_after_shock directly as production
         oil_gas_coal_mask = assets_with_ar6["sector"].isin(["Oil&Gas", "Coal"])
         if oil_gas_coal_mask.any():
             ogc_data = assets_with_ar6[oil_gas_coal_mask].copy()
             
-            # Production volume from company trajectories
-            production_col = f"company_trajectory_{scenario_type}" if f"company_trajectory_{scenario_type}" in ogc_data.columns else "company_trajectory_baseline"
-            ogc_data["production_volume"] = ogc_data.get(production_col, ogc_data.get("scenario_pathway", 0))
+            # For Oil&Gas, Coal: Production volume = capacity_after_shock (no capacity factor)
+            ogc_data["production_volume"] = ogc_data["capacity_after_shock"]
             
             # Revenue = Production * Price
             ogc_data["revenue"] = ogc_data["production_volume"] * ogc_data["scenario_price"]
@@ -138,14 +133,13 @@ def calculate_asset_level_net_profits(
             
             assets_with_ar6.loc[oil_gas_coal_mask, "net_profits"] = ogc_data["net_profits"]
         
-        # Automotive, Steel Sectors calculation
+        # Automotive, Steel Sectors calculation - uses capacity_after_shock directly as production
         auto_steel_mask = assets_with_ar6["sector"].isin(["Automotive", "Steel"])
         if auto_steel_mask.any():
             as_data = assets_with_ar6[auto_steel_mask].copy()
             
-            # Production volume from company trajectories
-            production_col = f"company_trajectory_{scenario_type}" if f"company_trajectory_{scenario_type}" in as_data.columns else "company_trajectory_baseline"
-            as_data["production_volume"] = as_data.get(production_col, as_data.get("scenario_pathway", 0))
+            # For Automotive, Steel: Production volume = capacity_after_shock (no capacity factor)
+            as_data["production_volume"] = as_data["capacity_after_shock"]
             
             # Revenue = Production * Price
             as_data["revenue"] = as_data["production_volume"] * as_data["scenario_price"]
@@ -194,42 +188,61 @@ def calculate_asset_level_net_profits(
         downloaded_scenarios_ar6['scenario_type'] == 'target'  
     ].copy()
     
-    # Rename scenario_year to year to match trajectory data
+    # Rename scenario_year to year to match asset data
     ar6_baseline = ar6_baseline.rename(columns={'scenario_year': 'year'})
     ar6_target = ar6_target.rename(columns={'scenario_year': 'year'})
     
-    # Calculate net profits for baseline scenario
-    # Use company_trajectory_baseline for production volumes
-    company_net_profits_baseline = calculate_sector_net_profits(
-        all_late_sudden_trajectories, ar6_baseline, "baseline"
+    # Calculate net profits for baseline scenario (using capacity_before_shock)
+    asset_baseline = asset_level_staggered_shock.copy()
+    asset_baseline['capacity_after_shock'] = asset_baseline['capacity_before_shock']
+    assets_net_profits_baseline = calculate_sector_net_profits(
+        asset_baseline, ar6_baseline, "baseline"
     )
     
-    # Calculate net profits for shock/target scenario
-    # Use company_trajectory_latesudden for production volumes
-    trajectories_shock = all_late_sudden_trajectories.copy()
-    company_net_profits_shock = calculate_sector_net_profits(
-        trajectories_shock, ar6_target, "latesudden"
+    # Calculate net profits for target/shock scenario (using capacity_after_shock)
+    assets_net_profits_shock = calculate_sector_net_profits(
+        asset_level_staggered_shock, ar6_target, "target"
     )
     
-    return company_net_profits_baseline, company_net_profits_shock
+    return assets_net_profits_baseline, assets_net_profits_shock
+
+
+def aggregate_assets_to_company_technology(
+    assets_net_profits_baseline: pd.DataFrame,
+    assets_net_profits_shock: pd.DataFrame
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Aggregate asset-level net profits to company-technology level by summing across all assets of the same technology for each company."""
+    
+    def aggregate_scenario(assets_df: pd.DataFrame) -> pd.DataFrame:
+        return assets_df.groupby([
+            "company_id", "technology", "year"
+        ]).agg({
+            "net_profits": "sum",
+            "production_volume": "sum"
+        }).reset_index()
+    
+    company_tech_profits_baseline = aggregate_scenario(assets_net_profits_baseline)
+    company_tech_profits_shock = aggregate_scenario(assets_net_profits_shock)
+    
+    return company_tech_profits_baseline, company_tech_profits_shock
 
 
 def aggregate_company_technology_to_company(
-    company_net_profits_baseline: pd.DataFrame,
-    company_net_profits_shock: pd.DataFrame
+    company_tech_profits_baseline: pd.DataFrame,
+    company_tech_profits_shock: pd.DataFrame
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """Aggregate company-technology level net profits to whole company level."""
+    """Aggregate company-technology level net profits to company level by summing across all technologies."""
     
-    def aggregate_scenario(company_df: pd.DataFrame) -> pd.DataFrame:
-        return company_df.groupby([
+    def aggregate_scenario(company_tech_df: pd.DataFrame) -> pd.DataFrame:
+        return company_tech_df.groupby([
             "company_id", "year"
         ]).agg({
             "net_profits": "sum",
             "production_volume": "sum"
         }).reset_index()
     
-    company_profits_baseline = aggregate_scenario(company_net_profits_baseline)
-    company_profits_shock = aggregate_scenario(company_net_profits_shock)
+    company_profits_baseline = aggregate_scenario(company_tech_profits_baseline)
+    company_profits_shock = aggregate_scenario(company_tech_profits_shock)
     
     return company_profits_baseline, company_profits_shock
 
