@@ -92,6 +92,10 @@ all_alignment_classifications:
   type: pandas.CSVDataset
   filepath: data/08_reporting/all_alignment_classifications.csv
 
+asset_level_staggered_shock:  
+  type: pandas.CSVDataset
+  filepath: data/08_reporting/asset_level_staggered_shock.csv
+
 # ================================================
 # ======= FINANCIAL MODEL PIPELINE OUTPUTS =======
 # ================================================
