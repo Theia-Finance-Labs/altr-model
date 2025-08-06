@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import warnings
 
 # ============================ helpers ============================
 
@@ -431,8 +432,8 @@ def allocate_increasing_tech(
 ):
     """
     Distribute **all positive changes** in L&S (full horizon) to assets for increasing techs.
-    Geography-aware. Uses a single persistent synthetic asset per (company_id, scenario_geography, technology).
-    Robust to duplicate indices in base_prev.
+    Geography-aware. Uses ONE persistent synthetic asset per (company_id, scenario_geography, technology).
+    Ensures the synthetic row is never duplicated (never included in the 'real' block).
     """
     group_cols = ["company_id", "scenario_geography", "technology"]
     d = (
@@ -479,12 +480,12 @@ def allocate_increasing_tech(
             continue
         y0, yN = int(years[0]), int(years[-1])
 
-        # Build full asset panel for this (cid, geo, tech)
+        # Build full panel of *real* assets (synthetic never enters this)
         panel = _build_asset_panel_full_horizon(
             assets_forecasts, cid, geo, tech, y0, yN
         )
 
-        # Anchor at first L&S year (use panel capacities)
+        # Anchor at first L&S year using panel capacities (real assets only)
         ceil0 = panel[panel["year"] == y0].copy()
         out0 = ceil0.assign(
             capacity_before_shock=ceil0["capacity"],
@@ -504,50 +505,58 @@ def allocate_increasing_tech(
             ]
         ]
         base_prev.index = base_prev.index.astype(str)
-        base_prev = _unique_base(base_prev)  # ensure unique index
+        base_prev = _unique_base(base_prev.reset_index())
 
         for _, row in grp[grp["year"] > y0].iterrows():
             y = int(row["year"])
             shock = float(row["shock_eff"])  # >= 0
             ceil_y = panel[panel["year"] == y].copy()
 
-            # Always dedupe base_prev before using
+            # De-dup and split base into real vs synthetic parts
             if not base_prev.empty:
                 base_prev = _unique_base(base_prev.reset_index())
+            base_real_prev = base_prev.drop(index=[synth_id], errors="ignore")
+            has_synth = synth_id in base_prev.index
 
-            # carry-forward when no positive change
+            # ---------- Case 1: carry-forward (no positive change) ----------
             if np.isclose(shock, 0.0) and not base_prev.empty:
-                cap0 = base_prev["capacity_after_shock"].rename("capacity_before_shock")
-                ages = (
-                    ceil_y.set_index("asset_id")["asset_age"]
-                    .reindex(cap0.index)
-                    .fillna(base_prev["asset_age"] + 1)
-                )
+                # Real block carry-forward (exclude synthetic)
+                if base_real_prev.empty:
+                    real_out = pd.DataFrame(columns=cols_out)
+                else:
+                    cap0 = base_real_prev["capacity_after_shock"].rename(
+                        "capacity_before_shock"
+                    )
+                    ages = (
+                        ceil_y.set_index("asset_id")["asset_age"]
+                        .reindex(cap0.index)
+                        .fillna(base_real_prev["asset_age"] + 1)
+                    )
+                    real_out = pd.DataFrame(
+                        {
+                            "asset_id": cap0.index,
+                            "company_id": cid,
+                            "scenario_geography": geo,
+                            "technology": tech,
+                            "year": y,
+                            "asset_age": ages.values,
+                            "capacity_before_shock": cap0.values,
+                            "allocated_shock": np.zeros_like(cap0.values),
+                            "capacity_after_shock": cap0.values,
+                            "is_synthetic": False,
+                        }
+                    )
 
-                out = pd.DataFrame(
-                    {
-                        "asset_id": cap0.index,
-                        "company_id": cid,
-                        "scenario_geography": geo,
-                        "technology": tech,
-                        "year": y,
-                        "asset_age": ages.values,
-                        "capacity_before_shock": cap0.values,
-                        "allocated_shock": np.zeros_like(cap0.values),
-                        "capacity_after_shock": cap0.values,
-                        "is_synthetic": False,
-                    }
-                )
-
-                # carry-forward the synthetic asset too (if it exists)
-                if synth_id in base_prev.index:
+                # Synthetic carry-forward (single row, if exists)
+                synth_out = pd.DataFrame(columns=cols_out)
+                if has_synth:
                     prev_cap = _get_prev_scalar(
                         base_prev, synth_id, "capacity_after_shock", 0.0
                     )
                     prev_age = (
                         _get_prev_scalar(base_prev, synth_id, "asset_age", 0.0) + 1.0
                     )
-                    synth_carry = pd.DataFrame(
+                    synth_out = pd.DataFrame(
                         [
                             {
                                 "asset_id": synth_id,
@@ -563,9 +572,16 @@ def allocate_increasing_tech(
                             }
                         ]
                     )
-                    out = pd.concat([out, synth_carry], ignore_index=True)
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore", category=FutureWarning, message=".*all-NA columns.*"
+                )
+                # TODO: remove this warning silencer once synthetic assets are deduplicated properly
+                out = pd.concat([real_out, synth_out], ignore_index=True)
 
                 outputs.append(out[cols_out])
+
+                # chain base to next year
                 base_prev = out.set_index("asset_id")[
                     [
                         "company_id",
@@ -588,15 +604,18 @@ def allocate_increasing_tech(
                 )
                 continue
 
-            # If no base yet (rare), initialize with real assets at y
-            if base_prev.empty:
+            # ---------- Case 2: positive change to allocate ----------
+            # If we have no *real* base yet (e.g., new fleet), initialize from real assets at y
+            if base_real_prev.empty:
                 real = ceil_y.copy()
                 real["capacity_before_shock"] = real["capacity"]
                 real["allocated_shock"] = 0.0
                 real["capacity_after_shock"] = real["capacity"]
                 real["is_synthetic"] = False
-                outputs.append(real[cols_out])
-                base_prev = real.set_index("asset_id")[
+                real_out_init = real[cols_out]
+                outputs.append(real_out_init)
+
+                base_real_prev = real_out_init.set_index("asset_id")[
                     [
                         "company_id",
                         "scenario_geography",
@@ -605,8 +624,8 @@ def allocate_increasing_tech(
                         "capacity_after_shock",
                     ]
                 ]
-                base_prev.index = base_prev.index.astype(str)
-                base_prev = _unique_base(base_prev.reset_index())
+                base_real_prev.index = base_real_prev.index.astype(str)
+                base_real_prev = _unique_base(base_real_prev.reset_index())
 
             if shock <= 1e-12:
                 diags.append(
@@ -618,11 +637,18 @@ def allocate_increasing_tech(
                         "iters": 0,
                     }
                 )
+                # keep the old base (we already appended init real rows if needed)
+                base_prev = pd.concat(
+                    [base_real_prev, base_prev.loc[[synth_id]]]
+                    if has_synth
+                    else [base_real_prev]
+                )
+                base_prev = _unique_base(base_prev.reset_index())
                 continue
 
-            # Allocate to existing assets
-            out, rem, iters = _allocate_increase_one_year(
-                base_prev,
+            # Allocate to real assets ONLY
+            out_real, rem, iters = _allocate_increase_one_year(
+                base_real_prev,
                 ceil_y,
                 shock,
                 g_k,
@@ -630,25 +656,24 @@ def allocate_increasing_tech(
                 n_quantiles,
                 max_recursion_depth,
             )
-            out = out.reset_index().assign(
+            out_real = out_real.reset_index().assign(
                 company_id=cid,
                 scenario_geography=geo,
                 technology=tech,
                 year=y,
                 is_synthetic=False,
             )
-            outputs.append(out[cols_out])
+            outputs.append(out_real[cols_out])
 
-            # Include synthetic (ONE persistent asset) for leftover
+            # If leftover, update/create ONE synthetic row (not included in the real block)
+            synth_out = pd.DataFrame(columns=cols_out)
             if rem > 1e-12:
                 prev_cap = _get_prev_scalar(
                     base_prev, synth_id, "capacity_after_shock", 0.0
                 )
                 prev_age = _get_prev_scalar(base_prev, synth_id, "asset_age", 0.0)
-                # If it already exists, age +1; else start at 0
-                age_y = (prev_age + 1.0) if synth_id in base_prev.index else 0.0
-
-                synth_row = pd.DataFrame(
+                age_y = (prev_age + 1.0) if has_synth else 0.0
+                synth_out = pd.DataFrame(
                     [
                         {
                             "asset_id": synth_id,
@@ -664,20 +689,24 @@ def allocate_increasing_tech(
                         }
                     ]
                 )
-                outputs.append(synth_row[cols_out])
+                outputs.append(synth_out[cols_out])
+                rem = 0.0
 
+            # chain base to next year: real next + (optional) synthetic next
+            base_real_next = out_real.set_index("asset_id")[
+                [
+                    "company_id",
+                    "scenario_geography",
+                    "technology",
+                    "asset_age",
+                    "capacity_after_shock",
+                ]
+            ]
+            if not synth_out.empty:
                 base_prev = pd.concat(
                     [
-                        out.set_index("asset_id")[
-                            [
-                                "company_id",
-                                "scenario_geography",
-                                "technology",
-                                "asset_age",
-                                "capacity_after_shock",
-                            ]
-                        ],
-                        synth_row.set_index("asset_id")[
+                        base_real_next,
+                        synth_out.set_index("asset_id")[
                             [
                                 "company_id",
                                 "scenario_geography",
@@ -689,21 +718,20 @@ def allocate_increasing_tech(
                     ],
                     axis=0,
                 )
-                base_prev.index = base_prev.index.astype(str)
-                base_prev = _unique_base(base_prev.reset_index())
-                rem = 0.0
             else:
-                base_prev = out.set_index("asset_id")[
-                    [
-                        "company_id",
-                        "scenario_geography",
-                        "technology",
-                        "asset_age",
-                        "capacity_after_shock",
-                    ]
-                ]
-                base_prev.index = base_prev.index.astype(str)
-                base_prev = _unique_base(base_prev.reset_index())
+                # keep old synthetic if it existed and we didn't write a new row for it this year
+                base_prev = (
+                    pd.concat(
+                        [base_real_next, base_prev.loc[[synth_id]]],
+                        axis=0,
+                        join="inner",
+                    )
+                    if has_synth
+                    else base_real_next
+                )
+
+            base_prev.index = base_prev.index.astype(str)
+            base_prev = _unique_base(base_prev.reset_index())
 
             diags.append(
                 {
