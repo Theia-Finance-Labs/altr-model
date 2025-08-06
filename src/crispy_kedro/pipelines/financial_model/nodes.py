@@ -1,0 +1,303 @@
+"""
+Financial model pipeline for calculating asset-level net profits
+and aggregating to company level using AR6 scenarios data.
+"""
+
+import pandas as pd
+import numpy as np
+from typing import Tuple
+
+
+def calculate_asset_level_net_profits(
+    all_late_sudden_trajectories: pd.DataFrame,
+    downloaded_scenarios_ar6: pd.DataFrame,
+    shock_year: int,
+    market_passthrough: float = 0.5,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Calculate net profits at asset level using sector-specific equations:
+    - Power: Netprofits = (Capacity*CapFactor)*((Price-FuelCost/Efficiency-OpMgmtCost)-(EmissionFactor*MarketPassthrough*CarbonTax))-(dCapacity/dyears*CapitalCost)
+    - Oil&Gas, Coal: Netprofits = Production*((Price-OpMgmtCost)-(EmissionFactor*MarketPassthrough*CarbonTax))-(dCapacity/dyears*CapitalCost)
+    - Automotive, Steel: Netprofits = Production*((Price-FuelCost/Efficiency-OpMgmtCost)-(EmissionFactor*MarketPassthrough*CarbonTax))-(dCapacity/dyears*CapitalCost)
+    
+    Note: The all_late_sudden_trajectories contains company-level trajectories.
+    This function needs to work with asset-level data for the net profit calculations.
+    """
+    
+    def calculate_sector_net_profits(
+        trajectories_df: pd.DataFrame, 
+        ar6_scenarios_filtered: pd.DataFrame,
+        scenario_type: str
+    ) -> pd.DataFrame:
+        """
+        Calculate net profits for a specific scenario type (baseline or target).
+        """
+        
+        # Merge trajectories with AR6 scenario data for prices and other parameters
+        # Match on sector, technology, and year
+        assets_with_ar6 = trajectories_df.merge(
+            ar6_scenarios_filtered, 
+            on=["sector", "technology", "year"], 
+            how="inner"
+        )
+        
+        # Initialize net profits column
+        assets_with_ar6["net_profits"] = 0.0
+        
+        # Power Sector calculation
+        power_mask = assets_with_ar6["sector"] == "Power"
+        if power_mask.any():
+            power_data = assets_with_ar6[power_mask].copy()
+            
+            # For power sector, use capacity and capacity factor from trajectories
+            # Production volume = Capacity * Capacity Factor
+            capacity_col = f"scenario_activity_{scenario_type}" if f"scenario_activity_{scenario_type}" in power_data.columns else "company_trajectory_baseline"
+            cap_factor_col = f"scenario_capacity_factor_{scenario_type}" if f"scenario_capacity_factor_{scenario_type}" in power_data.columns else "scenario_capacity_factor"
+            
+            power_data["production_volume"] = (
+                power_data.get(capacity_col, 0) * power_data.get(cap_factor_col, power_data.get("scenario_capacity_factor", 1))
+            )
+            
+            # Revenue = Production * Price
+            power_data["revenue"] = (
+                power_data["production_volume"] * power_data["scenario_price"]
+            )
+            
+            # Operating costs = FuelCost/Efficiency + OpMgmtCost
+            power_data["fuel_cost_per_unit"] = power_data.get("fuel_cost", 0) / power_data.get("efficiency_decimal", 1)
+            power_data["operating_cost"] = (
+                power_data["fuel_cost_per_unit"] + power_data.get("om_cost_usd_per_mw_per_yr", 0)
+            )
+            
+            # Carbon tax cost (only applies after shock year)
+            power_data["carbon_cost"] = 0.0
+            post_shock_mask = power_data["year"] > shock_year
+            if post_shock_mask.any():
+                power_data.loc[post_shock_mask, "carbon_cost"] = (
+                    power_data.loc[post_shock_mask, "production_volume"] *
+                    power_data.loc[post_shock_mask].get("emission_factor", 0) *
+                    (1 - market_passthrough) *
+                    power_data.loc[post_shock_mask].get("carbon_price_usd_per_tco2", 0)
+                )
+            
+            # Capital costs (dCapacity/dyears * CapitalCost)
+            power_data["capital_cost"] = (
+                power_data.get("capacity_additions_mw_per_yr", 0) * 
+                power_data.get("capital_cost_usd_per_mw", 0)
+            )
+            
+            # Net profits
+            power_data["net_profits"] = (
+                power_data["revenue"] - 
+                power_data["operating_cost"] * power_data["production_volume"] -
+                power_data["carbon_cost"] -
+                power_data["capital_cost"]
+            )
+            
+            assets_with_ar6.loc[power_mask, "net_profits"] = power_data["net_profits"]
+        
+        # Oil & Gas, Coal Sectors calculation
+        oil_gas_coal_mask = assets_with_ar6["sector"].isin(["Oil&Gas", "Coal"])
+        if oil_gas_coal_mask.any():
+            ogc_data = assets_with_ar6[oil_gas_coal_mask].copy()
+            
+            # Production volume from company trajectories
+            production_col = f"company_trajectory_{scenario_type}" if f"company_trajectory_{scenario_type}" in ogc_data.columns else "company_trajectory_baseline"
+            ogc_data["production_volume"] = ogc_data.get(production_col, ogc_data.get("scenario_pathway", 0))
+            
+            # Revenue = Production * Price
+            ogc_data["revenue"] = ogc_data["production_volume"] * ogc_data["scenario_price"]
+            
+            # Operating costs
+            ogc_data["operating_cost"] = ogc_data.get("om_cost_usd_per_mw_per_yr", 0)
+            
+            # Carbon tax cost (only applies after shock year)
+            ogc_data["carbon_cost"] = 0.0
+            post_shock_mask = ogc_data["year"] > shock_year
+            if post_shock_mask.any():
+                ogc_data.loc[post_shock_mask, "carbon_cost"] = (
+                    ogc_data.loc[post_shock_mask, "production_volume"] *
+                    ogc_data.loc[post_shock_mask].get("emission_factor", 0) *
+                    (1 - market_passthrough) *
+                    ogc_data.loc[post_shock_mask].get("carbon_price_usd_per_tco2", 0)
+                )
+            
+            # Capital costs
+            ogc_data["capital_cost"] = (
+                ogc_data.get("capacity_additions_mw_per_yr", 0) * 
+                ogc_data.get("capital_cost_usd_per_mw", 0)
+            )
+            
+            # Net profits
+            ogc_data["net_profits"] = (
+                ogc_data["revenue"] - 
+                ogc_data["operating_cost"] * ogc_data["production_volume"] -
+                ogc_data["carbon_cost"] -
+                ogc_data["capital_cost"]
+            )
+            
+            assets_with_ar6.loc[oil_gas_coal_mask, "net_profits"] = ogc_data["net_profits"]
+        
+        # Automotive, Steel Sectors calculation
+        auto_steel_mask = assets_with_ar6["sector"].isin(["Automotive", "Steel"])
+        if auto_steel_mask.any():
+            as_data = assets_with_ar6[auto_steel_mask].copy()
+            
+            # Production volume from company trajectories
+            production_col = f"company_trajectory_{scenario_type}" if f"company_trajectory_{scenario_type}" in as_data.columns else "company_trajectory_baseline"
+            as_data["production_volume"] = as_data.get(production_col, as_data.get("scenario_pathway", 0))
+            
+            # Revenue = Production * Price
+            as_data["revenue"] = as_data["production_volume"] * as_data["scenario_price"]
+            
+            # Operating costs = FuelCost/Efficiency + OpMgmtCost
+            as_data["fuel_cost_per_unit"] = as_data.get("fuel_cost", 0) / as_data.get("efficiency_decimal", 1)
+            as_data["operating_cost"] = (
+                as_data["fuel_cost_per_unit"] + as_data.get("om_cost_usd_per_mw_per_yr", 0)
+            )
+            
+            # Carbon tax cost (only applies after shock year)
+            as_data["carbon_cost"] = 0.0
+            post_shock_mask = as_data["year"] > shock_year
+            if post_shock_mask.any():
+                as_data.loc[post_shock_mask, "carbon_cost"] = (
+                    as_data.loc[post_shock_mask, "production_volume"] *
+                    as_data.loc[post_shock_mask].get("emission_factor", 0) *
+                    (1 - market_passthrough) *
+                    as_data.loc[post_shock_mask].get("carbon_price_usd_per_tco2", 0)
+                )
+            
+            # Capital costs
+            as_data["capital_cost"] = (
+                as_data.get("capacity_additions_mw_per_yr", 0) * 
+                as_data.get("capital_cost_usd_per_mw", 0)
+            )
+            
+            # Net profits
+            as_data["net_profits"] = (
+                as_data["revenue"] - 
+                as_data["operating_cost"] * as_data["production_volume"] -
+                as_data["carbon_cost"] -
+                as_data["capital_cost"]
+            )
+            
+            assets_with_ar6.loc[auto_steel_mask, "net_profits"] = as_data["net_profits"]
+        
+        return assets_with_ar6
+    
+    # Prepare AR6 scenario data for baseline and target scenarios
+    ar6_baseline = downloaded_scenarios_ar6[
+        downloaded_scenarios_ar6['scenario_type'] == 'baseline'
+    ].copy()
+    
+    ar6_target = downloaded_scenarios_ar6[
+        downloaded_scenarios_ar6['scenario_type'] == 'target'  
+    ].copy()
+    
+    # Rename scenario_year to year to match trajectory data
+    ar6_baseline = ar6_baseline.rename(columns={'scenario_year': 'year'})
+    ar6_target = ar6_target.rename(columns={'scenario_year': 'year'})
+    
+    # Calculate net profits for baseline scenario
+    # Use company_trajectory_baseline for production volumes
+    company_net_profits_baseline = calculate_sector_net_profits(
+        all_late_sudden_trajectories, ar6_baseline, "baseline"
+    )
+    
+    # Calculate net profits for shock/target scenario
+    # Use company_trajectory_latesudden for production volumes
+    trajectories_shock = all_late_sudden_trajectories.copy()
+    company_net_profits_shock = calculate_sector_net_profits(
+        trajectories_shock, ar6_target, "latesudden"
+    )
+    
+    return company_net_profits_baseline, company_net_profits_shock
+
+
+def aggregate_company_technology_to_company(
+    company_net_profits_baseline: pd.DataFrame,
+    company_net_profits_shock: pd.DataFrame
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Aggregate company-technology level net profits to whole company level."""
+    
+    def aggregate_scenario(company_df: pd.DataFrame) -> pd.DataFrame:
+        return company_df.groupby([
+            "company_id", "year"
+        ]).agg({
+            "net_profits": "sum",
+            "production_volume": "sum"
+        }).reset_index()
+    
+    company_profits_baseline = aggregate_scenario(company_net_profits_baseline)
+    company_profits_shock = aggregate_scenario(company_net_profits_shock)
+    
+    return company_profits_baseline, company_profits_shock
+
+
+def calculate_discounted_net_profits(
+    company_profits_baseline: pd.DataFrame,
+    company_profits_shock: pd.DataFrame,
+    discount_rate: float,
+    growth_rate: float,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Calculate discounted net profits and terminal values for baseline and shock scenarios.
+    """
+    
+    def discount_dividend_model(data: pd.DataFrame, profit_col: str, discounted_col: str) -> pd.DataFrame:
+        """Apply discount model to net profits."""
+        data = data.sort_values(by=["company_id", "year"]).copy()
+
+        def apply_discount(group):
+            group = group.copy()
+            group["t_calc"] = range(len(group))
+            group[discounted_col] = group[profit_col] / (
+                (1 + discount_rate) ** group["t_calc"]
+            )
+            return group
+
+        data = data.groupby(["company_id"], group_keys=False).apply(apply_discount)
+        data = data.drop(columns=["t_calc"])
+        return data
+
+    def calculate_terminal_value(data: pd.DataFrame, profit_col: str, discounted_col: str) -> pd.DataFrame:
+        """Append terminal value rows."""
+        end_year = data["year"].max()
+        terminal_data = data[data["year"] == end_year].copy()
+        terminal_data["year"] = terminal_data["year"] + 1
+        terminal_data[profit_col] = terminal_data[profit_col] * (1 + growth_rate)
+        terminal_data[discounted_col] = terminal_data[profit_col] / (discount_rate - growth_rate)
+
+        data_with_terminal = pd.concat([data, terminal_data], ignore_index=True)
+        data_with_terminal = data_with_terminal.sort_values(
+            by=["company_id", "year"]
+        ).reset_index(drop=True)
+        return data_with_terminal
+
+    # Process baseline
+    baseline_processed = discount_dividend_model(
+        company_profits_baseline,
+        profit_col="net_profits",
+        discounted_col="discounted_net_profit_baseline",
+    )
+
+    company_net_profits_baseline = calculate_terminal_value(
+        baseline_processed,
+        profit_col="net_profits",
+        discounted_col="discounted_net_profit_baseline",
+    )
+
+    # Process shock
+    shock_processed = discount_dividend_model(
+        company_profits_shock,
+        profit_col="net_profits", 
+        discounted_col="discounted_net_profit_shock",
+    )
+
+    company_net_profits_shock = calculate_terminal_value(
+        shock_processed,
+        profit_col="net_profits",
+        discounted_col="discounted_net_profit_shock",
+    )
+
+    return company_net_profits_baseline, company_net_profits_shock
