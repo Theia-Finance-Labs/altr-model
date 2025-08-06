@@ -115,15 +115,6 @@ def allocate_assets_to_companies(
     # Prepare companies data - ensure we have the right column names
     companies_prepared = companies_ownership_tree.copy()
 
-    # Handle technology column naming - companies data uses 'technology_category'
-    if (
-        "technology_category" in companies_prepared.columns
-        and "technology" in assets_prepared.columns
-    ):
-        companies_prepared = companies_prepared.rename(
-            columns={"technology_category": "technology"}
-        )
-
     # Merge assets with ownership data on asset_id, sector, technology, and year
     merged_data = pd.merge(
         assets_prepared,

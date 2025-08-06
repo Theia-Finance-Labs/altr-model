@@ -56,7 +56,7 @@ def staggered_shock(
 
     Input DataFrames must have:
       - late_sudden_trajectories: ['company_id','technology','year','company_trajectory_latesudden']
-      - companies_ownership_tree: ['asset_id','company_id','technology_category','ownership_level','ownership_percentage','year']
+      - companies_ownership_tree: ['asset_id','company_id','technology','ownership_level','ownership_percentage','year']
       - increasing_or_decreasing_techs: ['technology','increasing']
       - assets_forecasts: ['asset_id','technology','year','capacity','asset_age','company_id']
 
@@ -74,7 +74,7 @@ def staggered_shock(
     req_ow = {
         "asset_id",
         "company_id",
-        "technology_category",
+        "technology",
         "ownership_level",
         "ownership_percentage",
         "year",
@@ -130,7 +130,7 @@ def staggered_shock(
     af = af.sort_values("year").drop_duplicates(subset=key_cols + ["year"], keep="last")
 
     # Harmonize tech in ownership tree
-    ow = ow.rename(columns={"technology_category": "technology"})
+    ow = ow.rename(columns={"technology": "technology"})
 
     # --- 2) Build ownership mapping at shock_year ---
     ow_primary = (
