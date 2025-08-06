@@ -5,9 +5,11 @@ generated using Kedro 0.19.12
 
 from kedro.pipeline import node, Pipeline, pipeline  # noqa
 from .nodes import (
+    check_input_parameters,
     filter_scenarios,
     filter_assets,
     filter_companies,
+    assign_scenario_geographies_to_assets,
     allocate_assets_to_companies,
     determine_increasing_or_decreasing_techs,
     determine_lifetime_per_technology,
@@ -18,6 +20,14 @@ from .nodes import (
 def create_pipeline(**kwargs) -> Pipeline:
     return pipeline(
         [
+            node(
+                func=check_input_parameters,
+                inputs=dict(
+                    shock_year="params:shock_year",
+                    alignment_year="params:alignment_year",
+                ),
+                outputs=None,
+            ),
             node(
                 func=filter_scenarios,
                 inputs=dict(
@@ -46,9 +56,17 @@ def create_pipeline(**kwargs) -> Pipeline:
                 outputs="assets_forecasts",
             ),
             node(
-                func=allocate_assets_to_companies,
+                assign_scenario_geographies_to_assets,
                 inputs=dict(
                     assets_forecasts="assets_forecasts",
+                    scenarios_pathways="scenarios_pathways",
+                ),
+                outputs="assets_forecasts_with_scenario_geographies",
+            ),
+            node(
+                func=allocate_assets_to_companies,
+                inputs=dict(
+                    assets_forecasts="assets_forecasts_with_scenario_geographies",
                     companies_ownership_tree="companies_ownership_tree",
                 ),
                 outputs="allocated_assets_to_companies",
@@ -68,6 +86,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                 inputs=dict(
                     assets_forecasts="allocated_assets_to_companies",
                     lifetime_per_technology="lifetime_per_technology",
+                    scenarios_pathways="scenarios_pathways",
                 ),
                 outputs="assets_retirement_dates",
             ),

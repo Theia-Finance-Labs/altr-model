@@ -8,6 +8,14 @@ from typing import List, Tuple
 import numpy as np
 
 
+def check_input_parameters(
+    shock_year: int,
+    alignment_year: int,
+) -> None:
+    if alignment_year < shock_year:
+        raise ValueError("Alignment year must be greater than shock year")
+
+
 def filter_scenarios(
     scenarios_pathways: pd.DataFrame, target_scenario: str, baseline_scenario: str
 ) -> pd.DataFrame:
@@ -91,6 +99,39 @@ def filter_assets(
     return filtered_assets_forecasts
 
 
+def assign_scenario_geographies_to_assets(
+    assets_forecasts: pd.DataFrame, scenarios_pathways: pd.DataFrame
+) -> pd.DataFrame:
+    """Assign scenario geographies to assets based on country mapping."""
+    geographies_to_countries_mapping = (
+        scenarios_pathways[["scenario_geography", "country_iso2_list"]]
+        .drop_duplicates()
+        .assign(country_iso2_list=lambda x: x.country_iso2_list.str.split(","))
+        .explode("country_iso2_list")
+        .rename(columns={"country_iso2_list": "country_iso2"})
+    )
+
+    assets_forecasts_with_scenario_geographies = assets_forecasts.merge(
+        geographies_to_countries_mapping,
+        on="country_iso2",
+        how="left",
+    )
+
+    assert (
+        assets_forecasts_with_scenario_geographies["scenario_geography"].isna().sum()
+        == 0
+    ), "Some assets are not assigned to a scenario geography"
+
+    # TODO: remove this after fixed in input data
+    assets_forecasts_with_scenario_geographies = (
+        assets_forecasts_with_scenario_geographies.loc[
+            assets_forecasts_with_scenario_geographies["year"] <= 2030, :
+        ]
+    )
+
+    return assets_forecasts_with_scenario_geographies
+
+
 def allocate_assets_to_companies(
     assets_forecasts: pd.DataFrame,
     companies_ownership_tree: pd.DataFrame,
@@ -160,7 +201,7 @@ def determine_lifetime_per_technology(
 
     unique_combinations = scenarios_pathways[["sector", "technology"]].drop_duplicates()
     unique_combinations["lifetime_years"] = rng.randint(
-        10, 20, size=len(unique_combinations)
+        20, 40, size=len(unique_combinations)
     )
 
     return unique_combinations
@@ -169,34 +210,107 @@ def determine_lifetime_per_technology(
 def determine_assets_retirement_dates(
     assets_forecasts: pd.DataFrame,
     lifetime_per_technology: pd.DataFrame,
+    scenarios_pathways: pd.DataFrame,
 ) -> pd.DataFrame:
 
-    assets_retirement_dates = pd.merge(
+    scenario_end_year = scenarios_pathways.year.max().astype(int)
+
+    # Get the maximum forecast year for each asset
+    last_forecast_year = assets_forecasts.year.round(0).max().astype(int)
+
+    # Merge with lifetime data
+    assets_with_lifetime = pd.merge(
         assets_forecasts,
         lifetime_per_technology,
         on=["sector", "technology"],
         how="left",
     )
 
-    assets_retirement_dates = assets_retirement_dates[
-        (
-            assets_retirement_dates["asset_age"]
-            <= assets_retirement_dates["lifetime_years"]
+    # Get the last row for each asset (latest forecast year)
+    last_forecast_rows = (
+        assets_with_lifetime.sort_values("year")
+        .groupby(
+            ["company_id", "asset_id", "scenario_geography", "sector", "technology"],
+            as_index=False,
         )
-        & (
-            assets_retirement_dates["asset_age"]
-            >= assets_retirement_dates["lifetime_years"]
-        )
-    ]
-
-    assert assets_retirement_dates.shape[0] == len(
-        assets_retirement_dates[
-            ["asset_id", "company_id", "technology"]
-        ].drop_duplicates()
+        .last()
     )
 
-    assets_retirement_dates = assets_retirement_dates.loc[
-        :, ["asset_id", "company_id", "sector", "technology", "year", "capacity"]
-    ].rename(columns={"year": "retirement_year"})
+    # Create extended years for each asset from last forecast year + 1 to scenario end year
+    extended_years = []
+    for year in range(last_forecast_year + 1, scenario_end_year + 1):
+        extended_year_data = last_forecast_rows.copy()
+        extended_year_data["year"] = year
+        # Increment asset age by the number of years past the last forecast
+        extended_year_data["asset_age"] = extended_year_data["asset_age"] + (
+            year - last_forecast_year
+        )
+        extended_years.append(extended_year_data)
 
-    return assets_retirement_dates
+    # Combine original forecasts with extended years
+    extended_assets = pd.concat(
+        [assets_with_lifetime] + extended_years, ignore_index=True
+    )
+
+    # Sort by asset and year to ensure proper ordering
+    extended_assets = extended_assets.sort_values(
+        ["company_id", "asset_id", "scenario_geography", "technology", "year"]
+    )
+
+    # Find retirement dates: when asset_age exceeds lifetime_years for the first time
+    # and only consider years after the last forecast year
+    retirement_candidates = extended_assets[
+        (extended_assets["asset_age"] > extended_assets["lifetime_years"])
+        & (extended_assets["year"] > last_forecast_year)
+    ]
+
+    # Get the first year each asset exceeds its lifetime (retirement year)
+    assets_retirement_dates = (
+        retirement_candidates.sort_values("year")
+        .groupby(["asset_id", "company_id", "sector", "technology"], as_index=False)
+        .first()
+        .rename(columns={"year": "retirement_year"})
+    )
+
+    company_technology_retirement_dates = (
+        assets_retirement_dates.groupby(
+            [
+                "company_id",
+                "scenario_geography",
+                "sector",
+                "technology",
+                "retirement_year",
+            ]
+        )
+        .agg({"capacity": "sum"})
+        .reset_index()
+    )
+
+    # Handle case where no assets retire after forecast period
+    if company_technology_retirement_dates.empty:
+        # Return empty DataFrame with expected columns
+        return pd.DataFrame(
+            columns=[
+                "company_id",
+                "scenario_geography",
+                "sector",
+                "technology",
+                "retirement_year",
+                "capacity",
+            ]
+        )
+
+    # Select and rename columns
+    company_technology_retirement_dates = company_technology_retirement_dates.loc[
+        :,
+        [
+            "company_id",
+            "scenario_geography",
+            "sector",
+            "technology",
+            "retirement_year",
+            "capacity",
+        ],
+    ]
+
+    return company_technology_retirement_dates
