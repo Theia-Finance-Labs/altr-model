@@ -45,6 +45,10 @@ downloaded_scenarios:
   type: pandas.CSVDataset
   filepath: data/05_model_input/downloaded_scenarios.csv
 
+downloaded_scenarios_ar6:
+  type: pandas.CSVDataset
+  filepath: data/05_model_input/downloaded_scenarios_ar6.csv
+
 downloaded_assets:
   type: pandas.CSVDataset
   filepath: data/05_model_input/downloaded_assets.csv

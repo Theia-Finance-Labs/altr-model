@@ -1,0 +1,4 @@
+# Financial model parameters
+discount_rate: 0.08  # 8% discount rate
+growth_rate: 0.02    # 2% growth rate for terminal value calculation
+market_passthrough: 0.5  # 50% carbon price passthrough to market prices
