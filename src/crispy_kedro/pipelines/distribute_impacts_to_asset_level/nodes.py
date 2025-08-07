@@ -49,6 +49,7 @@ def _build_asset_panel_full_horizon(
     assets: pd.DataFrame,
     cid: str,
     geo: str,
+    sector: str,
     tech: str,
     min_year: int,
     max_year: int,
@@ -58,12 +59,13 @@ def _build_asset_panel_full_horizon(
       - asset appears from its first observed year onward (no pre-birth zeros)
       - capacity forward-fills
       - age forward-fills / inferred linearly
-    Returns: ['asset_id','company_id','scenario_geography','technology','year','capacity','asset_age']
+    Returns: ['asset_id','company_id','scenario_geography','sector','technology','year','capacity','asset_age']
     """
     cols = [
         "asset_id",
         "company_id",
         "scenario_geography",
+        "sector",
         "technology",
         "year",
         "capacity",
@@ -72,6 +74,7 @@ def _build_asset_panel_full_horizon(
     pool = assets.loc[
         (assets["company_id"] == cid)
         & (assets["scenario_geography"] == geo)
+        & (assets["sector"] == sector)
         & (assets["technology"] == tech),
         cols,
     ].copy()
@@ -87,7 +90,7 @@ def _build_asset_panel_full_horizon(
     )
     meta = first.merge(
         pool[
-            ["asset_id", "company_id", "scenario_geography", "technology"]
+            ["asset_id", "company_id", "scenario_geography", "sector", "technology"]
         ].drop_duplicates(),
         on="asset_id",
         how="left",
@@ -109,7 +112,7 @@ def _build_asset_panel_full_horizon(
     panel["capacity"] = panel.groupby("asset_id")["capacity"].ffill()
     panel["asset_age"] = _infer_age_ffill(panel)
     panel = panel.merge(
-        meta[["asset_id", "company_id", "scenario_geography", "technology"]],
+        meta[["asset_id", "company_id", "scenario_geography", "sector", "technology"]],
         on="asset_id",
         how="left",
     )
@@ -119,6 +122,7 @@ def _build_asset_panel_full_horizon(
             "asset_id",
             "company_id",
             "scenario_geography",
+            "sector",
             "technology",
             "year",
             "capacity",
@@ -136,6 +140,7 @@ def _unique_base(df: pd.DataFrame) -> pd.DataFrame:
     agg = df.groupby("asset_id", as_index=False).agg(
         company_id=("company_id", "first"),
         scenario_geography=("scenario_geography", "first"),
+        sector=("sector", "first"),
         technology=("technology", "first"),
         asset_age=("asset_age", "max"),
         capacity_after_shock=("capacity_after_shock", "sum"),
@@ -275,7 +280,7 @@ def allocate_decreasing_tech(
     Distribute **all negative changes** in L&S (full horizon) to assets for decreasing techs.
     Geography-aware (scenario_geography).
     """
-    group_cols = ["company_id", "scenario_geography", "technology"]
+    group_cols = ["company_id", "scenario_geography", "sector", "technology"]
     d = (
         late_sudden_trajectories[group_cols + ["year", "company_trajectory_latesudden"]]
         .sort_values(group_cols + ["year"])
@@ -290,6 +295,7 @@ def allocate_decreasing_tech(
         "asset_id",
         "company_id",
         "scenario_geography",
+        "sector",
         "technology",
         "year",
         "asset_age",
@@ -300,12 +306,12 @@ def allocate_decreasing_tech(
     ]
 
     for key, grp in d.groupby(group_cols, sort=False):
-        cid, geo, tech = key
+        cid, geo, sector, tech = key
         years = sorted(grp["year"].unique())
         y0, yN = int(years[0]), int(years[-1])
 
         panel = _build_asset_panel_full_horizon(
-            assets_forecasts, cid, geo, tech, y0, yN
+            assets_forecasts, cid, geo, sector, tech, y0, yN
         )
 
         # anchor at first L&S year
@@ -321,6 +327,7 @@ def allocate_decreasing_tech(
             [
                 "company_id",
                 "scenario_geography",
+                "sector",
                 "technology",
                 "asset_age",
                 "capacity_after_shock",
@@ -345,6 +352,7 @@ def allocate_decreasing_tech(
                         "asset_id": cap0.index,
                         "company_id": cid,
                         "scenario_geography": geo,
+                        "sector": sector,
                         "technology": tech,
                         "year": y,
                         "asset_age": ages.values,
@@ -359,6 +367,7 @@ def allocate_decreasing_tech(
                     [
                         "company_id",
                         "scenario_geography",
+                        "sector",
                         "technology",
                         "asset_age",
                         "capacity_after_shock",
@@ -387,6 +396,7 @@ def allocate_decreasing_tech(
             out = out.reset_index().assign(
                 company_id=cid,
                 scenario_geography=geo,
+                sector=sector,
                 technology=tech,
                 year=y,
                 is_synthetic=False,
@@ -396,6 +406,7 @@ def allocate_decreasing_tech(
                 [
                     "company_id",
                     "scenario_geography",
+                    "sector",
                     "technology",
                     "asset_age",
                     "capacity_after_shock",
@@ -432,10 +443,10 @@ def allocate_increasing_tech(
 ):
     """
     Distribute **all positive changes** in L&S (full horizon) to assets for increasing techs.
-    Geography-aware. Uses ONE persistent synthetic asset per (company_id, scenario_geography, technology).
+    Geography-aware. Uses ONE persistent synthetic asset per (company_id, scenario_geography, sector, technology).
     Ensures the synthetic row is never duplicated (never included in the 'real' block).
     """
-    group_cols = ["company_id", "scenario_geography", "technology"]
+    group_cols = ["company_id", "scenario_geography", "sector", "technology"]
     d = (
         late_sudden_trajectories[group_cols + ["year", "company_trajectory_latesudden"]]
         .sort_values(group_cols + ["year"])
@@ -450,6 +461,7 @@ def allocate_increasing_tech(
         "asset_id",
         "company_id",
         "scenario_geography",
+        "sector",
         "technology",
         "year",
         "asset_age",
@@ -472,8 +484,8 @@ def allocate_increasing_tech(
             return default
 
     for key, grp in d.groupby(group_cols, sort=False):
-        cid, geo, tech = key
-        synth_id = f"NEW_{cid}_{tech}_{geo}"
+        cid, geo, sector, tech = key
+        synth_id = f"NEW_{cid}_{sector}_{tech}_{geo}"
 
         years = sorted(grp["year"].unique())
         if not years:
@@ -482,7 +494,7 @@ def allocate_increasing_tech(
 
         # Build full panel of *real* assets (synthetic never enters this)
         panel = _build_asset_panel_full_horizon(
-            assets_forecasts, cid, geo, tech, y0, yN
+            assets_forecasts, cid, geo, sector, tech, y0, yN
         )
 
         # Anchor at first L&S year using panel capacities (real assets only)
@@ -499,6 +511,7 @@ def allocate_increasing_tech(
             [
                 "company_id",
                 "scenario_geography",
+                "sector",
                 "technology",
                 "asset_age",
                 "capacity_after_shock",
@@ -537,6 +550,7 @@ def allocate_increasing_tech(
                             "asset_id": cap0.index,
                             "company_id": cid,
                             "scenario_geography": geo,
+                            "sector": sector,
                             "technology": tech,
                             "year": y,
                             "asset_age": ages.values,
@@ -562,6 +576,7 @@ def allocate_increasing_tech(
                                 "asset_id": synth_id,
                                 "company_id": cid,
                                 "scenario_geography": geo,
+                                "sector": sector,
                                 "technology": tech,
                                 "year": y,
                                 "asset_age": prev_age,
@@ -586,6 +601,7 @@ def allocate_increasing_tech(
                     [
                         "company_id",
                         "scenario_geography",
+                        "sector",
                         "technology",
                         "asset_age",
                         "capacity_after_shock",
@@ -619,6 +635,7 @@ def allocate_increasing_tech(
                     [
                         "company_id",
                         "scenario_geography",
+                        "sector",
                         "technology",
                         "asset_age",
                         "capacity_after_shock",
@@ -659,6 +676,7 @@ def allocate_increasing_tech(
             out_real = out_real.reset_index().assign(
                 company_id=cid,
                 scenario_geography=geo,
+                sector=sector,
                 technology=tech,
                 year=y,
                 is_synthetic=False,
@@ -679,6 +697,7 @@ def allocate_increasing_tech(
                             "asset_id": synth_id,
                             "company_id": cid,
                             "scenario_geography": geo,
+                            "sector": sector,
                             "technology": tech,
                             "year": y,
                             "asset_age": age_y,
@@ -697,6 +716,7 @@ def allocate_increasing_tech(
                 [
                     "company_id",
                     "scenario_geography",
+                    "sector",
                     "technology",
                     "asset_age",
                     "capacity_after_shock",
@@ -710,6 +730,7 @@ def allocate_increasing_tech(
                             [
                                 "company_id",
                                 "scenario_geography",
+                                "sector",
                                 "technology",
                                 "asset_age",
                                 "capacity_after_shock",
