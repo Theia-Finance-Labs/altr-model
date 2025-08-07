@@ -49,8 +49,16 @@ def plot_late_sudden_trajectories(
         "company_name"
     ].apply(clean_name_for_folder)
 
-    # Create base directory
+    # Create base directory and clean it
     base_dir = Path("data/08_reporting/companies_trajectories_plots")
+
+    # Clean up existing directory if it exists
+    if base_dir.exists():
+        import shutil
+
+        shutil.rmtree(base_dir)
+        print(f"Cleaned up existing directory: {base_dir}")
+
     base_dir.mkdir(parents=True, exist_ok=True)
 
     # Define phase colors for visual distinction
@@ -364,6 +372,13 @@ def plot_staggered_shock(
     - Expects asset_level_df to include: ['asset_id','company_id','scenario_geography','technology','year',
                                           'asset_age', asset_before_col, asset_after_col, 'is_synthetic'].
     """
+
+    # Clean up existing directory if it exists
+    if os.path.exists(output_dir):
+        import shutil
+
+        shutil.rmtree(output_dir)
+        print(f"Cleaned up existing directory: {output_dir}")
 
     os.makedirs(output_dir, exist_ok=True)
 

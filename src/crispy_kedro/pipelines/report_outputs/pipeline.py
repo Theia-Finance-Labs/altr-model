@@ -27,6 +27,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                     asset_level_df="asset_level_staggered_shock",
                 ),
                 outputs=None,
+                name="plot_staggered_shock",
             ),
         ],
         tags=["reporting"],

@@ -103,6 +103,7 @@ def assign_scenario_geographies_to_assets(
     assets_forecasts: pd.DataFrame, scenarios_pathways: pd.DataFrame
 ) -> pd.DataFrame:
     """Assign scenario geographies to assets based on country mapping."""
+
     geographies_to_countries_mapping = (
         scenarios_pathways[["scenario_geography", "country_iso2_list"]]
         .drop_duplicates()
@@ -117,17 +118,33 @@ def assign_scenario_geographies_to_assets(
         how="left",
     )
 
+    # Check if there are unassigned assets and a global geography exists
+    unassigned_mask = assets_forecasts_with_scenario_geographies[
+        "scenario_geography"
+    ].isna()
+
+    if unassigned_mask.sum() > 0:
+        # Look for a global geography (one with NaN/null country_iso2)
+        global_geographies = geographies_to_countries_mapping[
+            geographies_to_countries_mapping["country_iso2"].isna()
+        ]["scenario_geography"].unique()
+
+        if len(global_geographies) > 0:
+            # Use the first global geography found (typically "Global")
+            global_geography = global_geographies[0]
+            print(
+                f"Assigning {unassigned_mask.sum()} unassigned assets to global geography: {global_geography}"
+            )
+
+            # Assign unassigned assets to the global geography
+            assets_forecasts_with_scenario_geographies.loc[
+                unassigned_mask, "scenario_geography"
+            ] = global_geography
+
     assert (
         assets_forecasts_with_scenario_geographies["scenario_geography"].isna().sum()
         == 0
     ), "Some assets are not assigned to a scenario geography"
-
-    # TODO: remove this after fixed in input data
-    assets_forecasts_with_scenario_geographies = (
-        assets_forecasts_with_scenario_geographies.loc[
-            assets_forecasts_with_scenario_geographies["year"] <= 2030, :
-        ]
-    )
 
     return assets_forecasts_with_scenario_geographies
 
