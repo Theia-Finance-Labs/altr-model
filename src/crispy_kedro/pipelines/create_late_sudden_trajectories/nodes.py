@@ -23,7 +23,9 @@ def determine_companies_technologies_alignment(
 
     # 2) Annotate the company trajectories with that flag:
     companies_with_trend = companies_trajectories.merge(
-        increasing_or_decreasing_techs, on="technology", how="left"
+        increasing_or_decreasing_techs,
+        on=["technology", "scenario_geography"],
+        how="left",
     )
 
     # 3) Keep only rows where we actually have company_activity:
@@ -120,12 +122,10 @@ def late_sudden_misaligned_high_carbon_companies(
     DataFrame with added columns:
       - company_trajectory_latesudden
       - late_sudden_phase
-      - compensation_volume (>=0, group total)
-      - compensation_per_year (<=0, applied for y >= alignment_year)
     """
 
     # -------------------- 0) Filter to misaligned high-carbon pairs --------------------
-    key_cols_for_filter = ["company_id", "technology"]
+    key_cols_for_filter = ["company_id", "scenario_geography", "technology"]
     pairs = misaligned_high_carbon_companies[key_cols_for_filter].drop_duplicates()
 
     companies_for_case = companies_trajectories.merge(
@@ -341,7 +341,7 @@ def late_sudden_misaligned_low_carbon_companies(
     # ------------------------------------------------------------------
     # 0) Filter to misaligned low-carbon company-technology pairs
     # ------------------------------------------------------------------
-    key_cols_for_filter = ["company_id", "technology"]
+    key_cols_for_filter = ["company_id", "scenario_geography", "technology"]
     pairs = misaligned_low_carbon_companies[key_cols_for_filter].drop_duplicates()
 
     companies_for_case = companies_trajectories.merge(
@@ -480,7 +480,7 @@ def late_sudden_aligned_high_carbon_companies(
     """
 
     # 0) Filter to aligned high-carbon company-technology pairs
-    key_cols_for_filter = ["company_id", "technology"]
+    key_cols_for_filter = ["company_id", "scenario_geography", "technology"]
     pairs = aligned_high_carbon_companies[key_cols_for_filter].drop_duplicates()
 
     companies_for_case = companies_trajectories.merge(
@@ -615,7 +615,7 @@ def late_sudden_aligned_low_carbon_companies(
     # ---------------------------------------------------------------
     # 0) isolate the company-technology pairs for this case
     # ---------------------------------------------------------------
-    filter_keys = ["company_id", "technology"]
+    filter_keys = ["company_id", "scenario_geography", "technology"]
     pairs = aligned_low_carbon_companies[filter_keys].drop_duplicates()
 
     subset = companies_trajectories.merge(pairs, on=filter_keys, how="inner").copy()

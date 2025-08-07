@@ -587,12 +587,12 @@ def allocate_increasing_tech(
                             }
                         ]
                     )
-            with warnings.catch_warnings():
-                warnings.filterwarnings(
-                    "ignore", category=FutureWarning, message=".*all-NA columns.*"
-                )
-                # TODO: remove this warning silencer once synthetic assets are deduplicated properly
-                out = pd.concat([real_out, synth_out], ignore_index=True)
+                with warnings.catch_warnings():
+                    warnings.filterwarnings(
+                        "ignore", category=FutureWarning, message=".*all-NA columns.*"
+                    )
+                    # TODO: remove this warning silencer once synthetic assets are deduplicated properly
+                    out = pd.concat([real_out, synth_out], ignore_index=True)
 
                 outputs.append(out[cols_out])
 

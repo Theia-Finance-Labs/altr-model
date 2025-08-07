@@ -196,9 +196,9 @@ def determine_increasing_or_decreasing_techs(
     # 1) Compute which techs are “increasing” (low‑carbon) vs “decreasing”:
     target_only = scenarios_pathways.query("scenario_type == 'target'")
     sorted_by_year = target_only.sort_values("year")
-    tech_first_last = sorted_by_year.groupby("technology")["scenario_pathway"].agg(
-        first="first", last="last"
-    )
+    tech_first_last = sorted_by_year.groupby(["technology", "scenario_geography"])[
+        "scenario_pathway"
+    ].agg(first="first", last="last")
     tech_first_last.loc[:, "increasing"] = (
         tech_first_last["last"] > tech_first_last["first"]
     )
