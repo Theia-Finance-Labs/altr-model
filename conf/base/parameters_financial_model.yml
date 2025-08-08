@@ -2,3 +2,9 @@
 discount_rate: 0.08  # 8% discount rate
 growth_rate: 0.02    # 2% growth rate for terminal value calculation
 market_passthrough: 0.5  # 50% carbon price passthrough to market prices
+dividend_profit_ratio_baseline: 0.6  # 60% of profits distributed as dividends/cashflow to investors in baseline scenario
+dividend_profit_ratio_shock: 0.4     # 40% of profits distributed as dividends/cashflow to investors in shock scenario (companies retain more cash under stress)
+
+# Cost element switches for earnings model
+include_replacement_capex: true  # Include CapEx for replacing retired eligible assets
+include_decom_costs: true        # Include decommissioning costs for retired assets
