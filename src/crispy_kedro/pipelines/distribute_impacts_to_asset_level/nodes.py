@@ -1,14 +1,28 @@
 import pandas as pd
 import numpy as np
 import warnings
+from tqdm import tqdm
 
 # ============================ helpers ============================
 
 
 def _compute_g_weights(
-    ages: pd.Series, k: float, min_active_share: float, n_quantiles: int
+    ages: pd.Series,
+    k: float,
+    min_active_share: float,
+    n_quantiles: int,
+    for_decreasing: bool = True,
 ) -> pd.Series:
-    """Compute logistic-sum g(a) weights, clip and normalize."""
+    """Compute logistic-sum g(a) weights, clip and normalize.
+
+    Args:
+        ages: Asset ages
+        k: Steepness parameter for logistic function
+        min_active_share: Minimum weight for any asset
+        n_quantiles: Number of quantiles to use for age thresholds
+        for_decreasing: If True, older assets get higher weights (for decreasing tech).
+                       If False, younger assets get higher weights (for increasing tech).
+    """
     if ages.empty:
         return pd.Series(dtype=float)
     ages = ages.astype(float)
@@ -19,7 +33,10 @@ def _compute_g_weights(
 
     def g(a):
         a = med if pd.isna(a) else a
-        return 1 - sum(1 / (1 + np.exp(-k * (a - q))) for q in age_q)
+        base_weight = 1 - sum(1 / (1 + np.exp(-k * (a - q))) for q in age_q)
+        # For decreasing tech: older assets should get higher weights, so invert
+        # For increasing tech: younger assets should get higher weights, so keep original
+        return -base_weight if for_decreasing else base_weight
 
     raw = filled.map(g)
     clipped = raw.clip(lower=min_active_share)
@@ -57,7 +74,7 @@ def _build_asset_panel_full_horizon(
     """
     Build expanding panel from min_year..max_year:
       - asset appears from its first observed year onward (no pre-birth zeros)
-      - capacity forward-fills
+      - capacity uses actual forecast values (no forward-filling)
       - age forward-fills / inferred linearly
     Returns: ['asset_id','company_id','scenario_geography','sector','technology','year','capacity','asset_age']
     """
@@ -83,39 +100,28 @@ def _build_asset_panel_full_horizon(
 
     pool["year"] = pool["year"].astype(int)
 
-    first = (
-        pool.groupby("asset_id", as_index=False)["year"]
-        .min()
-        .rename(columns={"year": "first_year"})
-    )
-    meta = first.merge(
-        pool[
-            ["asset_id", "company_id", "scenario_geography", "sector", "technology"]
-        ].drop_duplicates(),
-        on="asset_id",
-        how="left",
-    )
+    # For the staggered shock mechanism, we only want years where we have actual forecast data
+    # Don't create artificial years beyond the forecast horizon
+    years_with_data = sorted(pool["year"].unique())
+    available_years = [y for y in range(min_year, max_year + 1) if y in years_with_data]
 
-    horizon = pd.DataFrame({"year": np.arange(min_year, max_year + 1, dtype=int)})
-    grid = (
-        meta.assign(_=1)
-        .merge(horizon.assign(_=1), on="_")
-        .query("year >= first_year")
-        .drop(columns=["_", "first_year"])
-    )
+    if not available_years:
+        return pd.DataFrame(columns=cols)
 
-    panel = (
-        grid.merge(pool, on=["asset_id", "year"], how="left")
-        .sort_values(["asset_id", "year"])
-        .reset_index(drop=True)
-    )
-    panel["capacity"] = panel.groupby("asset_id")["capacity"].ffill()
+    # Filter pool to only include the requested year range
+    pool = pool[pool["year"].isin(available_years)].copy()
+
+    # Get asset metadata
+    meta = pool[
+        ["asset_id", "company_id", "scenario_geography", "sector", "technology"]
+    ].drop_duplicates()
+
+    # Use actual data without forward-filling capacity
+    panel = pool.copy()
+
+    # Only forward-fill/infer asset_age, keep actual capacity values
+    panel = panel.sort_values(["asset_id", "year"]).reset_index(drop=True)
     panel["asset_age"] = _infer_age_ffill(panel)
-    panel = panel.merge(
-        meta[["asset_id", "company_id", "scenario_geography", "sector", "technology"]],
-        on="asset_id",
-        how="left",
-    )
 
     return panel[
         [
@@ -151,6 +157,41 @@ def _unique_base(df: pd.DataFrame) -> pd.DataFrame:
 # ===================== one-year allocators ======================
 
 
+def _apply_asset_retirements(
+    cap0: pd.Series,
+    current_year: int,
+    retirement_events: list,
+) -> pd.Series:
+    """
+    Apply asset retirements unconditionally, independent of any shocks.
+    This mimics the retirement logic from the late & sudden mechanism.
+
+    Args:
+        cap0: Current capacity by asset_id
+        current_year: The year for which to apply retirements
+        retirement_events: List of (retirement_year, asset_id, capacity) tuples
+
+    Returns:
+        Updated capacity series after applying retirements
+    """
+    cap_after_retirement = cap0.copy()
+
+    # Apply retirements for assets scheduled to retire this year
+    for retirement_year, asset_id, retirement_capacity in retirement_events:
+        if retirement_year == current_year and asset_id in cap_after_retirement.index:
+            current_capacity = cap_after_retirement[asset_id]
+            if current_capacity > 0:
+                # Calculate percentage decrease like in late & sudden mechanism
+                percentage_decrease = min(retirement_capacity / current_capacity, 1.0)
+                cap_after_retirement[asset_id] *= 1 - percentage_decrease
+                # Ensure non-negative
+                cap_after_retirement[asset_id] = max(
+                    cap_after_retirement[asset_id], 0.0
+                )
+
+    return cap_after_retirement
+
+
 def _allocate_decrease_one_year(
     base_prev: pd.DataFrame,
     ceiling_y: pd.DataFrame,
@@ -162,14 +203,25 @@ def _allocate_decrease_one_year(
 ):
     """Allocate a negative shock across assets (decreasing tech)."""
     base = _unique_base(base_prev)
-    cap0 = base["capacity_after_shock"].rename("capacity_before_shock")
-    ages = (
-        ceiling_y.set_index("asset_id")["asset_age"]
-        .reindex(cap0.index)
-        .fillna(base["asset_age"] + 1)
-    )
 
-    g = _compute_g_weights(ages, k, min_active_share, n_quantiles)
+    # Use actual forecast capacity from ceiling_y as the starting point
+    ceiling_indexed = ceiling_y.set_index("asset_id")
+    if not ceiling_indexed.empty:
+        # Use actual forecast capacity for current year
+        cap0 = ceiling_indexed["capacity"].rename("capacity_before_shock")
+        ages = ceiling_indexed["asset_age"]
+        # Only consider assets that exist in the forecast for this year
+        base = base.reindex(cap0.index).dropna()
+    else:
+        # Fallback to previous capacity if no current year data
+        cap0 = base["capacity_after_shock"].rename("capacity_before_shock")
+        ages = (
+            ceiling_y.set_index("asset_id")["asset_age"]
+            .reindex(cap0.index)
+            .fillna(base["asset_age"] + 1)
+        )
+
+    g = _compute_g_weights(ages, k, min_active_share, n_quantiles, for_decreasing=True)
     order = ages.sort_values(ascending=False).index.tolist()  # oldest → youngest
 
     alloc = pd.Series(0.0, index=order)
@@ -221,7 +273,7 @@ def _allocate_increase_one_year(
     ceil = ceiling_y.set_index("asset_id")
     ages = ceil["asset_age"].reindex(cap0.index).fillna(base["asset_age"] + 1)
 
-    g = _compute_g_weights(ages, k, min_active_share, n_quantiles)
+    g = _compute_g_weights(ages, k, min_active_share, n_quantiles, for_decreasing=False)
     order = ages.sort_values(ascending=True).index.tolist()  # newest → oldest
 
     alloc = pd.Series(0.0, index=order)
@@ -270,6 +322,7 @@ def _allocate_increase_one_year(
 def allocate_decreasing_tech(
     late_sudden_trajectories: pd.DataFrame,
     assets_forecasts: pd.DataFrame,
+    assets_retirement_dates: pd.DataFrame,
     g_k: float = 6.0,
     min_active_share: float = 1e-12,
     n_quantiles: int = 3,
@@ -279,16 +332,38 @@ def allocate_decreasing_tech(
     """
     Distribute **all negative changes** in L&S (full horizon) to assets for decreasing techs.
     Geography-aware (scenario_geography).
+
+    For misaligned_high_carbon companies, asset retirements are applied first to match
+    the late & sudden shock mechanism behavior before applying age-based allocation rules.
     """
     group_cols = ["company_id", "scenario_geography", "sector", "technology"]
     d = (
-        late_sudden_trajectories[group_cols + ["year", "company_trajectory_latesudden"]]
+        late_sudden_trajectories[
+            group_cols + ["year", "company_trajectory_latesudden", "alignment_type"]
+        ]
         .sort_values(group_cols + ["year"])
         .copy()
     )
     d["prev"] = d.groupby(group_cols)["company_trajectory_latesudden"].shift(1)
     d["shock_raw"] = d["company_trajectory_latesudden"] - d["prev"]
     d["shock_eff"] = np.minimum(d["shock_raw"].fillna(0.0), 0.0)
+
+    # Prepare retirement events lookup for misaligned high carbon companies
+    # Keep asset-level retirement information for precise asset targeting
+    retirement_events = {}
+    if not assets_retirement_dates.empty:
+        retire_df = assets_retirement_dates.copy()
+        retire_key_cols = ["company_id", "scenario_geography", "sector", "technology"]
+        retire_df = retire_df.sort_values(retire_key_cols + ["retirement_year"])
+        for key, sub in retire_df.groupby(retire_key_cols, sort=False):
+            # Store list of (year, asset_id, capacity) tuples for precise targeting
+            retirement_events[key] = list(
+                zip(
+                    sub["retirement_year"].tolist(),
+                    sub["asset_id"].tolist(),
+                    sub["capacity"].astype(float).tolist(),
+                )
+            )
 
     outputs, diags = [], []
     cols_out = [
@@ -305,10 +380,18 @@ def allocate_decreasing_tech(
         "is_synthetic",
     ]
 
-    for key, grp in d.groupby(group_cols, sort=False):
+    groups = list(d.groupby(group_cols, sort=False))
+    for key, grp in tqdm(
+        groups, desc="Processing companies (decreasing tech)", unit="company"
+    ):
         cid, geo, sector, tech = key
         years = sorted(grp["year"].unique())
         y0, yN = int(years[0]), int(years[-1])
+
+        # Check if this is a misaligned high carbon company
+        is_misaligned_high_carbon = any(
+            grp["alignment_type"] == "misaligned_high_carbon"
+        )
 
         panel = _build_asset_panel_full_horizon(
             assets_forecasts, cid, geo, sector, tech, y0, yN
@@ -339,26 +422,45 @@ def allocate_decreasing_tech(
             shock = float(row["shock_eff"])  # <= 0
             ceil_y = panel[panel["year"] == y].copy()
 
-            if np.isclose(shock, 0.0) or base_prev.empty:
-                # carry forward unchanged
-                cap0 = base_prev["capacity_after_shock"].rename("capacity_before_shock")
+            # Get the starting capacity (from forecast data)
+            ceil_y_indexed = ceil_y.set_index("asset_id")
+            if not ceil_y_indexed.empty:
+                cap_before_retirement = ceil_y_indexed["capacity"]
+                ages = ceil_y_indexed["asset_age"]
+            else:
+                # Fallback to previous year if no forecast data available
+                cap_before_retirement = base_prev["capacity_after_shock"]
                 ages = (
                     ceil_y.set_index("asset_id")["asset_age"]
-                    .reindex(cap0.index)
+                    .reindex(cap_before_retirement.index)
                     .fillna(base_prev["asset_age"] + 1)
                 )
+
+            # Step 1: Apply retirements unconditionally for misaligned high carbon companies
+            if is_misaligned_high_carbon:
+                cap_after_retirement = _apply_asset_retirements(
+                    cap_before_retirement, y, retirement_events.get(key, [])
+                )
+            else:
+                cap_after_retirement = cap_before_retirement.copy()
+
+            # Step 2: Apply shocks on top of post-retirement capacities
+            if np.isclose(shock, 0.0) or base_prev.empty:
+                # No shock to apply, just use post-retirement capacities
                 out = pd.DataFrame(
                     {
-                        "asset_id": cap0.index,
+                        "asset_id": cap_after_retirement.index,
                         "company_id": cid,
                         "scenario_geography": geo,
                         "sector": sector,
                         "technology": tech,
                         "year": y,
                         "asset_age": ages.values,
-                        "capacity_before_shock": cap0.values,
-                        "allocated_shock": np.zeros_like(cap0.values),
-                        "capacity_after_shock": cap0.values,
+                        "capacity_before_shock": cap_before_retirement.values,
+                        "allocated_shock": (
+                            cap_after_retirement - cap_before_retirement
+                        ).values,
+                        "capacity_after_shock": cap_after_retirement.values,
                         "is_synthetic": False,
                     }
                 )
@@ -378,22 +480,60 @@ def allocate_decreasing_tech(
                         "company_id": cid,
                         "technology": tech,
                         "year": y,
-                        "residual": shock,
+                        "residual": 0.0,
                         "iters": 0,
                     }
                 )
                 continue
 
-            out, rem, iters = _allocate_decrease_one_year(
-                base_prev,
-                ceil_y,
-                shock,
-                g_k,
-                min_active_share,
-                n_quantiles,
-                max_recursion_depth,
+            # Apply shocks using post-retirement capacities as the base
+            # Create a temporary base_prev that reflects post-retirement state
+            temp_base = pd.DataFrame(
+                {
+                    "asset_id": cap_after_retirement.index,
+                    "company_id": cid,
+                    "scenario_geography": geo,
+                    "sector": sector,
+                    "technology": tech,
+                    "asset_age": ages.values,
+                    "capacity_after_shock": cap_after_retirement.values,
+                }
+            ).set_index("asset_id")
+
+            # For misaligned high carbon companies, use standard allocation (retirement already applied)
+            if is_misaligned_high_carbon:
+                out, rem, iters = _allocate_decrease_one_year(
+                    temp_base.reset_index(),
+                    ceil_y,
+                    shock,
+                    g_k,
+                    min_active_share,
+                    n_quantiles,
+                    max_recursion_depth,
+                )
+            else:
+                # Use standard allocation for aligned high carbon companies
+                out, rem, iters = _allocate_decrease_one_year(
+                    temp_base.reset_index(),
+                    ceil_y,
+                    shock,
+                    g_k,
+                    min_active_share,
+                    n_quantiles,
+                    max_recursion_depth,
+                )
+
+            # Adjust the output to show retirement + shock effects
+            out = out.reset_index()
+            out["capacity_before_shock"] = cap_before_retirement.reindex(
+                out["asset_id"]
+            ).values
+            # allocated_shock should include both retirement and shock effects
+            out["allocated_shock"] = (
+                out["capacity_after_shock"] - out["capacity_before_shock"]
             )
-            out = out.reset_index().assign(
+
+            out = out.assign(
                 company_id=cid,
                 scenario_geography=geo,
                 sector=sector,
@@ -483,7 +623,10 @@ def allocate_increasing_tech(
         except Exception:
             return default
 
-    for key, grp in d.groupby(group_cols, sort=False):
+    groups = list(d.groupby(group_cols, sort=False))
+    for key, grp in tqdm(
+        groups, desc="Processing companies (increasing tech)", unit="company"
+    ):
         cid, geo, sector, tech = key
         synth_id = f"NEW_{cid}_{sector}_{tech}_{geo}"
 
@@ -780,6 +923,7 @@ def allocate_increasing_tech(
 def apply_staggered_shock_split(
     late_sudden_trajectories: pd.DataFrame,
     allocated_assets_to_companies: pd.DataFrame,
+    assets_retirement_dates: pd.DataFrame,
     shock_year: int,  # unused gating, kept for signature compatibility
     g_k: float = 6.0,
     min_active_share: float = 1e-12,
@@ -790,6 +934,9 @@ def apply_staggered_shock_split(
     """
     Run the decreasing and increasing allocators across the full L&S horizon
     (no gating by shock_year) and concatenate.
+
+    For decreasing technologies (misaligned_high_carbon), asset retirement information
+    is used to prioritize specific assets for capacity reduction.
     """
     # Split by alignment type (unchanged behavior)
     dec_mask = late_sudden_trajectories["alignment_type"].isin(
@@ -802,6 +949,7 @@ def apply_staggered_shock_split(
     dec = allocate_decreasing_tech(
         late_sudden_trajectories[dec_mask],
         allocated_assets_to_companies,
+        assets_retirement_dates,
         g_k,
         min_active_share,
         n_quantiles,

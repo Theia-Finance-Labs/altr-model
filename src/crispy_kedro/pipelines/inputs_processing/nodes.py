@@ -299,30 +299,20 @@ def determine_assets_retirement_dates(
     # Get the first year each asset exceeds its lifetime (retirement year)
     assets_retirement_dates = (
         retirement_candidates.sort_values("year")
-        .groupby(["asset_id", "company_id", "sector", "technology"], as_index=False)
+        .groupby(
+            ["asset_id", "company_id", "scenario_geography", "sector", "technology"],
+            as_index=False,
+        )
         .first()
         .rename(columns={"year": "retirement_year"})
     )
 
-    company_technology_retirement_dates = (
-        assets_retirement_dates.groupby(
-            [
-                "company_id",
-                "scenario_geography",
-                "sector",
-                "technology",
-                "retirement_year",
-            ]
-        )
-        .agg({"capacity": "sum"})
-        .reset_index()
-    )
-
     # Handle case where no assets retire after forecast period
-    if company_technology_retirement_dates.empty:
+    if assets_retirement_dates.empty:
         # Return empty DataFrame with expected columns
         return pd.DataFrame(
             columns=[
+                "asset_id",
                 "company_id",
                 "scenario_geography",
                 "sector",
@@ -332,10 +322,11 @@ def determine_assets_retirement_dates(
             ]
         )
 
-    # Select and rename columns
-    company_technology_retirement_dates = company_technology_retirement_dates.loc[
+    # Select and rename columns - now keeping asset_id
+    assets_retirement_dates = assets_retirement_dates.loc[
         :,
         [
+            "asset_id",
             "company_id",
             "scenario_geography",
             "sector",
@@ -345,4 +336,4 @@ def determine_assets_retirement_dates(
         ],
     ]
 
-    return company_technology_retirement_dates
+    return assets_retirement_dates
