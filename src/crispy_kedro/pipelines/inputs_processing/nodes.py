@@ -76,33 +76,9 @@ def filter_assets(
         :,
     ]
 
-    # Filter out assets-technology combinations whose first known year is higher than scenario_start_year
-    first_year_by_asset_tech = filtered_assets_forecasts.groupby(
-        ["asset_id", "technology"]
-    )["production_year"].min()
-    valid_asset_tech_combinations = first_year_by_asset_tech[
-        first_year_by_asset_tech <= scenario_start_year
-    ].index
-
-    filtered_assets_forecasts = (
-        filtered_assets_forecasts.set_index(["asset_id", "technology"])
-        .loc[valid_asset_tech_combinations]
-        .reset_index()
-    )
-
-    filtered_assets_forecasts = filtered_assets_forecasts.reset_index(drop=True)
-
-    # Update assertion to reflect that we may now have different first production years
-    # since we filtered out some asset-technology combinations
-    if not filtered_assets_forecasts.empty:
-        first_years = filtered_assets_forecasts.groupby(["asset_id", "technology"])[
-            "production_year"
-        ].min()
-        assert all(
-            first_years <= scenario_start_year
-        ), "All remaining assets-technology combinations should have first production_year <= scenario_start_year"
-    else:
-        raise ValueError("No assets remaining after filtering")
+    # Check if we have any assets after filtering
+    if filtered_assets_forecasts.empty:
+        raise ValueError("No assets remaining after filtering by year range and company ownership")
 
     filtered_assets_forecasts = filtered_assets_forecasts.rename(
         {"production_year": "year"}, axis=1
