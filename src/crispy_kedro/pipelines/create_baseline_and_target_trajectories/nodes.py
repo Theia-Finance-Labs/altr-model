@@ -8,39 +8,6 @@ import numpy as np
 from typing import Tuple, cast
 
 
-def assign_scenario_geographies_to_assets(
-    assets_forecasts: pd.DataFrame, scenarios_pathways: pd.DataFrame
-) -> pd.DataFrame:
-    """Assign scenario geographies to assets based on country mapping."""
-    geographies_to_countries_mapping = (
-        scenarios_pathways[["scenario_geography", "country_iso2_list"]]
-        .drop_duplicates()
-        .assign(country_iso2_list=lambda x: x.country_iso2_list.str.split(","))
-        .explode("country_iso2_list")
-        .rename(columns={"country_iso2_list": "country_iso2"})
-    )
-
-    assets_forecasts_with_scenario_geographies = assets_forecasts.merge(
-        geographies_to_countries_mapping,
-        on="country_iso2",
-        how="left",
-    )
-
-    assert (
-        assets_forecasts_with_scenario_geographies["scenario_geography"].isna().sum()
-        == 0
-    ), "Some assets are not assigned to a scenario geography"
-
-    # TODO: remove this after fixed in input data
-    assets_forecasts_with_scenario_geographies = (
-        assets_forecasts_with_scenario_geographies.loc[
-            assets_forecasts_with_scenario_geographies["year"] <= 2030, :
-        ]
-    )
-
-    return assets_forecasts_with_scenario_geographies
-
-
 def aggregate_assets_to_company_level(assets_forecasts: pd.DataFrame) -> pd.DataFrame:
     """Aggregate asset-level data to company level by calculating total activity."""
     assets_forecasts["asset_activity"] = (
@@ -220,16 +187,24 @@ def create_companies_trajectories(
 
     # Merge with assets forecasts
     companies_trajectories = scenarios_trajectories.merge(
-        companies_forecasts.drop(columns=["company_name"]),
+        companies_forecasts,
         on=["company_id", "scenario_geography", "sector", "technology", "year"],
         how="left",
     )
 
     # Define groupby columns
-    group_cols = ["company_id", "scenario_geography", "sector", "technology"]
-
-    # Sort to ensure proper ordering
+    group_cols = [
+        "company_id",
+        "company_name",
+        "scenario_geography",
+        "sector",
+        "technology",
+    ]
+    # Sort to ensure proper ordering and forward fill only company name
     companies_trajectories = companies_trajectories.sort_values(group_cols + ["year"])
+    companies_trajectories["company_name"] = companies_trajectories[
+        "company_name"
+    ].ffill()
 
     # TARGET TRAJECTORY: constrained cumsum approach (no extra raw columns)
     companies_trajectories["_company_activity_filled"] = companies_trajectories.groupby(

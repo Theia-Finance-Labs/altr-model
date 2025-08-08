@@ -5,11 +5,10 @@
 # Link: https://docs.kedro.org/en/0.19.12/configuration/parameters.html
 
 
-baseline_scenario: "AR6_WITCH 5.0_EN_INDCi2030_1000_NDCp"
-target_scenario: "AR6_WITCH 5.0_CO_CurPol"
+baseline_scenario: "AR6_WITCH 5.0_CO_CurPol"
+target_scenario: "AR6_WITCH 5.0_EN_INDCi2030_1800f"
 max_forecast_horizon: 7
-# baseline_scenario: "NGFS2024_GCAM_CP"
-# target_scenario: "NGFS2024_GCAM_NZ2050"
+
 
 company_ids:
   - CN_5155065664201589842
