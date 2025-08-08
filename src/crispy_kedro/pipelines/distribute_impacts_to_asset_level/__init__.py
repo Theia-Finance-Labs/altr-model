@@ -1,5 +1,5 @@
 """
-This is a boilerplate pipeline 'outputs_processing'
+This is a boilerplate pipeline 'distribute_impacts_to_asset_level'
 generated using Kedro 0.19.12
 """
 

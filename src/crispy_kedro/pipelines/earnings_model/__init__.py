@@ -1,5 +1,5 @@
 """
-This is a boilerplate pipeline 'layer1'
+This is a boilerplate pipeline 'inputs_processing'
 generated using Kedro 0.19.12
 """
 

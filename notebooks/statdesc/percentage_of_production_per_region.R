@@ -26,7 +26,7 @@ assets_data <- readr::read_csv(
   "packages/crispy-kedro/data/08_reporting/assets_data.csv",
   show_col_types = FALSE
 ) %>%
-  mutate(asset_trajectory_gw = as.numeric(asset_trajectory) / 1000) %>%
+  mutate(asset_trajectory_gw = as.numeric(capacity) / 1000) %>%
   select(asset_id, country_iso2, technology, year, asset_trajectory_gw)
 
 scenarios_data <- readr::read_csv(
