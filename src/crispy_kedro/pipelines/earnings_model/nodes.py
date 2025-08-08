@@ -30,7 +30,7 @@ TECHNOLOGY_DEFAULTS = {
 
 def validate_and_standardize_inputs(
     asset_level_staggered_shock: pd.DataFrame,
-    downloaded_scenarios_ar6: pd.DataFrame,
+    downloaded_scenarios: pd.DataFrame,
     all_alignment_classifications: pd.DataFrame,
     assets_data: pd.DataFrame,
 ) -> Dict[str, pd.DataFrame]:
@@ -62,7 +62,7 @@ def validate_and_standardize_inputs(
             assets[col] = pd.to_numeric(assets[col], errors='coerce')
     
     # Clean scenarios data
-    scenarios = downloaded_scenarios_ar6.copy()
+    scenarios = downloaded_scenarios.copy()
     
     # Standardize scenario naming
     scenarios["scenario"] = (

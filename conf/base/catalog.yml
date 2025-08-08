@@ -45,10 +45,6 @@ downloaded_scenarios:
   type: pandas.CSVDataset
   filepath: data/05_model_input/downloaded_scenarios.csv
 
-downloaded_scenarios_ar6:
-  type: pandas.CSVDataset
-  filepath: data/05_model_input/downloaded_scenarios_ar6.csv
-
 downloaded_assets:
   type: pandas.CSVDataset
   filepath: data/05_model_input/downloaded_assets.csv
@@ -100,52 +96,6 @@ asset_level_staggered_shock:
   type: pandas.CSVDataset
   filepath: data/08_reporting/asset_level_staggered_shock.csv
 
-# ================================================
-# ======= FINANCIAL MODEL PIPELINE OUTPUTS =======
-# ================================================
-
-# Temporary internal datasets (not saved to disk)
-_temp_assets_baseline:
-  type: MemoryDataset
-
-_temp_assets_shock:
-  type: MemoryDataset
-
-_temp_assets_with_accounting_baseline:
-  type: MemoryDataset
-
-_temp_assets_with_accounting_shock:
-  type: MemoryDataset
-
-# Net profits files with baseline, shock, difference, and percentage difference columns
-assets_net_profits:
-  type: pandas.CSVDataset
-  filepath: data/07_model_output/assets_net_profits.csv
-
-company_tech_net_profits:
-  type: pandas.CSVDataset
-  filepath: data/07_model_output/company_tech_net_profits.csv
-
-company_net_profits:
-  type: pandas.CSVDataset
-  filepath: data/07_model_output/company_net_profits.csv
-
-company_discounted_net_profits:
-  type: pandas.CSVDataset
-  filepath: data/08_reporting/company_discounted_net_profits.csv
-
-# Net profits files with NPV calculations added
-assets_net_profits_with_npv:
-  type: pandas.CSVDataset
-  filepath: data/07_model_output/assets_net_profits_with_npv.csv
-
-company_tech_net_profits_with_npv:
-  type: pandas.CSVDataset
-  filepath: data/07_model_output/company_tech_net_profits_with_npv.csv
-
-company_net_profits_with_npv:
-  type: pandas.CSVDataset
-  filepath: data/07_model_output/company_net_profits_with_npv.csv
 
 # ================================================
 # ======= EARNINGS MODEL PIPELINE OUTPUTS =======

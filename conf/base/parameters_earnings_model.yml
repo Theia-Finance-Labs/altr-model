@@ -1,0 +1,6 @@
+# Earnings model parameters
+market_passthrough: 0.5  # 50% carbon price passthrough to market prices
+
+# Cost element switches for earnings model
+include_replacement_capex: true  # Include CapEx for replacing retired eligible assets
+include_decom_costs: true        # Include decommissioning costs for retired assets

@@ -29,7 +29,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                 func=validate_and_standardize_inputs,
                 inputs={
                     "asset_level_staggered_shock": "asset_level_staggered_shock",
-                    "downloaded_scenarios_ar6": "downloaded_scenarios_ar6", 
+                    "downloaded_scenarios": "downloaded_scenarios", 
                     "all_alignment_classifications": "all_alignment_classifications",
                     "assets_data": "assets_data",
                 },
