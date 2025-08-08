@@ -11,6 +11,12 @@ import re
 import os
 from pathlib import Path
 
+import os
+import re
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
 
 def plot_late_sudden_trajectories(
     late_sudden_trajectories: pd.DataFrame,
