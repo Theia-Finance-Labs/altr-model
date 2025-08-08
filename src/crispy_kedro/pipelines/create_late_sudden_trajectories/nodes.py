@@ -19,6 +19,14 @@ def determine_companies_technologies_alignment(
     """
     Decide whether each company-technology pathway is aligned with the target
     scenario and split results into four buckets.
+
+    Returns
+    -------
+    Tuple with 4 DataFrames:
+        - misaligned_high_carbon_companies_trajectories: filtered companies_trajectories
+        - misaligned_low_carbon_companies_trajectories: filtered companies_trajectories
+        - aligned_high_carbon_companies_trajectories: filtered companies_trajectories
+        - aligned_low_carbon_companies_trajectories: filtered companies_trajectories
     """
 
     # 2) Annotate the company trajectories with that flag:
@@ -77,17 +85,50 @@ def determine_companies_technologies_alignment(
         drop=True
     )
 
+    # ------------------------------------------------------------------
+    # 5. Filter companies_trajectories for each case
+    # ------------------------------------------------------------------
+    key_cols_for_filter = ["company_id", "scenario_geography", "technology"]
+
+    # Get the unique pairs for each case
+    misaligned_high_carbon_pairs = misaligned_high_carbon[
+        key_cols_for_filter
+    ].drop_duplicates()
+    misaligned_low_carbon_pairs = misaligned_low_carbon[
+        key_cols_for_filter
+    ].drop_duplicates()
+    aligned_high_carbon_pairs = aligned_high_carbon[
+        key_cols_for_filter
+    ].drop_duplicates()
+    aligned_low_carbon_pairs = aligned_low_carbon[key_cols_for_filter].drop_duplicates()
+
+    # Filter companies_trajectories for each case
+    misaligned_high_carbon_companies_trajectories = companies_trajectories.merge(
+        misaligned_high_carbon_pairs, on=key_cols_for_filter, how="inner"
+    ).copy()
+
+    misaligned_low_carbon_companies_trajectories = companies_trajectories.merge(
+        misaligned_low_carbon_pairs, on=key_cols_for_filter, how="inner"
+    ).copy()
+
+    aligned_high_carbon_companies_trajectories = companies_trajectories.merge(
+        aligned_high_carbon_pairs, on=key_cols_for_filter, how="inner"
+    ).copy()
+
+    aligned_low_carbon_companies_trajectories = companies_trajectories.merge(
+        aligned_low_carbon_pairs, on=key_cols_for_filter, how="inner"
+    ).copy()
+
     return (
-        misaligned_high_carbon,
-        misaligned_low_carbon,
-        aligned_high_carbon,
-        aligned_low_carbon,
+        misaligned_high_carbon_companies_trajectories,
+        misaligned_low_carbon_companies_trajectories,
+        aligned_high_carbon_companies_trajectories,
+        aligned_low_carbon_companies_trajectories,
     )
 
 
 def late_sudden_misaligned_high_carbon_companies(
-    companies_trajectories: pd.DataFrame,
-    misaligned_high_carbon_companies: pd.DataFrame,
+    misaligned_high_carbon_companies_trajectories: pd.DataFrame,
     assets_retirement_dates: pd.DataFrame,
     shock_year: int,
     alignment_year: int,
@@ -107,11 +148,8 @@ def late_sudden_misaligned_high_carbon_companies(
 
     Inputs
     ------
-    companies_trajectories : DataFrame with columns
-        ['company_id','scenario_geography','sector','technology','year',
-         'company_activity','company_trajectory_baseline','company_trajectory_target']
-    misaligned_high_carbon_companies : DataFrame with at least
-        ['company_id','technology']
+    misaligned_high_carbon_companies_trajectories : DataFrame
+        Already filtered companies_trajectories for misaligned high-carbon companies
     assets_retirement_dates : DataFrame with columns
         ['company_id','scenario_geography','sector','technology','retirement_year','capacity']
         capacity treated as non-negative.
@@ -124,17 +162,11 @@ def late_sudden_misaligned_high_carbon_companies(
       - late_sudden_phase
     """
 
-    # -------------------- 0) Filter to misaligned high-carbon pairs --------------------
-    key_cols_for_filter = ["company_id", "scenario_geography", "technology"]
-    pairs = misaligned_high_carbon_companies[key_cols_for_filter].drop_duplicates()
-
-    companies_for_case = companies_trajectories.merge(
-        pairs, on=key_cols_for_filter, how="inner"
-    ).copy()
+    companies_for_case = misaligned_high_carbon_companies_trajectories.copy()
 
     # Empty early-exit with expected columns
     if companies_for_case.empty:
-        out = companies_trajectories.head(0).copy()
+        out = misaligned_high_carbon_companies_trajectories.head(0).copy()
         for col, dtype in [
             ("company_trajectory_latesudden", float),
             ("late_sudden_phase", object),
@@ -299,8 +331,7 @@ def late_sudden_misaligned_high_carbon_companies(
 
 
 def late_sudden_misaligned_low_carbon_companies(
-    companies_trajectories: pd.DataFrame,
-    misaligned_low_carbon_companies: pd.DataFrame,
+    misaligned_low_carbon_companies_trajectories: pd.DataFrame,
     shock_year: int,
     alignment_year: int,
 ) -> pd.DataFrame:
@@ -317,13 +348,8 @@ def late_sudden_misaligned_low_carbon_companies(
 
     Parameters
     ----------
-    companies_trajectories : DataFrame
-        Must include:
-          ['company_id','scenario_geography','sector','technology','year',
-           'company_activity','company_trajectory_baseline','company_trajectory_target']
-    misaligned_low_carbon_companies : DataFrame
-        Output from the alignment step, filtered to the case.
-        Must include at least ['company_id','technology'].
+    misaligned_low_carbon_companies_trajectories : DataFrame
+        Already filtered companies_trajectories for misaligned low-carbon companies
     shock_year : int
         Year when the policy shock triggers the transition.
     alignment_year : int
@@ -332,25 +358,16 @@ def late_sudden_misaligned_low_carbon_companies(
     Returns
     -------
     DataFrame
-        Same rows (for the selected companies/techs) as `companies_trajectories`,
-        with additional columns:
+        Same rows as input with additional columns:
           - 'company_trajectory_latesudden'
           - 'late_sudden_phase'
     """
 
-    # ------------------------------------------------------------------
-    # 0) Filter to misaligned low-carbon company-technology pairs
-    # ------------------------------------------------------------------
-    key_cols_for_filter = ["company_id", "scenario_geography", "technology"]
-    pairs = misaligned_low_carbon_companies[key_cols_for_filter].drop_duplicates()
-
-    companies_for_case = companies_trajectories.merge(
-        pairs, on=key_cols_for_filter, how="inner"
-    ).copy()
+    companies_for_case = misaligned_low_carbon_companies_trajectories.copy()
 
     if companies_for_case.empty:
         # Nothing to compute; return empty with expected columns.
-        out = companies_trajectories.head(0).copy()
+        out = misaligned_low_carbon_companies_trajectories.head(0).copy()
         out["company_trajectory_latesudden"] = out.get(
             "company_trajectory_latesudden", pd.Series(dtype=float)
         )
@@ -440,8 +457,7 @@ def late_sudden_misaligned_low_carbon_companies(
 
 
 def late_sudden_aligned_high_carbon_companies(
-    companies_trajectories: pd.DataFrame,
-    aligned_high_carbon_companies: pd.DataFrame,
+    aligned_high_carbon_companies_trajectories: pd.DataFrame,
     shock_year: int,
     alignment_year: int,
 ) -> pd.DataFrame:
@@ -458,13 +474,8 @@ def late_sudden_aligned_high_carbon_companies(
 
     Parameters
     ----------
-    companies_trajectories : DataFrame
-        Must include:
-          ['company_id','scenario_geography','sector','technology','year',
-           'company_activity','company_trajectory_baseline','company_trajectory_target']
-    aligned_high_carbon_companies : DataFrame
-        Output from the alignment step, filtered to this case.
-        Must include at least ['company_id','technology'].
+    aligned_high_carbon_companies_trajectories : DataFrame
+        Already filtered companies_trajectories for aligned high-carbon companies
     shock_year : int
         Year when the policy shock triggers the transition.
     alignment_year : int
@@ -473,22 +484,15 @@ def late_sudden_aligned_high_carbon_companies(
     Returns
     -------
     DataFrame
-        Same rows (for the selected companies/techs) as `companies_trajectories`,
-        with added columns:
+        Same rows as input with added columns:
           - 'company_trajectory_latesudden'
           - 'late_sudden_phase'
     """
 
-    # 0) Filter to aligned high-carbon company-technology pairs
-    key_cols_for_filter = ["company_id", "scenario_geography", "technology"]
-    pairs = aligned_high_carbon_companies[key_cols_for_filter].drop_duplicates()
-
-    companies_for_case = companies_trajectories.merge(
-        pairs, on=key_cols_for_filter, how="inner"
-    ).copy()
+    companies_for_case = aligned_high_carbon_companies_trajectories.copy()
 
     if companies_for_case.empty:
-        out = companies_trajectories.head(0).copy()
+        out = aligned_high_carbon_companies_trajectories.head(0).copy()
         out["company_trajectory_latesudden"] = out.get(
             "company_trajectory_latesudden", pd.Series(dtype=float)
         )
@@ -574,8 +578,7 @@ def late_sudden_aligned_high_carbon_companies(
 
 
 def late_sudden_aligned_low_carbon_companies(
-    companies_trajectories: pd.DataFrame,
-    aligned_low_carbon_companies: pd.DataFrame,
+    aligned_low_carbon_companies_trajectories: pd.DataFrame,
     shock_year: int,
     alignment_year: Union[int, None] = None,  # kept only for a uniform signature
 ) -> pd.DataFrame:
@@ -595,12 +598,8 @@ def late_sudden_aligned_low_carbon_companies(
 
     Parameters
     ----------
-    companies_trajectories : DataFrame
-        Required cols:
-            company_id, scenario_geography, sector, technology, year,
-            company_activity, company_trajectory_baseline, company_trajectory_target
-    aligned_low_carbon_companies : DataFrame
-        At least ['company_id','technology'] for the pairs that belong to this case.
+    aligned_low_carbon_companies_trajectories : DataFrame
+        Already filtered companies_trajectories for aligned low-carbon companies
     shock_year : int
         Year the policy shock begins.  Must exist in the horizon.
     alignment_year : int | None
@@ -608,21 +607,14 @@ def late_sudden_aligned_low_carbon_companies(
 
     Returns
     -------
-    DataFrame  – same rows (for the selected pairs) as `companies_trajectories`,
-                 with extra columns described above.
+    DataFrame  – same rows as input with extra columns described above.
     """
 
-    # ---------------------------------------------------------------
-    # 0) isolate the company-technology pairs for this case
-    # ---------------------------------------------------------------
-    filter_keys = ["company_id", "scenario_geography", "technology"]
-    pairs = aligned_low_carbon_companies[filter_keys].drop_duplicates()
-
-    subset = companies_trajectories.merge(pairs, on=filter_keys, how="inner").copy()
+    subset = aligned_low_carbon_companies_trajectories.copy()
 
     if subset.empty:
         # Return an empty frame with the expected columns
-        out = companies_trajectories.head(0).copy()
+        out = aligned_low_carbon_companies_trajectories.head(0).copy()
         out["company_trajectory_latesudden"] = pd.Series(dtype=float)
         out["late_sudden_phase"] = pd.Series(dtype=object)
         return out
@@ -712,13 +704,9 @@ def concatenate_late_sudden_results(
     late_sudden_misaligned_low_carbon: pd.DataFrame,
     late_sudden_aligned_high_carbon: pd.DataFrame,
     late_sudden_aligned_low_carbon: pd.DataFrame,
-    misaligned_high_carbon_companies: pd.DataFrame,
-    misaligned_low_carbon_companies: pd.DataFrame,
-    aligned_high_carbon_companies: pd.DataFrame,
-    aligned_low_carbon_companies: pd.DataFrame,
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
+) -> pd.DataFrame:
     """
-    Concatenate all late sudden trajectory results and all alignment classification results.
+    Concatenate all late sudden trajectory results.
 
     Parameters
     ----------
@@ -730,20 +718,11 @@ def concatenate_late_sudden_results(
         Late sudden trajectories for aligned high carbon companies
     late_sudden_aligned_low_carbon : pd.DataFrame
         Late sudden trajectories for aligned low carbon companies
-    misaligned_high_carbon_companies : pd.DataFrame
-        Classification results for misaligned high carbon companies
-    misaligned_low_carbon_companies : pd.DataFrame
-        Classification results for misaligned low carbon companies
-    aligned_high_carbon_companies : pd.DataFrame
-        Classification results for aligned high carbon companies
-    aligned_low_carbon_companies : pd.DataFrame
-        Classification results for aligned low carbon companies
 
     Returns
     -------
-    Tuple[pd.DataFrame, pd.DataFrame]
-        First dataframe: All late sudden trajectories concatenated with alignment_type column
-        Second dataframe: All alignment classifications concatenated with alignment_type column
+    pd.DataFrame
+        All late sudden trajectories concatenated with alignment_type column
     """
 
     # Concatenate late sudden trajectories with alignment type labels
@@ -790,48 +769,4 @@ def concatenate_late_sudden_results(
             ]
         )
 
-    # Concatenate alignment classifications with alignment type labels
-    alignment_dfs = []
-
-    if not misaligned_high_carbon_companies.empty:
-        df = misaligned_high_carbon_companies.copy()
-        df["alignment_type"] = "misaligned_high_carbon"
-        alignment_dfs.append(df)
-
-    if not misaligned_low_carbon_companies.empty:
-        df = misaligned_low_carbon_companies.copy()
-        df["alignment_type"] = "misaligned_low_carbon"
-        alignment_dfs.append(df)
-
-    if not aligned_high_carbon_companies.empty:
-        df = aligned_high_carbon_companies.copy()
-        df["alignment_type"] = "aligned_high_carbon"
-        alignment_dfs.append(df)
-
-    if not aligned_low_carbon_companies.empty:
-        df = aligned_low_carbon_companies.copy()
-        df["alignment_type"] = "aligned_low_carbon"
-        alignment_dfs.append(df)
-
-    # Concatenate all alignment results
-    if alignment_dfs:
-        all_alignments = pd.concat(alignment_dfs, ignore_index=True)
-    else:
-        # Create empty dataframe with expected columns if no data
-        all_alignments = pd.DataFrame(
-            columns=[
-                "company_id",
-                "scenario_geography",
-                "sector",
-                "technology",
-                "increasing",
-                "sum_forecast",
-                "sum_target",
-                "end_forecast",
-                "end_target",
-                "aligned",
-                "alignment_type",
-            ]
-        )
-
-    return all_late_sudden, all_alignments
+    return all_late_sudden

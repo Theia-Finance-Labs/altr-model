@@ -25,17 +25,16 @@ def create_pipeline(**kwargs) -> Pipeline:
                     increasing_or_decreasing_techs="increasing_or_decreasing_techs",
                 ),
                 outputs=[
-                    "misaligned_high_carbon_companies",
-                    "misaligned_low_carbon_companies",
-                    "aligned_high_carbon_companies",
-                    "aligned_low_carbon_companies",
+                    "misaligned_high_carbon_companies_trajectories",
+                    "misaligned_low_carbon_companies_trajectories",
+                    "aligned_high_carbon_companies_trajectories",
+                    "aligned_low_carbon_companies_trajectories",
                 ],
             ),
             node(
                 late_sudden_misaligned_high_carbon_companies,
                 inputs=dict(
-                    companies_trajectories="companies_trajectories",
-                    misaligned_high_carbon_companies="misaligned_high_carbon_companies",
+                    misaligned_high_carbon_companies_trajectories="misaligned_high_carbon_companies_trajectories",
                     assets_retirement_dates="assets_retirement_dates",
                     shock_year="params:shock_year",
                     alignment_year="params:alignment_year",
@@ -45,8 +44,7 @@ def create_pipeline(**kwargs) -> Pipeline:
             node(
                 late_sudden_misaligned_low_carbon_companies,
                 inputs=dict(
-                    companies_trajectories="companies_trajectories",
-                    misaligned_low_carbon_companies="misaligned_low_carbon_companies",
+                    misaligned_low_carbon_companies_trajectories="misaligned_low_carbon_companies_trajectories",
                     shock_year="params:shock_year",
                     alignment_year="params:alignment_year",
                 ),
@@ -55,8 +53,7 @@ def create_pipeline(**kwargs) -> Pipeline:
             node(
                 late_sudden_aligned_high_carbon_companies,
                 inputs=dict(
-                    companies_trajectories="companies_trajectories",
-                    aligned_high_carbon_companies="aligned_high_carbon_companies",
+                    aligned_high_carbon_companies_trajectories="aligned_high_carbon_companies_trajectories",
                     shock_year="params:shock_year",
                     alignment_year="params:alignment_year",
                 ),
@@ -65,8 +62,7 @@ def create_pipeline(**kwargs) -> Pipeline:
             node(
                 late_sudden_aligned_low_carbon_companies,
                 inputs=dict(
-                    companies_trajectories="companies_trajectories",
-                    aligned_low_carbon_companies="aligned_low_carbon_companies",
+                    aligned_low_carbon_companies_trajectories="aligned_low_carbon_companies_trajectories",
                     shock_year="params:shock_year",
                     alignment_year="params:alignment_year",
                 ),
@@ -79,15 +75,8 @@ def create_pipeline(**kwargs) -> Pipeline:
                     late_sudden_misaligned_low_carbon="late_sudden_misaligned_low_carbon_companies",
                     late_sudden_aligned_high_carbon="late_sudden_aligned_high_carbon_companies",
                     late_sudden_aligned_low_carbon="late_sudden_aligned_low_carbon_companies",
-                    misaligned_high_carbon_companies="misaligned_high_carbon_companies",
-                    misaligned_low_carbon_companies="misaligned_low_carbon_companies",
-                    aligned_high_carbon_companies="aligned_high_carbon_companies",
-                    aligned_low_carbon_companies="aligned_low_carbon_companies",
                 ),
-                outputs=[
-                    "all_late_sudden_trajectories",
-                    "all_alignment_classifications",
-                ],
+                outputs="all_late_sudden_trajectories",
             ),
         ],
         tags="altrisk",
