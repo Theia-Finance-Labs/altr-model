@@ -614,9 +614,19 @@ def allocate_increasing_tech(
     def _get_prev_scalar(
         df: pd.DataFrame, aid: str, col: str, default: float = 0.0
     ) -> float:
-        """Safe scalar getter even if df has duplicate index rows for the asset."""
+        """Safe and fast scalar getter even if df might contain duplicate index rows.
+        Tries direct .at access when unique, otherwise falls back to last row selection.
+        """
         if df.empty or aid not in df.index:
             return default
+        # Fast path when there are no duplicates
+        if not df.index.has_duplicates:
+            try:
+                val = df.at[aid, col]
+                return float(val)
+            except Exception:
+                return default
+        # Fallback when duplicates exist
         vals = df.loc[[aid], col]
         try:
             return float(vals.iloc[-1])
@@ -639,9 +649,25 @@ def allocate_increasing_tech(
         panel = _build_asset_panel_full_horizon(
             assets_forecasts, cid, geo, sector, tech, y0, yN
         )
+        # Ensure asset_id is string for stable indexing and comparisons
+        if not panel.empty and panel["asset_id"].dtype != object:
+            panel["asset_id"] = panel["asset_id"].astype(str)
+
+        # Cache per-year slices and age series to avoid repeated filtering/indexing
+        if panel.empty:
+            panel_by_year = {y: panel.iloc[0:0].copy() for y in years}
+            ages_by_year = {y: pd.Series(dtype=float) for y in years}
+        else:
+            panel_by_year = {
+                int(y): sub.copy() for y, sub in panel.groupby("year", sort=False)
+            }
+            ages_by_year = {
+                int(y): sub.set_index("asset_id")["asset_age"]
+                for y, sub in panel_by_year.items()
+            }
 
         # Anchor at first L&S year using panel capacities (real assets only)
-        ceil0 = panel[panel["year"] == y0].copy()
+        ceil0 = panel_by_year.get(y0, panel.iloc[0:0].copy())
         out0 = ceil0.assign(
             capacity_before_shock=ceil0["capacity"],
             allocated_shock=0.0,
@@ -660,16 +686,19 @@ def allocate_increasing_tech(
                 "capacity_after_shock",
             ]
         ]
-        base_prev.index = base_prev.index.astype(str)
-        base_prev = _unique_base(base_prev.reset_index())
+        # Keep index as string, ensure uniqueness only if needed
+        if not base_prev.empty and base_prev.index.dtype != object:
+            base_prev.index = base_prev.index.map(str)
+        if base_prev.index.has_duplicates:
+            base_prev = _unique_base(base_prev.reset_index())
 
         for _, row in grp[grp["year"] > y0].iterrows():
             y = int(row["year"])
             shock = float(row["shock_eff"])  # >= 0
-            ceil_y = panel[panel["year"] == y].copy()
+            ceil_y = panel_by_year.get(y, panel.iloc[0:0].copy())
 
             # De-dup and split base into real vs synthetic parts
-            if not base_prev.empty:
+            if not base_prev.empty and base_prev.index.has_duplicates:
                 base_prev = _unique_base(base_prev.reset_index())
             base_real_prev = base_prev.drop(index=[synth_id], errors="ignore")
             has_synth = synth_id in base_prev.index
@@ -683,10 +712,9 @@ def allocate_increasing_tech(
                     cap0 = base_real_prev["capacity_after_shock"].rename(
                         "capacity_before_shock"
                     )
-                    ages = (
-                        ceil_y.set_index("asset_id")["asset_age"]
-                        .reindex(cap0.index)
-                        .fillna(base_real_prev["asset_age"] + 1)
+                    ages_src = ages_by_year.get(y, pd.Series(dtype=float))
+                    ages = ages_src.reindex(cap0.index).fillna(
+                        base_real_prev["asset_age"] + 1
                     )
                     real_out = pd.DataFrame(
                         {
@@ -750,8 +778,10 @@ def allocate_increasing_tech(
                         "capacity_after_shock",
                     ]
                 ]
-                base_prev.index = base_prev.index.astype(str)
-                base_prev = _unique_base(base_prev.reset_index())
+                if not base_prev.empty and base_prev.index.dtype != object:
+                    base_prev.index = base_prev.index.map(str)
+                if base_prev.index.has_duplicates:
+                    base_prev = _unique_base(base_prev.reset_index())
                 diags.append(
                     {
                         "company_id": cid,
@@ -784,8 +814,10 @@ def allocate_increasing_tech(
                         "capacity_after_shock",
                     ]
                 ]
-                base_real_prev.index = base_real_prev.index.astype(str)
-                base_real_prev = _unique_base(base_real_prev.reset_index())
+                if not base_real_prev.empty and base_real_prev.index.dtype != object:
+                    base_real_prev.index = base_real_prev.index.map(str)
+                if base_real_prev.index.has_duplicates:
+                    base_real_prev = _unique_base(base_real_prev.reset_index())
 
             if shock <= 1e-12:
                 diags.append(
@@ -803,7 +835,8 @@ def allocate_increasing_tech(
                     if has_synth
                     else [base_real_prev]
                 )
-                base_prev = _unique_base(base_prev.reset_index())
+                if base_prev.index.has_duplicates:
+                    base_prev = _unique_base(base_prev.reset_index())
                 continue
 
             # Allocate to real assets ONLY
@@ -894,8 +927,10 @@ def allocate_increasing_tech(
                     else base_real_next
                 )
 
-            base_prev.index = base_prev.index.astype(str)
-            base_prev = _unique_base(base_prev.reset_index())
+            if not base_prev.empty and base_prev.index.dtype != object:
+                base_prev.index = base_prev.index.map(str)
+            if base_prev.index.has_duplicates:
+                base_prev = _unique_base(base_prev.reset_index())
 
             diags.append(
                 {
