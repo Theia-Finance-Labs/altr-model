@@ -6,7 +6,7 @@
 
 
 baseline_scenario: "CO_CurPol"
-target_scenario: "EN_INDCi2030_1800f"
+target_scenario: "EN_INDCi2030_500f"
 max_forecast_horizon: 7
 
 
