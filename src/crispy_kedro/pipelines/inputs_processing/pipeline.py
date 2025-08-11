@@ -14,6 +14,7 @@ from .nodes import (
     determine_increasing_or_decreasing_techs,
     determine_lifetime_per_technology,
     determine_assets_retirement_dates,
+    interpolate_scenarios_annually,
 )
 
 
@@ -35,6 +36,11 @@ def create_pipeline(**kwargs) -> Pipeline:
                     target_scenario="params:target_scenario",
                     baseline_scenario="params:baseline_scenario",
                 ),
+                outputs="scenarios_pathways_filtered",
+            ),
+            node(
+                func=interpolate_scenarios_annually,
+                inputs="scenarios_pathways_filtered",
                 outputs="scenarios_pathways",
             ),
             node(
