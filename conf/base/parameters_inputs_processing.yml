@@ -9,10 +9,6 @@ baseline_scenario: "AR6_WITCH 5.0_CO_CurPol"
 target_scenario: "AR6_WITCH 5.0_EN_INDCi2030_1800f"
 max_forecast_horizon: 7
 
-# Parameters for validation - shock_year should be <= alignment_year
-shock_year: 2025
-alignment_year: 2030
-
 
 company_ids:
   - CN_5155065664201589842
