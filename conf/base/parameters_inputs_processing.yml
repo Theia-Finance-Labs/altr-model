@@ -5,8 +5,8 @@
 # Link: https://docs.kedro.org/en/0.19.12/configuration/parameters.html
 
 
-baseline_scenario: "AR6_WITCH 5.0_CO_CurPol"
-target_scenario: "AR6_WITCH 5.0_EN_INDCi2030_1800f"
+baseline_scenario: "CO_CurPol"
+target_scenario: "EN_INDCi2030_1800f"
 max_forecast_horizon: 7
 
 
