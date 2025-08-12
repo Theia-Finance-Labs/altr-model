@@ -3,6 +3,7 @@ dcf:
   # Basis consistency - must match earnings pipeline
   basis: "real"  # "real" or "nominal" 
   base_year: 2010  # if basis="real"
+  use_after_tax_wacc: false  # RFC: set true when enabling corporate taxes
   
   # Simplified discount rate configuration
   # Baseline scenarios use standard discount rate
