@@ -136,26 +136,15 @@ def late_sudden_misaligned_high_carbon_companies(
     alignment_year: int,
 ) -> pd.DataFrame:
     """
-    Late & Sudden pathway for *misaligned high-carbon* companies with *asset retirement*.
+    Late & Sudden pathway for misaligned high-carbon companies (no retirement, no compensation).
 
-        Retirement rule (permanent capacity reduction):
-      For each asset (company_id, sector, technology) that retires in year y_r with a given
-      `capacity`, subtract that capacity from the L&S pathway for all years >= y_r (cumulative
-      for multiple assets). Values are clipped to >= 0.
-
-    Phase labeling:
-      - Base phases: forecast / bau / transition / aligned / aligned_compensation
-      - The specific year when a retirement event occurs gets the "retirement" phase.
-      - Retirement phase remains "retirement" even when compensation is applied.
-
-    Inputs
-    ------
-    misaligned_high_carbon_companies_trajectories : DataFrame
-        Already filtered companies_trajectories for misaligned high-carbon companies
-    assets_retirement_dates : DataFrame with columns
-        ['company_id','scenario_geography','sector','technology','retirement_year','capacity']
-        capacity treated as non-negative.
-    shock_year, alignment_year : int
+    Phases (per company_id x scenario_geography x sector x technology):
+      1) Forecast:    L&S = asset_activity for years with available data (<= last GEM year);
+                      if a value is missing inside that window, we fall back to baseline.
+      2) BAU:         L&S = asset_trajectory_baseline for (last_GEM_year, shock_year)
+      3) Transition:  Linear interpolation from baseline(shock_year-1) to target(alignment_year)
+                      for years y in [shock_year, alignment_year]
+      4) Alignment:   L&S = asset_trajectory_target for y > alignment_year
 
     Returns
     -------
@@ -172,31 +161,11 @@ def late_sudden_misaligned_high_carbon_companies(
         for col, dtype in [
             ("asset_trajectory_latesudden", float),
             ("late_sudden_phase", object),
-            ("compensation_volume", float),
-            ("compensation_per_year", float),
         ]:
             out[col] = out.get(col, pd.Series(dtype=dtype))
         return out
 
-    # -------------------- Normalize retirement table --------------------
-    retire_df = assets_retirement_dates.copy()
-
-    # Index retirement events by (company_id, sector, technology)
-    retire_key_cols = ["company_id", "scenario_geography", "sector", "technology"]
-    events_by_key = {}
-    if not retire_df.empty:
-        # Sort for deterministic application
-        retire_df = retire_df.sort_values(retire_key_cols + ["retirement_year"])
-        for key, sub in retire_df.groupby(retire_key_cols, sort=False):
-            # simple list of (year, capacity)
-            events_by_key[key] = list(
-                zip(
-                    sub["retirement_year"].tolist(),
-                    sub["capacity"].astype(float).tolist(),
-                )
-            )
-
-    # -------------------- Work per company x geography x sector x technology --------------------
+    # Work per company x geography x sector x technology
     group_cols = ["company_id", "scenario_geography", "sector", "technology"]
     companies_for_case = companies_for_case.sort_values(group_cols + ["year"]).copy()
 
@@ -208,7 +177,7 @@ def late_sudden_misaligned_high_carbon_companies(
         target = g["asset_trajectory_target"].to_numpy(dtype=float)
         activity = g["asset_activity"].to_numpy(dtype=float)
 
-        # -------- Phase 1: Forecast --------
+        # Phase 1: Forecast
         valid_idx = np.where(~np.isnan(activity))[0]
         y_last_gem = (
             int(years[valid_idx.max()]) if valid_idx.size > 0 else int(years.min() - 1)
@@ -224,101 +193,32 @@ def late_sudden_misaligned_high_carbon_companies(
             )
             phase[mask_p1] = "forecast"
 
-        # -------- Phase 2: BAU --------
+        # Phase 2: BAU
         mask_p2 = (years > y_last_gem) & (years < shock_year)
         if mask_p2.any():
             ls[mask_p2] = baseline[mask_p2]
             phase[mask_p2] = "bau"
 
-        # -------- Phase 3: Transition (linear from baseline@(shock-1) to target@alignment) --------
-
+        # Phase 3: Transition (linear from baseline@(shock-1) to target@alignment)
         mask_p3 = (years >= shock_year) & (years <= alignment_year)
+        if mask_p3.any():
+            v_start = float(baseline[years == (shock_year - 1)][0])
+            v_end = float(target[years == alignment_year][0])
+            denom = alignment_year - shock_year
+            frac = (years[mask_p3] - (shock_year - 1)) / (denom + 1)
+            ls[mask_p3] = v_start + frac * (v_end - v_start)
+            phase[mask_p3] = "transition"
 
-        v_start = float(baseline[years == (shock_year - 1)][0])
-        v_end = float(target[years == alignment_year][0])
-
-        denom = alignment_year - shock_year
-        frac = (years[mask_p3] - (shock_year - 1)) / (
-            denom + 1
-        )  # shock_year gets frac = 1/(denom+1)
-        ls[mask_p3] = v_start + frac * (v_end - v_start)
-        phase[mask_p3] = "transition"
-
-        # -------- Phase 4: Align to target (pre-retirement, pre-compensation) --------
+        # Phase 4: Align to target
         mask_p4 = years > alignment_year
         if mask_p4.any():
             ls[mask_p4] = target[mask_p4]
             phase[mask_p4] = "aligned"
 
-        # -------- Phase 4a: Apply ASSET RETIREMENT (permanent capacity reduction) --------
-        # For each event at y_r with capacity C: ls[y >= y_r] -= C (cumulative), clip >= 0.
-        # Only the retirement year gets "retirement" phase label.
-        key_ret = (
-            g["company_id"].iloc[0],
-            g["scenario_geography"].iloc[0],
-            g["sector"].iloc[0],
-            g["technology"].iloc[0],
-        )
-        events = events_by_key.get(key_ret, [])
+        # Non-negativity safeguard
+        ls = np.clip(ls, a_min=0.0, a_max=None)
 
-        if events:
-            retirement_years = set()  # Track which years have retirement events
-
-            # Sort events by year to apply them chronologically
-            events_sorted = sorted(events, key=lambda x: x[0])
-
-            for y_r, cap in events_sorted:
-                # Find the index for the retirement year
-                idx_retirement = np.where(years == y_r)[0]
-                if idx_retirement.size == 0:
-                    continue  # retirement year not in our data
-
-                idx_retirement = idx_retirement[0]
-
-                # Get the late sudden value at retirement year
-                ls_at_retirement = ls[idx_retirement]
-
-                if ls_at_retirement > 0:
-                    # Calculate the percentage decrease
-                    percentage_decrease = cap / ls_at_retirement
-                    # Cap the percentage to avoid negative values
-                    percentage_decrease = min(percentage_decrease, 1.0)
-
-                    # Apply this percentage decrease to all years >= y_r
-                    idx_after = np.where(years >= y_r)[0]
-                    if idx_after.size > 0:
-                        ls[idx_after] *= 1 - percentage_decrease
-
-                # Mark the retirement year
-                retirement_years.add(y_r)
-
-            # Mark only the specific retirement years as "retirement" phase
-            for y_r in retirement_years:
-                idx_exact = np.where(years == y_r)[0]
-                if idx_exact.size > 0:
-                    phase[idx_exact[0]] = "retirement"
-
-        # -------- Phase 4b: Compensation (uniform, non-positive; same logic, computed AFTER retirements) --------
-        pre_mask = years <= alignment_year
-        post_mask = years > alignment_year
-        pre_excess = float(np.nansum(ls[pre_mask] - target[pre_mask]))
-        post_gap = float(np.nansum(ls[post_mask] - target[post_mask]))
-        compensation_volume = max(pre_excess - post_gap, 0.0)
-
-        comp_per_year = 0.0
-        n_years_comp = int(post_mask.sum())
-        if n_years_comp > 0 and compensation_volume > 0:
-            comp_per_year = -compensation_volume / n_years_comp  # <= 0
-            ls[post_mask] = np.maximum(ls[post_mask] + comp_per_year, 0.0)
-            # Upgrade alignment labels to reflect compensation
-            # Keep retirement phase as-is, only modify aligned phases
-            phase[post_mask] = np.where(
-                phase[post_mask] == "retirement",
-                "retirement",  # Keep retirement phase unchanged
-                "aligned_compensation",
-            )
-
-        # -------- Attach outputs --------
+        # Attach outputs
         g["asset_trajectory_latesudden"] = ls
         g["late_sudden_phase"] = phase
 
