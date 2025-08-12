@@ -341,6 +341,64 @@ def create_assets_trajectories(
     return assets_trajectories
 
 
+def fill_missing_years_incrementally(
+    assets_trajectories: pd.DataFrame,
+) -> pd.DataFrame:
+    """Fill missing asset_age values incrementally per asset over time.
+
+    For each asset group, starting from the last known (non-null) asset_age,
+    fill forward such that age increases by the difference in years from that
+    last known year. Rows before the first known age remain unchanged.
+    """
+
+    if assets_trajectories.empty or "asset_age" not in assets_trajectories.columns:
+        return assets_trajectories
+
+    df = assets_trajectories.copy()
+
+    group_cols = [
+        "company_id",
+        "asset_id",
+        "scenario_geography",
+        "sector",
+        "technology",
+    ]
+
+    # Ensure required columns exist before grouping
+    missing_cols = [c for c in group_cols + ["year"] if c not in df.columns]
+    if missing_cols:
+        # If structure is unexpected, return unchanged
+        return assets_trajectories
+
+    # Sort for stable forward-filling
+    df = df.sort_values(group_cols + ["year"])  # type: ignore[arg-type]
+
+    # Numeric year for delta computations
+    year_numeric = pd.to_numeric(df["year"], errors="coerce")
+
+    # Track the last known year where age is present, and last known age itself
+    df["_base_year"] = df["year"].where(df["asset_age"].notna())
+    df["_base_year"] = df.groupby(group_cols)["_base_year"].ffill()
+
+    df["_base_age"] = df.groupby(group_cols)["asset_age"].ffill()
+
+    # Compute inferred ages only where original is missing AND we have a base
+    inferred_age = df["_base_age"] + (
+        year_numeric - pd.to_numeric(df["_base_year"], errors="coerce")
+    )
+
+    df["asset_age"] = np.where(
+        df["asset_age"].notna() | df["_base_year"].isna(),
+        df["asset_age"],
+        inferred_age,
+    )
+
+    # Cleanup temp columns
+    df = df.drop(columns=["_base_year", "_base_age"])  # type: ignore[arg-type]
+
+    return df
+
+
 def aggregate_assets_to_company_level(
     assets_trajectories: pd.DataFrame,
 ) -> pd.DataFrame:
@@ -359,7 +417,7 @@ def aggregate_assets_to_company_level(
         )
         .agg(
             {
-                "asset_activity": "sum",
+                "asset_activity": lambda x: x.sum() if not pd.isna(x).all() else np.nan,
                 "asset_trajectory_target": "sum",
                 "asset_trajectory_baseline": "sum",
             }

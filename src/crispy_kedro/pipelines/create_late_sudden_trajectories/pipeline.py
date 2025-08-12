@@ -77,7 +77,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                     late_sudden_aligned_high_carbon="late_sudden_aligned_high_carbon_companies",
                     late_sudden_aligned_low_carbon="late_sudden_aligned_low_carbon_companies",
                 ),
-                outputs="all_assets_late_sudden_trajectories",
+                outputs="assets_late_sudden_trajectories",
             ),
         ],
         tags="altrisk",
