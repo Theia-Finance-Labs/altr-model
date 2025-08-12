@@ -5,19 +5,31 @@ generated using Kedro 0.19.12
 
 from kedro.pipeline import node, Pipeline, pipeline  # noqa
 
-from .nodes import plot_late_sudden_trajectories, plot_staggered_shock
+from .nodes import (
+    plot_companies_late_sudden_trajectories,
+    plot_staggered_shock,
+    plot_assets_late_sudden_trajectories,
+)
 
 
 def create_pipeline(**kwargs) -> Pipeline:
     return pipeline(
         [
             node(
-                plot_late_sudden_trajectories,
+                plot_companies_late_sudden_trajectories,
                 inputs=dict(
-                    late_sudden_trajectories="all_late_sudden_trajectories",
+                    companies_late_sudden_trajectories="companies_late_sudden_trajectories",
                 ),
                 outputs=None,
-                name="plot_late_sudden_trajectories",
+                name="plot_companies_late_sudden_trajectories",
+            ),
+            node(
+                plot_assets_late_sudden_trajectories,
+                inputs=dict(
+                    assets_late_sudden_trajectories="all_assets_late_sudden_trajectories",
+                ),
+                outputs=None,
+                name="plot_assets_late_sudden_trajectories",
             ),
             node(
                 plot_staggered_shock,

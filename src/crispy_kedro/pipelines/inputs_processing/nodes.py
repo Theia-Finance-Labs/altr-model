@@ -97,11 +97,43 @@ def filter_assets(
         :,
     ]
 
-    # Check if we have any assets after filtering
-    if filtered_assets_forecasts.empty:
-        raise ValueError(
-            "No assets remaining after filtering by year range and company ownership"
-        )
+    # Filter out assets-technology combinations whose first known year is higher than scenario_start_year
+    first_year_by_asset_tech = filtered_assets_forecasts.groupby(
+        ["asset_id", "technology"]
+    )["production_year"].min()
+    valid_asset_tech_combinations = first_year_by_asset_tech[
+        first_year_by_asset_tech <= scenario_start_year
+    ].index
+
+    filtered_assets_forecasts = (
+        filtered_assets_forecasts.set_index(["asset_id", "technology"])
+        .loc[valid_asset_tech_combinations]
+        .reset_index()
+    )
+    # Log how many unique assets were filtered out
+    initial_unique_assets = len(assets_forecasts["asset_id"].unique())
+    remaining_unique_assets = len(filtered_assets_forecasts["asset_id"].unique())
+    removed_assets = initial_unique_assets - remaining_unique_assets
+    removed_pct = 100 * removed_assets / initial_unique_assets
+
+    print(
+        f"Filtered out {removed_assets:,} unique assets "
+        f"({removed_pct:.1f}% of {initial_unique_assets:,} total)"
+    )
+
+    filtered_assets_forecasts = filtered_assets_forecasts.reset_index(drop=True)
+
+    # Update assertion to reflect that we may now have different first production years
+    # since we filtered out some asset-technology combinations
+    if not filtered_assets_forecasts.empty:
+        first_years = filtered_assets_forecasts.groupby(["asset_id", "technology"])[
+            "production_year"
+        ].min()
+        assert all(
+            first_years <= scenario_start_year
+        ), "All remaining assets-technology combinations should have first production_year <= scenario_start_year"
+    else:
+        raise ValueError("No assets remaining after filtering")
 
     filtered_assets_forecasts = filtered_assets_forecasts.rename(
         {"production_year": "year"}, axis=1

@@ -166,7 +166,13 @@ def late_sudden_misaligned_high_carbon_companies(
         return out
 
     # Work per company x geography x sector x technology
-    group_cols = ["company_id", "scenario_geography", "sector", "technology"]
+    group_cols = [
+        "company_id",
+        "asset_id",
+        "scenario_geography",
+        "sector",
+        "technology",
+    ]
     companies_for_case = companies_for_case.sort_values(group_cols + ["year"]).copy()
 
     def _build_late_sudden_for_group(g: pd.DataFrame) -> pd.DataFrame:
@@ -276,7 +282,13 @@ def late_sudden_misaligned_low_carbon_companies(
         out["late_sudden_phase"] = out.get("late_sudden_phase", pd.Series(dtype=object))
         return out
 
-    group_cols = ["company_id", "scenario_geography", "sector", "technology"]
+    group_cols = [
+        "company_id",
+        "asset_id",
+        "scenario_geography",
+        "sector",
+        "technology",
+    ]
     companies_for_case = companies_for_case.sort_values(group_cols + ["year"])
 
     def _build_late_sudden_for_group(g: pd.DataFrame) -> pd.DataFrame:
@@ -401,7 +413,13 @@ def late_sudden_aligned_high_carbon_companies(
         out["late_sudden_phase"] = out.get("late_sudden_phase", pd.Series(dtype=object))
         return out
 
-    group_cols = ["company_id", "scenario_geography", "sector", "technology"]
+    group_cols = [
+        "company_id",
+        "asset_id",
+        "scenario_geography",
+        "sector",
+        "technology",
+    ]
     companies_for_case = companies_for_case.sort_values(group_cols + ["year"])
 
     def _build_late_sudden_for_group(g: pd.DataFrame) -> pd.DataFrame:
@@ -521,7 +539,13 @@ def late_sudden_aligned_low_carbon_companies(
         out["late_sudden_phase"] = pd.Series(dtype=object)
         return out
 
-    group_cols = ["company_id", "scenario_geography", "sector", "technology"]
+    group_cols = [
+        "company_id",
+        "asset_id",
+        "scenario_geography",
+        "sector",
+        "technology",
+    ]
     subset = subset.sort_values(group_cols + ["year"])
 
     # ---------------------------------------------------------------
@@ -659,6 +683,7 @@ def concatenate_late_sudden_results(
             columns=[
                 "company_id",
                 "company_name",
+                "asset_name",
                 "asset_id",
                 "scenario_geography",
                 "sector",

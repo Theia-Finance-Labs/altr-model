@@ -1010,3 +1010,46 @@ def apply_staggered_shock_split(
         )
 
     return pd.concat([dec, inc], ignore_index=True)
+
+
+def aggregate_late_sudden_trajectories_to_company_level(
+    all_assets_late_sudden_trajectories: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Aggregate late sudden trajectories to company level.
+    """
+
+    companies_late_sudden_trajectories = (
+        all_assets_late_sudden_trajectories.groupby(
+            [
+                "company_id",
+                "company_name",
+                "scenario_geography",
+                "sector",
+                "technology",
+                "alignment_type",
+                "late_sudden_phase",
+                "year",
+            ]
+        )
+        .agg(
+            {
+                "asset_activity": "sum",
+                "asset_trajectory_baseline": "sum",
+                "asset_trajectory_target": "sum",
+                "asset_trajectory_latesudden": "sum",
+            }
+        )
+        .rename(
+            {
+                "asset_activity": "company_activity",
+                "asset_trajectory_baseline": "company_trajectory_baseline",
+                "asset_trajectory_target": "company_trajectory_target",
+                "asset_trajectory_latesudden": "company_trajectory_latesudden",
+            },
+            axis=1,
+        )
+        .reset_index()
+    )
+
+    return companies_late_sudden_trajectories

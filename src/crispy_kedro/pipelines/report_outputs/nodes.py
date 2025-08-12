@@ -17,9 +17,21 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
+from .logic import (
+    clean_name_for_folder,
+    draw_late_sudden_trajectories,
+    get_phase_colors,
+)
 
-def plot_late_sudden_trajectories(
-    late_sudden_trajectories: pd.DataFrame,
+
+"""
+This is a boilerplate pipeline 'report_outputs'
+generated using Kedro 0.19.12
+"""
+
+
+def plot_companies_late_sudden_trajectories(
+    companies_late_sudden_trajectories: pd.DataFrame,
 ) -> None:
     """
     Plot the late sudden trajectories for each company-technology-geography combination.
@@ -37,24 +49,14 @@ def plot_late_sudden_trajectories(
         late_sudden_phase, alignment_type
     """
 
-    # Clean company names for folder creation (remove special characters)
-    def clean_name_for_folder(name):
-        if pd.isna(name):
-            return "Unknown"
-        # Replace special characters with underscores and limit length
-        cleaned = re.sub(r'[<>:"/\\|?*]', "_", str(name))
-        cleaned = re.sub(r"[^\w\s-]", "_", cleaned)
-        cleaned = re.sub(r"\s+", "_", cleaned)
-        return cleaned[:100]  # Limit length to avoid filesystem issues
+    phase_colors = get_phase_colors()
 
-    late_sudden_trajectories["company_name_clean"] = late_sudden_trajectories[
-        "company_name"
-    ].apply(clean_name_for_folder)
+    companies_late_sudden_trajectories["company_name_clean"] = (
+        companies_late_sudden_trajectories["company_name"].apply(clean_name_for_folder)
+    )
 
-    # Create base directory and clean it
     base_dir = Path("data/08_reporting/companies_trajectories_plots")
 
-    # Clean up existing directory if it exists
     if base_dir.exists():
         import shutil
 
@@ -63,32 +65,20 @@ def plot_late_sudden_trajectories(
 
     base_dir.mkdir(parents=True, exist_ok=True)
 
-    # Define phase colors for visual distinction
-    phase_colors = {
-        "forecast": "#1f77b4",  # Blue
-        "bau": "#ff7f0e",  # Orange
-        "transition": "#2ca02c",  # Green
-        "aligned": "#d62728",  # Red
-        "aligned_compensation": "#9467bd",  # Purple
-        "retirement": "#7f7f7f",  # Gray
-        "phased_out": "#bcbd22",  # Olive
-    }
-
-    # Group by alignment type first to create subfolders
-    if "alignment_type" not in late_sudden_trajectories.columns:
+    if "alignment_type" not in companies_late_sudden_trajectories.columns:
         print(
             "Warning: alignment_type column not found. Creating plots in single folder."
         )
-        alignment_groups = [("general", late_sudden_trajectories)]
+        alignment_groups = [("general", companies_late_sudden_trajectories)]
     else:
-        alignment_groups = list(late_sudden_trajectories.groupby("alignment_type"))
+        alignment_groups = list(
+            companies_late_sudden_trajectories.groupby("alignment_type")
+        )
 
     for alignment_type, alignment_data in alignment_groups:
-        # Create subfolder for this alignment type
         alignment_dir = base_dir / str(alignment_type)
         alignment_dir.mkdir(parents=True, exist_ok=True)
 
-        # Group by company, technology, and geography within this alignment type
         group_cols = [
             "company_id",
             "company_name",
@@ -97,16 +87,13 @@ def plot_late_sudden_trajectories(
             "scenario_geography",
         ]
 
-        # Plot for each group within this alignment type
         for group_keys, group in alignment_data.groupby(group_cols):
-            # Extract values from the first row of the group
             company_id = group["company_id"].iloc[0]
             company_name = group["company_name"].iloc[0]
             company_name_clean = group["company_name_clean"].iloc[0]
             technology = group["technology"].iloc[0]
             scenario_geography = group["scenario_geography"].iloc[0]
 
-            # Skip if any required data is missing
             if (
                 pd.isna(company_name_clean)
                 or pd.isna(technology)
@@ -114,174 +101,20 @@ def plot_late_sudden_trajectories(
             ):
                 continue
 
-            # Clean technology and geography names for filename
             tech_clean = clean_name_for_folder(technology)
             geo_clean = clean_name_for_folder(scenario_geography)
             filename = f"{tech_clean}-{company_name_clean}-{geo_clean}.png"
             filepath = alignment_dir / filename
 
-            # Sort by year for plotting
             group_sorted = group.sort_values("year")
-
-            # Check if we have the required trajectory columns
-            required_cols = [
-                "company_trajectory_target",
-                "company_trajectory_baseline",
-                "company_trajectory_latesudden",
-            ]
-            available_cols = [
-                col for col in required_cols if col in group_sorted.columns
-            ]
-
-            if not available_cols:
-                print(
-                    f"Warning: No trajectory columns found for {company_name} - {technology} - {scenario_geography}"
-                )
-                continue
-
-            # Create the plot with extra space for legends outside
-            fig, ax = plt.subplots(figsize=(16, 10))
-
             years = group_sorted["year"]
 
-            # Plot each available trajectory
-            if "company_trajectory_target" in group_sorted.columns:
-                target_data = group_sorted["company_trajectory_target"].dropna()
-                if not target_data.empty:
-                    ax.plot(
-                        years,
-                        group_sorted["company_trajectory_target"],
-                        label="Target Trajectory",
-                        linewidth=2.5,
-                        linestyle="--",
-                        color="green",
-                        alpha=0.8,
-                    )
+            fig, ax = plt.subplots(figsize=(16, 10))
 
-            if "company_trajectory_baseline" in group_sorted.columns:
-                baseline_data = group_sorted["company_trajectory_baseline"].dropna()
-                if not baseline_data.empty:
-                    ax.plot(
-                        years,
-                        group_sorted["company_trajectory_baseline"],
-                        label="Baseline Trajectory",
-                        linewidth=2.5,
-                        linestyle="-.",
-                        color="blue",
-                        alpha=0.8,
-                    )
+            phase_legend_elements = draw_late_sudden_trajectories(
+                ax=ax, years=years, df_sorted=group_sorted, phase_colors=phase_colors
+            )
 
-            # Plot Late & Sudden trajectory with phase coloring
-            if "company_trajectory_latesudden" in group_sorted.columns:
-                latesudden_data = group_sorted["company_trajectory_latesudden"].dropna()
-                if not latesudden_data.empty:
-                    # Plot the main late sudden trajectory
-                    ax.plot(
-                        years,
-                        group_sorted["company_trajectory_latesudden"],
-                        label="Late & Sudden Trajectory",
-                        linewidth=3,
-                        color="red",
-                        alpha=0.9,
-                    )
-
-                    # Add phase visualization if phase information is available
-                    if "late_sudden_phase" in group_sorted.columns:
-                        # Create colored background areas for each phase
-                        phase_spans = []
-                        current_phase = None
-                        phase_start = None
-
-                        # Group consecutive years by phase to create spans
-                        for i, (year, phase) in enumerate(
-                            zip(years, group_sorted["late_sudden_phase"])
-                        ):
-                            if phase != current_phase:
-                                # End previous phase span
-                                if (
-                                    current_phase is not None
-                                    and phase_start is not None
-                                ):
-                                    # End the previous phase at the current year to avoid gaps
-                                    phase_spans.append(
-                                        (current_phase, phase_start, year - 1)
-                                    )
-
-                                # Start new phase span at the same year where previous phase ended
-                                # to ensure no gaps between phases
-                                current_phase = phase
-                                phase_start = year - 1
-
-                        # Don't forget the last phase - extend it slightly beyond the last data point
-                        if current_phase is not None and phase_start is not None:
-                            # Extend the last phase to cover the full plot area
-                            last_year = years.iloc[-1]
-                            year_range = years.max() - years.min()
-                            extended_end = last_year + (
-                                year_range * 0.02
-                            )  # Add 2% of total range
-                            phase_spans.append(
-                                (current_phase, phase_start, extended_end)
-                            )
-
-                        # Draw colored background areas for each phase
-                        phase_legend_elements = []
-                        for phase, start_year, end_year in phase_spans:
-                            if pd.notna(phase) and phase != "":
-                                color = phase_colors.get(phase, "#333333")
-
-                                # Create semi-transparent background area
-                                ax.axvspan(
-                                    start_year,
-                                    end_year,
-                                    alpha=0.15,
-                                    color=color,
-                                    zorder=0,
-                                )
-
-                                # Add more prominent vertical line at phase start (except first phase)
-                                if start_year != years.iloc[0]:
-                                    ax.axvline(
-                                        x=start_year,
-                                        color=color,
-                                        linestyle="--",
-                                        alpha=0.8,
-                                        linewidth=2,
-                                        zorder=1,
-                                    )
-
-                                # Add phase label at the top of the plot area
-                                mid_year = start_year + (end_year - start_year) / 2
-                                ax.text(
-                                    mid_year,
-                                    ax.get_ylim()[1] * 0.95,  # Near top of plot
-                                    phase.replace("_", " ").title(),
-                                    ha="center",
-                                    va="top",
-                                    fontsize=8,
-                                    color=color,
-                                    fontweight="bold",
-                                    bbox=dict(
-                                        boxstyle="round,pad=0.3",
-                                        facecolor="white",
-                                        edgecolor=color,
-                                        alpha=0.8,
-                                    ),
-                                )
-
-                                # Create legend entry for this phase
-                                phase_legend_elements.append(
-                                    plt.Rectangle(
-                                        (0, 0),
-                                        1,
-                                        1,
-                                        facecolor=color,
-                                        alpha=0.3,
-                                        label=f"Phase: {phase.replace('_', ' ').title()}",
-                                    )
-                                )
-
-            # Customize the plot
             ax.set_xlabel("Year", fontsize=12)
             ax.set_ylabel("Production/Activity", fontsize=12)
             ax.set_title(
@@ -290,19 +123,16 @@ def plot_late_sudden_trajectories(
                 fontweight="bold",
             )
 
-            # Create main legend for trajectories - place outside on the right
             main_legend = ax.legend(
                 loc="center left",
-                bbox_to_anchor=(1.02, 0.5),  # Outside right, centered vertically
+                bbox_to_anchor=(1.02, 0.5),
                 fontsize=10,
                 framealpha=0.9,
                 fancybox=True,
                 shadow=True,
             )
 
-            # Add phase legend if phases are present - place outside on the right, below main legend
             if "late_sudden_phase" in group_sorted.columns and phase_legend_elements:
-                # Remove duplicates from phase legend (in case same phase appears multiple times)
                 seen_phases = set()
                 unique_phase_elements = []
                 for element in phase_legend_elements:
@@ -314,7 +144,7 @@ def plot_late_sudden_trajectories(
                 phase_legend = ax.legend(
                     handles=unique_phase_elements,
                     loc="upper left",
-                    bbox_to_anchor=(1.02, 0.3),  # Outside right, below main legend
+                    bbox_to_anchor=(1.02, 0.3),
                     fontsize=9,
                     title="Late & Sudden Phases",
                     title_fontsize=10,
@@ -322,17 +152,12 @@ def plot_late_sudden_trajectories(
                     fancybox=True,
                     shadow=True,
                 )
-                ax.add_artist(main_legend)  # Keep both legends
+                ax.add_artist(main_legend)
 
             ax.grid(True, alpha=0.3)
-
-            # Format x-axis to show years nicely
             plt.xticks(rotation=45)
+            plt.subplots_adjust(right=0.75)
 
-            # Adjust layout to make room for legends outside the plot
-            plt.subplots_adjust(right=0.75)  # Leave space for legends on the right
-
-            # Save the plot
             try:
                 plt.savefig(filepath, dpi=300, bbox_inches="tight", facecolor="white")
                 print(f"Saved plot: {filepath}")
@@ -340,14 +165,194 @@ def plot_late_sudden_trajectories(
                 print(
                     f"Error saving plot for {company_name} - {technology} - {scenario_geography}: {e}"
                 )
-
-            # Close the figure to free memory
             plt.close()
 
     print(f"Plotting completed. All plots saved in: {base_dir}")
     print(
         f"Subfolders created for alignment types: {[str(alignment_dir.name) for alignment_dir in base_dir.iterdir() if alignment_dir.is_dir()]}"
     )
+
+
+def plot_assets_late_sudden_trajectories(
+    assets_late_sudden_trajectories: pd.DataFrame,
+) -> None:
+    """
+    Plot the late sudden trajectories for each asset (asset_id, asset_name) per technology and geography.
+
+    Folder structure:
+    - <base_dir>/<alignment_type>/<company_name>-<company_id>-<technology>-<scenario_geography>/<asset plots>
+
+    Alignment is defined at the (company_id, technology, scenario_geography) level, so the
+    same asset may appear under multiple company combos.
+
+    Expects columns:
+    - company_id, company_name, scenario_geography, technology, year,
+      asset_id, asset_name
+    - asset_trajectory_target, asset_trajectory_baseline, asset_trajectory_latesudden
+    - late_sudden_phase (optional)
+    - alignment_type (optional)
+    """
+
+    phase_colors = get_phase_colors()
+
+    # Ensure names for folder safety
+    assets_late_sudden_trajectories = assets_late_sudden_trajectories.copy()
+    if "company_name" not in assets_late_sudden_trajectories.columns:
+        assets_late_sudden_trajectories["company_name"] = (
+            assets_late_sudden_trajectories["company_id"].astype(str)
+        )
+
+    assets_late_sudden_trajectories["company_name_clean"] = (
+        assets_late_sudden_trajectories["company_name"].apply(clean_name_for_folder)
+    )
+    if "asset_name" in assets_late_sudden_trajectories.columns:
+        assets_late_sudden_trajectories["asset_name_clean"] = (
+            assets_late_sudden_trajectories["asset_name"].apply(clean_name_for_folder)
+        )
+    else:
+        assets_late_sudden_trajectories["asset_name_clean"] = (
+            assets_late_sudden_trajectories["asset_id"].astype(str)
+        )
+
+    base_dir = Path("data/08_reporting/assets_trajectories_plots")
+
+    if base_dir.exists():
+        import shutil
+
+        shutil.rmtree(base_dir)
+        print(f"Cleaned up existing directory: {base_dir}")
+
+    base_dir.mkdir(parents=True, exist_ok=True)
+
+    # Group by alignment type (top-level folder)
+    if "alignment_type" in assets_late_sudden_trajectories.columns:
+        align_groups = assets_late_sudden_trajectories.groupby("alignment_type")
+    else:
+        align_groups = [("general", assets_late_sudden_trajectories)]
+
+    for alignment_type, df_align in align_groups:
+        align_dir = base_dir / clean_name_for_folder(str(alignment_type))
+        align_dir.mkdir(parents=True, exist_ok=True)
+
+        # Group by company + tech + geo (alignment is defined at this level)
+        combos = (
+            df_align[
+                [
+                    "company_id",
+                    "company_name",
+                    "company_name_clean",
+                    "technology",
+                    "scenario_geography",
+                ]
+            ]
+            .drop_duplicates()
+            .sort_values(["company_id", "technology", "scenario_geography"])
+        )
+
+        for _, combo in combos.iterrows():
+            cid = combo["company_id"]
+            cname = combo["company_name"]
+            cname_clean = combo["company_name_clean"]
+            tech = combo["technology"]
+            geo = combo["scenario_geography"]
+
+            tech_clean = clean_name_for_folder(tech)
+            geo_clean = clean_name_for_folder(geo)
+
+            combo_dir = align_dir / f"{cname_clean}-{cid}-{tech_clean}-{geo_clean}"
+            combo_dir.mkdir(parents=True, exist_ok=True)
+
+            # Filter data for this combo
+            df_combo = df_align[
+                (df_align["company_id"] == cid)
+                & (df_align["technology"] == tech)
+                & (df_align["scenario_geography"] == geo)
+            ]
+
+            # Group by asset
+            for _, group in df_combo.groupby(
+                ["asset_id", "asset_name", "asset_name_clean"]
+            ):
+                asset_id = group["asset_id"].iloc[0]
+                asset_name = group["asset_name"].iloc[0]
+                asset_name_clean = group["asset_name_clean"].iloc[0]
+
+                if pd.isna(asset_name_clean):
+                    continue
+
+                filename = f"{tech_clean}-{asset_name_clean}-{asset_id}.png"
+                filepath = combo_dir / filename
+
+                group_sorted = group.sort_values("year")
+                years = group_sorted["year"]
+
+                fig, ax = plt.subplots(figsize=(16, 10))
+
+                phase_legend_elements = draw_late_sudden_trajectories(
+                    ax=ax,
+                    years=years,
+                    df_sorted=group_sorted,
+                    phase_colors=phase_colors,
+                )
+
+                ax.set_xlabel("Year", fontsize=12)
+                ax.set_ylabel("Production/Activity", fontsize=12)
+                ax.set_title(
+                    f"{asset_name} (Asset {asset_id})\n{tech} - {geo} • Company: {cname} • Alignment: {alignment_type}",
+                    fontsize=14,
+                    fontweight="bold",
+                )
+
+                main_legend = ax.legend(
+                    loc="center left",
+                    bbox_to_anchor=(1.02, 0.5),
+                    fontsize=10,
+                    framealpha=0.9,
+                    fancybox=True,
+                    shadow=True,
+                )
+
+                if (
+                    "late_sudden_phase" in group_sorted.columns
+                    and phase_legend_elements
+                ):
+                    seen_phases = set()
+                    unique_phase_elements = []
+                    for element in phase_legend_elements:
+                        phase_label = element.get_label()
+                        if phase_label not in seen_phases:
+                            unique_phase_elements.append(element)
+                            seen_phases.add(phase_label)
+
+                    phase_legend = ax.legend(
+                        handles=unique_phase_elements,
+                        loc="upper left",
+                        bbox_to_anchor=(1.02, 0.3),
+                        fontsize=9,
+                        title="Late & Sudden Phases",
+                        title_fontsize=10,
+                        framealpha=0.9,
+                        fancybox=True,
+                        shadow=True,
+                    )
+                    ax.add_artist(main_legend)
+
+                ax.grid(True, alpha=0.3)
+                plt.xticks(rotation=45)
+                plt.subplots_adjust(right=0.75)
+
+                try:
+                    plt.savefig(
+                        filepath, dpi=300, bbox_inches="tight", facecolor="white"
+                    )
+                    print(f"Saved plot: {filepath}")
+                except Exception as e:
+                    print(
+                        f"Error saving plot for asset {asset_id} - {tech} - {geo}: {e}"
+                    )
+                plt.close()
+
+    print(f"Assets plotting completed. All plots saved in: {base_dir}")
 
 
 def plot_staggered_shock(

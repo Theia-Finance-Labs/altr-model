@@ -188,7 +188,6 @@ def create_assets_trajectories(
     # Define groupby columns
     group_cols = [
         "company_id",
-        "company_name",
         "asset_id",
         "scenario_geography",
         "sector",
@@ -196,7 +195,31 @@ def create_assets_trajectories(
     ]
     # Sort to ensure proper ordering and forward fill only company name
     assets_trajectories = assets_trajectories.sort_values(group_cols + ["year"])
-    assets_trajectories["company_name"] = assets_trajectories["company_name"].ffill()
+    assets_trajectories[
+        [
+            "company_name",
+            "asset_name",
+            "capacity_factor",
+            "emission_factor",
+            "ownership_level",
+            "latitude",
+            "longitude",
+            "country_iso2",
+            "country_name",
+        ]
+    ] = assets_trajectories[
+        [
+            "company_name",
+            "asset_name",
+            "capacity_factor",
+            "emission_factor",
+            "ownership_level",
+            "latitude",
+            "longitude",
+            "country_iso2",
+            "country_name",
+        ]
+    ].ffill()
 
     # TARGET TRAJECTORY: constrained cumsum approach (no extra raw columns)
     assets_trajectories["_asset_activity_filled"] = assets_trajectories.groupby(
