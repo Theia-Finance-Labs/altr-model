@@ -55,7 +55,7 @@ downloaded_companies:
 
 allocated_assets_to_companies:
   type: pandas.CSVDataset
-  filepath: data/06_model_output/allocated_assets_to_companies.csv
+  filepath: data/07_model_output/allocated_assets_to_companies.csv
 
 # ================================================
 # ================== OUTPUTS =====================
@@ -174,10 +174,6 @@ earnings_inner_plots_dir:
 authority_pack_plots_dir:
   type: MemoryDataset
 
-# TODO: remove after debugging
-scenarios_pathways:
-  type: pandas.CSVDataset
-  filepath: data/05_model_output/scenarios_pathways.csv
 
 # Compliance-ready reporting tables
 report_company_summary:

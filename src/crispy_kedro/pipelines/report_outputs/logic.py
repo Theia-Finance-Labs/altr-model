@@ -21,7 +21,7 @@ def get_phase_colors() -> dict:
         "bau": "#ff7f0e",  # Orange
         "transition": "#2ca02c",  # Green
         "aligned": "#d62728",  # Red
-        "aligned_compensation": "#9467bd",  # Purple
+        "compensation": "#9467bd",  # Purple
         "retirement": "#7f7f7f",  # Gray
         "phased_out": "#bcbd22",  # Olive
     }
@@ -68,9 +68,9 @@ def _compute_phase_spans(years: pd.Series, phases: pd.Series) -> List[tuple]:
     for year, phase in zip(years, phases):
         if phase != current_phase:
             if current_phase is not None and phase_start is not None:
-                phase_spans.append((current_phase, phase_start, year - 1))
+                phase_spans.append((current_phase, phase_start, year))
             current_phase = phase
-            phase_start = year - 1
+            phase_start = year
 
     if current_phase is not None and phase_start is not None:
         last_year = years.iloc[-1]

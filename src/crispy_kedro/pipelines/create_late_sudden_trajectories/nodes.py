@@ -142,9 +142,9 @@ def late_sudden_misaligned_high_carbon_companies(
       1) Forecast:    L&S = asset_activity for years with available data (<= last GEM year);
                       if a value is missing inside that window, we fall back to baseline.
       2) BAU:         L&S = asset_trajectory_baseline for (last_GEM_year, shock_year)
-      3) Transition:  Linear interpolation from baseline(shock_year-1) to target(alignment_year)
-                      for years y in [shock_year, alignment_year]
-      4) Alignment:   L&S = asset_trajectory_target for y > alignment_year
+             3) Transition:  Linear interpolation from baseline(shock_year) to target(alignment_year)
+                       for years y in [shock_year, alignment_year]
+       4) Alignment:   L&S = asset_trajectory_target for y > alignment_year
 
     Returns
     -------
@@ -165,6 +165,23 @@ def late_sudden_misaligned_high_carbon_companies(
             out[col] = out.get(col, pd.Series(dtype=dtype))
         return out
 
+    # -------------------- Normalize retirement table --------------------
+    retire_df = assets_retirement_dates.copy()
+
+    # Index retirement events by (company_id, sector, technology)
+    retire_key_cols = ["company_id", "scenario_geography", "sector", "technology"]
+    events_by_key = {}
+    if not retire_df.empty:
+        # Sort for deterministic application
+        retire_df = retire_df.sort_values(retire_key_cols + ["retirement_year"])
+        for key, sub in retire_df.groupby(retire_key_cols, sort=False):
+            # simple list of (year, asset_activity)
+            events_by_key[key] = list(
+                zip(
+                    sub["retirement_year"].tolist(),
+                    sub["asset_activity"].astype(float).tolist(),
+                )
+            )
     # Work per company x geography x sector x technology
     group_cols = [
         "company_id",
@@ -205,21 +222,94 @@ def late_sudden_misaligned_high_carbon_companies(
             ls[mask_p2] = baseline[mask_p2]
             phase[mask_p2] = "bau"
 
-        # Phase 3: Transition (linear from baseline@(shock-1) to target@alignment)
-        mask_p3 = (years >= shock_year) & (years <= alignment_year)
-        if mask_p3.any():
-            v_start = float(baseline[years == (shock_year - 1)][0])
-            v_end = float(target[years == alignment_year][0])
-            denom = alignment_year - shock_year
-            frac = (years[mask_p3] - (shock_year - 1)) / (denom + 1)
-            ls[mask_p3] = v_start + frac * (v_end - v_start)
-            phase[mask_p3] = "transition"
+        # Phase 3: Transition (linear from baseline@shock_year to target@alignment)
+        if alignment_year > shock_year:
+            mask_p3 = (years >= shock_year) & (years <= alignment_year)
+            if mask_p3.any():
+                v_start = float(baseline[years == shock_year][0])
+                v_end = float(target[years == alignment_year][0])
+                denom = alignment_year - shock_year
+                if denom == 0:
+                    ls[mask_p3] = v_end
+                else:
+                    frac = (years[mask_p3] - shock_year) / denom
+                    ls[mask_p3] = v_start + frac * (v_end - v_start)
+                phase[mask_p3] = "transition"
+        elif alignment_year == shock_year:
+            mask_shock = years == shock_year
+            if mask_shock.any():
+                ls[mask_shock] = target[mask_shock]
+                phase[mask_shock] = "transition"
 
         # Phase 4: Align to target
         mask_p4 = years > alignment_year
         if mask_p4.any():
             ls[mask_p4] = target[mask_p4]
             phase[mask_p4] = "aligned"
+
+        # -------- Phase 4a: Apply ASSET RETIREMENT (permanent asset_activity reduction) --------
+        # For each event at y_r with asset_activity C: ls[y >= y_r] -= C (cumulative), clip >= 0.
+        # Only the retirement year gets "retirement" phase label.
+        key_ret = (
+            g["company_id"].iloc[0],
+            g["scenario_geography"].iloc[0],
+            g["sector"].iloc[0],
+            g["technology"].iloc[0],
+        )
+        events = events_by_key.get(key_ret, [])
+
+        if events:
+            retirement_years = set()  # Track which years have retirement events
+
+            # Determine the first available year strictly after alignment_year in this group's horizon
+            years_after_alignment = years[years > alignment_year]
+            next_year_after_alignment = (
+                int(years_after_alignment.min())
+                if years_after_alignment.size > 0
+                else None
+            )
+
+            # Push any retirement occurring on/before alignment_year to the first available year after alignment
+            adjusted_events = []
+            for y_r, cap in events:
+                if next_year_after_alignment is not None and y_r <= alignment_year:
+                    adjusted_events.append((next_year_after_alignment, cap))
+                else:
+                    adjusted_events.append((y_r, cap))
+
+            # Sort events by (possibly adjusted) year to apply them chronologically
+            events_sorted = sorted(adjusted_events, key=lambda x: x[0])
+
+            for y_r, cap in events_sorted:
+                # Find the index for the retirement year
+                idx_retirement = np.where(years == y_r)[0]
+                if idx_retirement.size == 0:
+                    continue  # retirement year not in our data
+
+                idx_retirement = idx_retirement[0]
+
+                # Get the late sudden value at retirement year
+                ls_at_retirement = ls[idx_retirement]
+
+                if ls_at_retirement > 0:
+                    # Calculate the percentage decrease
+                    percentage_decrease = cap / ls_at_retirement
+                    # Cap the percentage to avoid negative values
+                    percentage_decrease = min(percentage_decrease, 1.0)
+
+                    # Apply this percentage decrease to all years >= y_r
+                    idx_after = np.where(years >= y_r)[0]
+                    if idx_after.size > 0:
+                        ls[idx_after] *= 1 - percentage_decrease
+
+                # Mark the retirement year
+                retirement_years.add(y_r)
+
+            # Mark only the specific retirement years as "retirement" phase
+            for y_r in retirement_years:
+                idx_exact = np.where(years == y_r)[0]
+                if idx_exact.size > 0:
+                    phase[idx_exact[0]] = "retirement"
 
         # Non-negativity safeguard
         ls = np.clip(ls, a_min=0.0, a_max=None)
@@ -325,12 +415,12 @@ def late_sudden_misaligned_low_carbon_companies(
             ls[mask_p2] = baseline[mask_p2]
             phase[mask_p2] = "bau"
 
-        # ---------------- Phase 3: Transition (from baseline@(shock-1) to target@alignment) ----------------
+        # ---------------- Phase 3: Transition (from baseline@shock_year to target@alignment) ----------------
         if alignment_year > shock_year:
             mask_p3 = (years >= shock_year) & (years <= alignment_year)
             if mask_p3.any():
                 # Boundary values
-                v_start = float(baseline[years == (shock_year - 1)][0])
+                v_start = float(baseline[years == shock_year][0])
                 try:
                     v_end = float(target[years == alignment_year][0])
                 except IndexError:
@@ -340,9 +430,7 @@ def late_sudden_misaligned_low_carbon_companies(
                     )
 
                 denom = alignment_year - shock_year
-                frac = (years[mask_p3] - (shock_year - 1)) / (
-                    denom + 1
-                )  # shock_year gets frac = 1/(denom+1)
+                frac = (years[mask_p3] - shock_year) / denom
                 ls[mask_p3] = v_start + frac * (v_end - v_start)
                 phase[mask_p3] = "transition"
 
@@ -455,25 +543,25 @@ def late_sudden_aligned_high_carbon_companies(
             ls[mask_p2] = baseline[mask_p2]
             phase[mask_p2] = "bau"
 
-        # Phase 3: Transition (from baseline@(shock-1) to target@alignment for high-carbon)
+        # Phase 3: Transition (linear from baseline@shock_year to target@alignment)
         if alignment_year > shock_year:
             mask_p3 = (years >= shock_year) & (years <= alignment_year)
             if mask_p3.any():
-                v_start = float(baseline[years == (shock_year - 1)][0])
-                try:
-                    v_end = float(target[years == alignment_year][0])
-                except IndexError:
-                    raise ValueError(
-                        f"Target value for alignment_year={alignment_year} not found in group "
-                        f"{tuple(g[name].iloc[0] for name in group_cols)}."
-                    )
-
+                v_start = float(baseline[years == shock_year][0])
+                v_end = float(target[years == alignment_year][0])
                 denom = alignment_year - shock_year
-                frac = (years[mask_p3] - (shock_year - 1)) / (
-                    denom + 1
-                )  # shock_year gets frac = 1/(denom+1)
-                ls[mask_p3] = v_start + frac * (v_end - v_start)
+                if denom == 0:
+                    ls[mask_p3] = v_end
+                else:
+                    frac = (years[mask_p3] - shock_year) / denom
+                    ls[mask_p3] = v_start + frac * (v_end - v_start)
                 phase[mask_p3] = "transition"
+        elif alignment_year == shock_year:
+            # Immediate alignment at shock year
+            mask_shock = years == shock_year
+            if mask_shock.any():
+                ls[mask_shock] = target[mask_shock]
+                phase[mask_shock] = "transition"
 
         # Phase 4: Alignment
         mask_p4 = years > alignment_year
@@ -697,5 +785,4 @@ def concatenate_late_sudden_results(
                 "alignment_type",
             ]
         )
-
     return all_late_sudden

@@ -6,7 +6,8 @@ generated using Kedro 0.19.12
 from kedro.pipeline import node, Pipeline, pipeline  # noqa
 from .nodes import (
     aggregate_late_sudden_trajectories_to_company_level,
-    compute_company_level_compensation,
+    apply_company_level_compensation,
+    split_late_sudden_trajectories_by_alignment_type,
     stagger_decreasing_tech,
     stagger_increasing_tech,
     concatenate_staggered_shock_results,
@@ -24,21 +25,28 @@ def create_pipeline(**kwargs) -> Pipeline:
                 outputs="companies_late_sudden_trajectories",
             ),
             node(
-                compute_company_level_compensation,
+                apply_company_level_compensation,
                 inputs=dict(
                     companies_late_sudden_trajectories="companies_late_sudden_trajectories",
-                    shock_year="params:shock_year",
                     alignment_year="params:alignment_year",
                 ),
-                outputs="compensation_required_per_company",
+                outputs="companies_late_sudden_trajectories_compensated",
+            ),
+            node(
+                split_late_sudden_trajectories_by_alignment_type,
+                inputs=dict(
+                    assets_late_sudden_trajectories="assets_late_sudden_trajectories",
+                ),
+                outputs=[
+                    "decreasing_tech_late_sudden_trajectories",
+                    "increasing_tech_late_sudden_trajectories",
+                ],
             ),
             node(
                 stagger_decreasing_tech,
                 inputs=dict(
-                    assets_late_sudden_trajectories="assets_late_sudden_trajectories",
-                    companies_late_sudden_trajectories="companies_late_sudden_trajectories",
-                    assets_retirement_dates="assets_retirement_dates",
-                    compensation_required_per_company="compensation_required_per_company",
+                    assets_late_sudden_trajectories="decreasing_tech_late_sudden_trajectories",
+                    companies_late_sudden_trajectories="companies_late_sudden_trajectories_compensated",
                     shock_year="params:shock_year",
                     alignment_year="params:alignment_year",
                 ),
@@ -47,7 +55,7 @@ def create_pipeline(**kwargs) -> Pipeline:
             node(
                 stagger_increasing_tech,
                 inputs=dict(
-                    assets_late_sudden_trajectories="assets_late_sudden_trajectories",
+                    assets_late_sudden_trajectories="increasing_tech_late_sudden_trajectories",
                     companies_late_sudden_trajectories="companies_late_sudden_trajectories",
                     shock_year="params:shock_year",
                 ),

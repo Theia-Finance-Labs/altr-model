@@ -259,7 +259,7 @@ def plot_assets_late_sudden_trajectories(
             tech_clean = clean_name_for_folder(tech)
             geo_clean = clean_name_for_folder(geo)
 
-            combo_dir = align_dir / f"{cname_clean}-{cid}-{tech_clean}-{geo_clean}"
+            combo_dir = align_dir / f"{cname_clean}-{cid}-{geo_clean}"
             combo_dir.mkdir(parents=True, exist_ok=True)
 
             # Filter data for this combo

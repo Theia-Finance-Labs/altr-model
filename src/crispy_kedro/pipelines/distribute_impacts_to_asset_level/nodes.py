@@ -58,8 +58,15 @@ def aggregate_late_sudden_trajectories_to_company_level(
     Aggregate late sudden trajectories to company level.
     """
 
+    companies_late_sudden_trajectories = all_assets_late_sudden_trajectories.copy()
+    companies_late_sudden_trajectories["late_sudden_phase"] = (
+        companies_late_sudden_trajectories["late_sudden_phase"].str.replace(
+            "retirement", "aligned"
+        )
+    )
+
     companies_late_sudden_trajectories = (
-        all_assets_late_sudden_trajectories.groupby(
+        companies_late_sudden_trajectories.groupby(
             [
                 "company_id",
                 "company_name",
@@ -94,21 +101,79 @@ def aggregate_late_sudden_trajectories_to_company_level(
     return companies_late_sudden_trajectories
 
 
-def compute_company_level_compensation(
+def apply_company_level_compensation(
     companies_late_sudden_trajectories: pd.DataFrame,
-    shock_year: int,
     alignment_year: int,
 ) -> pd.DataFrame:
     """Compute company-level compensation."""
 
-    return companies_late_sudden_trajectories
+    def _apply_compensation(g: pd.DataFrame):
+        g = g.sort_values("year").copy()
+
+        years = g["year"].to_numpy()
+        target = g["company_trajectory_target"].to_numpy(dtype=float)
+
+        ls = g["company_trajectory_latesudden"]
+        phase = g["late_sudden_phase"]
+
+        # -------- Phase 4b: Compensation (uniform, non-positive; same logic, computed AFTER retirements) --------
+        pre_mask = years <= alignment_year
+        post_mask = years > alignment_year
+        pre_excess = float(np.nansum(ls[pre_mask] - target[pre_mask]))
+        post_gap = float(np.nansum(ls[post_mask] - target[post_mask]))
+        compensation_volume = max(pre_excess - post_gap, 0.0)
+
+        comp_per_year = 0.0
+        n_years_comp = int(post_mask.sum())
+        if n_years_comp > 0 and compensation_volume > 0:
+            comp_per_year = -compensation_volume / n_years_comp  # <= 0
+            ls[post_mask] = np.maximum(ls[post_mask] + comp_per_year, 0.0)
+            phase[post_mask] = "compensation"
+
+            # -------- Attach outputs --------
+        g["company_trajectory_latesudden"] = ls
+        g["late_sudden_phase"] = phase
+
+        return g
+
+    group_cols = ["company_id", "scenario_geography", "sector", "technology"]
+
+    misaligned_mask = (
+        companies_late_sudden_trajectories["alignment_type"] == "misaligned_high_carbon"
+    )
+
+    result = companies_late_sudden_trajectories.copy()
+    result.loc[misaligned_mask] = (
+        companies_late_sudden_trajectories[misaligned_mask]
+        .groupby(group_cols, group_keys=False, sort=False)
+        .apply(_apply_compensation)
+        .reset_index(drop=True)
+    )
+
+    return result
+
+
+def split_late_sudden_trajectories_by_alignment_type(
+    assets_late_sudden_trajectories: pd.DataFrame,
+) -> pd.DataFrame:
+    """Split late sudden trajectories by alignment type."""
+
+    dec_mask = assets_late_sudden_trajectories["alignment_type"].isin(
+        ["misaligned_high_carbon", "aligned_high_carbon"]
+    )
+    dec_late_sudden_trajectories = assets_late_sudden_trajectories[dec_mask]
+
+    inc_mask = assets_late_sudden_trajectories["alignment_type"].isin(
+        ["misaligned_low_carbon", "aligned_low_carbon"]
+    )
+    inc_late_sudden_trajectories = assets_late_sudden_trajectories[inc_mask]
+
+    return dec_late_sudden_trajectories, inc_late_sudden_trajectories
 
 
 def stagger_decreasing_tech(
     assets_late_sudden_trajectories: pd.DataFrame,
     companies_late_sudden_trajectories: pd.DataFrame,
-    assets_retirement_dates: pd.DataFrame,
-    compensation_required_per_company: pd.DataFrame,
     shock_year: int,
     alignment_year: int,
     g_k: float = 6.0,
@@ -121,12 +186,7 @@ def stagger_decreasing_tech(
     the late & sudden shock mechanism behavior before applying age-based allocation rules.
     """
 
-    dec_mask = assets_late_sudden_trajectories["alignment_type"].isin(
-        ["misaligned_high_carbon", "aligned_high_carbon"]
-    )
-    dec_late_sudden_trajectories = assets_late_sudden_trajectories[dec_mask]
-
-    return dec_late_sudden_trajectories
+    return assets_late_sudden_trajectories
 
 
 def stagger_increasing_tech(
@@ -141,12 +201,7 @@ def stagger_increasing_tech(
     Ensures the synthetic row is never duplicated (never included in the 'real' block).
     """
 
-    inc_mask = assets_late_sudden_trajectories["alignment_type"].isin(
-        ["misaligned_low_carbon", "aligned_low_carbon"]
-    )
-    inc_late_sudden_trajectories = assets_late_sudden_trajectories[inc_mask]
-
-    return inc_late_sudden_trajectories
+    return assets_late_sudden_trajectories
 
 
 def concatenate_staggered_shock_results(
