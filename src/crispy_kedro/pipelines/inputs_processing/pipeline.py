@@ -40,7 +40,7 @@ def create_pipeline(**kwargs) -> Pipeline:
             ),
             node(
                 func=interpolate_scenarios_annually,
-                inputs="scenarios_pathways_filtered",
+                inputs=dict(scenarios_pathways="scenarios_pathways_filtered"),
                 outputs="scenarios_pathways",
             ),
             node(

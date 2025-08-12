@@ -29,10 +29,16 @@ def filter_scenarios(
     )
 
     assert (
-        target_scenario in scenarios_pathways.scenario.unique()
+        target_scenario
+        in scenarios_pathways[
+            scenarios_pathways["scenario_type"] == "target"
+        ].scenario.unique()
     ), "Target scenario not found in scenarios pathways"
     assert (
-        baseline_scenario in scenarios_pathways.scenario.unique()
+        baseline_scenario
+        in scenarios_pathways[
+            scenarios_pathways["scenario_type"] == "baseline"
+        ].scenario.unique()
     ), "Baseline scenario not found in scenarios pathways"
 
     scenarios_pathways_filtered = scenarios_pathways.loc[
@@ -110,7 +116,13 @@ def filter_assets(
 def assign_scenario_geographies_to_assets(
     assets_forecasts: pd.DataFrame, scenarios_pathways: pd.DataFrame
 ) -> pd.DataFrame:
-    """Assign scenario geographies to assets based on country mapping."""
+    """Assign scenario geographies to assets based on country mapping.
+
+    If a country maps to multiple scenario geographies, pick the geography with the
+    smallest number of countries (most granular). If there is a tie for smallest,
+    raise an error listing the conflicting geographies and the asset+country pair(s).
+    """
+    # Build mapping of scenario geographies to individual countries
     geographies_to_countries_mapping = (
         scenarios_pathways[["scenario_geography", "country_iso2_list"]]
         .drop_duplicates()
@@ -119,41 +131,97 @@ def assign_scenario_geographies_to_assets(
         .rename(columns={"country_iso2_list": "country_iso2"})
     )
 
-    assets_forecasts_with_scenario_geographies = assets_forecasts.merge(
-        geographies_to_countries_mapping,
-        on="country_iso2",
-        how="left",
+    # Count how many countries each geography contains (NaNs are excluded from the count)
+    geography_sizes = (
+        geographies_to_countries_mapping.groupby("scenario_geography", as_index=False)[
+            "country_iso2"
+        ]
+        .count()
+        .rename(columns={"country_iso2": "geography_country_count"})
     )
 
-    # Check if there are unassigned assets and a global geography exists
-    unassigned_mask = assets_forecasts_with_scenario_geographies[
-        "scenario_geography"
-    ].isna()
+    # Determine best (most granular) geography per asset+country pair
+    asset_country_pairs = assets_forecasts[
+        ["asset_id", "country_iso2"]
+    ].drop_duplicates()
+
+    asset_country_candidates = asset_country_pairs.merge(
+        geographies_to_countries_mapping, on="country_iso2", how="left"
+    ).merge(geography_sizes, on="scenario_geography", how="left")
+
+    # For each asset+country, find the minimum country count among candidate geographies
+    min_counts = asset_country_candidates.groupby(["asset_id", "country_iso2"])[
+        "geography_country_count"
+    ].transform("min")
+
+    is_min = asset_country_candidates["geography_country_count"].eq(min_counts)
+
+    # Detect ties: more than one candidate with the same minimum count for a given asset+country
+    tie_counts = (
+        asset_country_candidates[is_min]
+        .groupby(["asset_id", "country_iso2"], as_index=False)
+        .size()
+        .rename(columns={"size": "num_min_candidates"})
+    )
+
+    ambiguous_pairs = tie_counts.query("num_min_candidates > 1")
+    if not ambiguous_pairs.empty:
+        conflict_messages = []
+        for _, row in ambiguous_pairs.iterrows():
+            aid = row["asset_id"]
+            ctry = row["country_iso2"]
+            candidates = asset_country_candidates[
+                (asset_country_candidates["asset_id"] == aid)
+                & (asset_country_candidates["country_iso2"] == ctry)
+                & is_min
+            ][["scenario_geography", "geography_country_count"]]
+            candidates_list = candidates.apply(
+                lambda r: f"{r['scenario_geography']} (n={int(r['geography_country_count'])})",
+                axis=1,
+            ).tolist()
+            conflict_messages.append(
+                f"asset_id={aid}, country={ctry}: conflicting geographies {candidates_list}"
+            )
+        conflict_text = "\n".join(conflict_messages)
+        raise ValueError(
+            "Ambiguous scenario geography assignment detected. "
+            "Multiple geographies tie for most granular: \n" + conflict_text
+        )
+
+    # Select the unique most granular geography per asset+country
+    selected_geographies = (
+        asset_country_candidates[is_min]
+        .drop_duplicates(["asset_id", "country_iso2"])  # ensure one per pair
+        .loc[:, ["asset_id", "country_iso2", "scenario_geography"]]
+    )
+
+    # Merge the chosen geography back to all asset rows
+    assets_with_geography = assets_forecasts.merge(
+        selected_geographies, on=["asset_id", "country_iso2"], how="left"
+    )
+
+    # Fallback: Assign unassigned assets to a global geography (if defined with NaN country list)
+    unassigned_mask = assets_with_geography["scenario_geography"].isna()
 
     if unassigned_mask.sum() > 0:
-        # Look for a global geography (one with NaN/null country_iso2)
         global_geographies = geographies_to_countries_mapping[
             geographies_to_countries_mapping["country_iso2"].isna()
         ]["scenario_geography"].unique()
 
         if len(global_geographies) > 0:
-            # Use the first global geography found (typically "Global")
             global_geography = global_geographies[0]
             print(
                 f"Assigning {unassigned_mask.sum()} unassigned assets to global geography: {global_geography}"
             )
-
-            # Assign unassigned assets to the global geography
-            assets_forecasts_with_scenario_geographies.loc[
-                unassigned_mask, "scenario_geography"
-            ] = global_geography
+            assets_with_geography.loc[unassigned_mask, "scenario_geography"] = (
+                global_geography
+            )
 
     assert (
-        assets_forecasts_with_scenario_geographies["scenario_geography"].isna().sum()
-        == 0
+        assets_with_geography["scenario_geography"].isna().sum() == 0
     ), "Some assets are not assigned to a scenario geography"
 
-    return assets_forecasts_with_scenario_geographies
+    return assets_with_geography
 
 
 def allocate_assets_to_companies(
@@ -219,13 +287,15 @@ def determine_lifetime_per_technology(
     scenarios_pathways: pd.DataFrame,
 ) -> pd.DataFrame:
 
-    # TODO: remove to replace by the real scenarios data
-
-    rng = np.random.RandomState(seed=42)
-
-    unique_combinations = scenarios_pathways[["sector", "technology"]].drop_duplicates()
-    unique_combinations["lifetime_years"] = rng.randint(
-        20, 40, size=len(unique_combinations)
+    unique_combinations = (
+        scenarios_pathways.loc[
+            scenarios_pathways["scenario_type"] == "target",
+            ["sector", "technology", "lifetime_years"],
+        ]
+        .dropna(subset=["lifetime_years"])
+        .groupby(["sector", "technology"])
+        .agg({"lifetime_years": lambda x: np.ceil(x.mean()).astype(int)})
+        .reset_index()
     )
 
     return unique_combinations
@@ -360,6 +430,7 @@ def interpolate_scenarios_annually(scenarios_pathways: pd.DataFrame) -> pd.DataF
         "fuel_price",
         "scenario_pathway",
         "scenario_capacity_factor",
+        "lifetime_years",
     ]
     existing_numeric_cols = [
         col for col in numeric_cols if col in scenarios_pathways.columns
