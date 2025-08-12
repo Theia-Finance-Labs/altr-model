@@ -153,5 +153,5 @@ def create_pipeline(**kwargs) -> Pipeline:
                 name="aggregate_to_company_earnings_node",
             ),
         ],
-        tags="earnings_model",
+        tags="altrisk",
     )

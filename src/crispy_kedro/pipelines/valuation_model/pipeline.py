@@ -45,5 +45,5 @@ def create_pipeline(**kwargs) -> Pipeline:
                 name="aggregate_to_company_npv_node",
             ),
         ],
-        tags="valuation_model",
+        tags="altrisk",
     )

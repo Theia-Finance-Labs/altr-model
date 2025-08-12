@@ -24,6 +24,12 @@ def calculate_npv_per_asset(
     Applies different discount rates based on scenario type:
     - baseline scenarios: use discount_rate_baseline
     - shock/transition scenarios: use discount_rate_shock (higher due to transition risk)
+    
+    Validation enforces tax-neutral FCFF. No depreciation or tax shield included.
+    RFC: When enabling taxes, change FCFF build and set use_after_tax_wacc=true.
+    
+    No depreciation component is discounted since taxes/shield are disabled.
+    RFC: With taxes on, add PV_Dep and switch identity to match EBIT(1−T)+Dep.
     """
     
     logger.info("Calculating NPV per asset using DCF methodology...")

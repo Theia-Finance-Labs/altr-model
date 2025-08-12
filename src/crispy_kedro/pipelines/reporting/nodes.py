@@ -29,6 +29,9 @@ def reporting_validate_inputs(
     
     Purpose: sanity checks & basis alignment (real/nominal), required columns present, 
     years contiguous.
+    
+    Validates tax-neutral DCF outputs: FCFF = EBITDA - CapEx (no taxes/depreciation).
+    RFC: When enabling taxes, expect EBIT-based earnings with depreciation tax shields.
     """
     
     logger.info("Validating reporting inputs...")
@@ -118,6 +121,8 @@ def build_reporting_views(
     )
     
     # Calculate discount factors and present values per year
+    # Tax-neutral DCF: PV_FCFF = PV_EBITDA - PV_CapEx (no depreciation tax shield)
+    # RFC: With taxes enabled, add PV_Depreciation and PV_TaxShield components
     base_year = asset_explain['year'].min()
     asset_explain['years_from_base'] = asset_explain['year'] - base_year
     asset_explain['discount_factor'] = (1 + asset_explain['discount_rate']) ** (-asset_explain['years_from_base'])
@@ -170,7 +175,8 @@ def build_reporting_views(
         on='asset_id'
     )
     
-    # Check NPV reconciliation
+    # Check NPV reconciliation (tax-neutral: NPV = PV_EBITDA - PV_CapEx)
+    # RFC: With taxes, reconcile as NPV = PV_EBIT*(1-tax_rate) + PV_Depreciation*tax_rate - PV_CapEx
     asset_npv_decomp['NPV_check'] = asset_npv_decomp['PV_EBITDA'] - asset_npv_decomp['PV_CapEx']
     asset_npv_decomp['NPV_diff'] = abs(asset_npv_decomp['NPV'] - asset_npv_decomp['NPV_check'])
     

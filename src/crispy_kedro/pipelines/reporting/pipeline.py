@@ -109,5 +109,5 @@ def create_pipeline(**kwargs) -> Pipeline:
                 name="reporting_qc_summary_node",
             ),
         ],
-        tags="reporting",
+        tags="reporting"
     )

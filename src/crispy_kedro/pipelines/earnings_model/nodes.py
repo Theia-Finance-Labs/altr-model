@@ -590,6 +590,10 @@ def compute_ops_block(
 ) -> pd.DataFrame:
     """
     Node 8: Compute operations block (production, costs, revenue, EBITDA).
+    
+    EBITDA_t = Revenue_t − FuelCost_t − FixedO&M_t − CarbonCost_net_t
+    Note: No depreciation is considered here. EBITDA is a cash operating measure.
+    RFC: Corporate tax and depreciation tax shield are currently disabled; see compute_fcff().
     """
     
     logger.info("Computing operations block...")
@@ -641,6 +645,14 @@ def compute_ops_block(
 def compute_fcff(asset_ops_block: pd.DataFrame) -> pd.DataFrame:
     """
     Node 9: Compute Free Cash Flow to Firm (FCFF).
+    
+    Free Cash Flow (tax-neutral):
+    FCFF_t = EBITDA_t − CapEx_total_t − ΔNWC_t
+    
+    RFC: Corporate tax and depreciation tax shield are currently DISABLED. 
+    If later enabled, switch to:
+      FCFF_t = EBIT_t*(1−T) + Dep_t − CapEx_t − ΔNWC_t
+    and ensure dcf.use_after_tax_wacc = true.
     """
     
     logger.info("Computing FCFF...")
@@ -648,6 +660,7 @@ def compute_fcff(asset_ops_block: pd.DataFrame) -> pd.DataFrame:
     cashflow_data = asset_ops_block.copy()
     
     # FCFF = EBITDA - CapEx (tax-neutral, no working capital changes)
+    # DISABLED because we don't apply a corporate tax rate and depreciation thus does not affect tax base and can be ignored in EBITDA, since it would be added back in in FCFF
     cashflow_data["FCFF"] = cashflow_data["EBITDA"] - cashflow_data["capex_total"]
     
     logger.info(f"Computed FCFF for {len(cashflow_data)} asset-year rows")
