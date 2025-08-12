@@ -8,31 +8,6 @@ import numpy as np
 from typing import Tuple, cast
 
 
-def aggregate_assets_to_company_level(assets_forecasts: pd.DataFrame) -> pd.DataFrame:
-    """Aggregate asset-level data to company level by calculating total activity."""
-    assets_forecasts["asset_activity"] = (
-        assets_forecasts["capacity"] * assets_forecasts["capacity_factor"]
-    )
-
-    companies_forecasts = (
-        assets_forecasts.groupby(
-            [
-                "company_id",
-                "company_name",
-                "scenario_geography",
-                "sector",
-                "technology",
-                "year",
-            ]
-        )
-        .agg({"asset_activity": "sum"})
-        .rename({"asset_activity": "company_activity"}, axis=1)
-        .reset_index()
-    )
-
-    return companies_forecasts
-
-
 def calculate_tmsr(
     scenarios_pathways: pd.DataFrame,
 ) -> pd.DataFrame:
@@ -61,27 +36,29 @@ def calculate_tmsr(
 
 
 def compute_scenarios_trajectories(
-    scenarios_pathways: pd.DataFrame, companies_forecasts: pd.DataFrame
+    scenarios_pathways: pd.DataFrame, assets_forecasts: pd.DataFrame
 ) -> pd.DataFrame:
     """Compute scenario trajectories by merging pathways with company forecasts."""
     companies_activity_first_year = (
-        companies_forecasts.sort_values("year")
+        assets_forecasts.sort_values("year")
         .groupby(
-            ["company_id", "scenario_geography", "sector", "technology"], as_index=False
+            ["company_id", "asset_id", "scenario_geography", "sector", "technology"],
+            as_index=False,
         )
         .first()[
             [
                 "company_id",
+                "asset_id",
                 "scenario_geography",
                 "sector",
                 "technology",
                 "year",
-                "company_activity",
+                "asset_activity",
             ]
         ]
         .rename(
             {
-                "company_activity": "initial_company_activity",
+                "asset_activity": "initial_asset_activity",
                 "year": "first_year_of_activity",
             },
             axis=1,
@@ -94,16 +71,23 @@ def compute_scenarios_trajectories(
 
     # Apply TMSR/SMSP scenario targets
     scenarios_trajectories["scenario_activity"] = scenarios_trajectories[
-        "initial_company_activity"
+        "initial_asset_activity"
     ] * (1 + scenarios_trajectories["tmsr"])
 
     scenarios_trajectories = scenarios_trajectories.sort_values(
-        by=["scenario", "company_id", "sector", "technology", "year"]
+        by=["scenario", "company_id", "asset_id", "sector", "technology", "year"]
     )
 
     # Compute the lagged production scenario
     scenarios_trajectories["activity_change_scenario"] = scenarios_trajectories.groupby(
-        ["company_id", "scenario", "scenario_geography", "sector", "technology"]
+        [
+            "company_id",
+            "asset_id",
+            "scenario",
+            "scenario_geography",
+            "sector",
+            "technology",
+        ]
     )["scenario_activity"].transform(lambda x: x - x.shift(1))
 
     scenarios_trajectories["scenario_activity_change"] = scenarios_trajectories[
@@ -113,6 +97,7 @@ def compute_scenarios_trajectories(
     scenarios_trajectories = scenarios_trajectories[
         [
             "company_id",
+            "asset_id",
             "scenario",
             "scenario_type",
             "scenario_geography",
@@ -137,6 +122,7 @@ def compute_scenarios_trajectories(
         # Define index columns and values to pivot
         index_cols = [
             "company_id",
+            "asset_id",
             "scenario_geography",
             "sector",
             "technology",
@@ -177,8 +163,8 @@ def compute_scenarios_trajectories(
     return pivoted_scenarios
 
 
-def create_companies_trajectories(
-    companies_forecasts: pd.DataFrame, scenarios_trajectories: pd.DataFrame
+def create_assets_trajectories(
+    assets_forecasts: pd.DataFrame, scenarios_trajectories: pd.DataFrame
 ) -> pd.DataFrame:
     """
     Compute asset trajectories by merging with pivoted scenarios trajectories.
@@ -186,9 +172,16 @@ def create_companies_trajectories(
     """
 
     # Merge with assets forecasts
-    companies_trajectories = scenarios_trajectories.merge(
-        companies_forecasts,
-        on=["company_id", "scenario_geography", "sector", "technology", "year"],
+    assets_trajectories = scenarios_trajectories.merge(
+        assets_forecasts,
+        on=[
+            "company_id",
+            "asset_id",
+            "scenario_geography",
+            "sector",
+            "technology",
+            "year",
+        ],
         how="left",
     )
 
@@ -196,122 +189,119 @@ def create_companies_trajectories(
     group_cols = [
         "company_id",
         "company_name",
+        "asset_id",
         "scenario_geography",
         "sector",
         "technology",
     ]
     # Sort to ensure proper ordering and forward fill only company name
-    companies_trajectories = companies_trajectories.sort_values(group_cols + ["year"])
-    companies_trajectories["company_name"] = companies_trajectories[
-        "company_name"
-    ].ffill()
+    assets_trajectories = assets_trajectories.sort_values(group_cols + ["year"])
+    assets_trajectories["company_name"] = assets_trajectories["company_name"].ffill()
 
     # TARGET TRAJECTORY: constrained cumsum approach (no extra raw columns)
-    companies_trajectories["_company_activity_filled"] = companies_trajectories.groupby(
+    assets_trajectories["_asset_activity_filled"] = assets_trajectories.groupby(
         group_cols
-    )["company_activity"].transform("ffill")
+    )["asset_activity"].transform("ffill")
 
     # Compute initial cumsum of target changes
-    companies_trajectories["_target_cumsum"] = companies_trajectories.groupby(
-        group_cols
-    )["scenario_activity_change_target"].transform("cumsum")
+    assets_trajectories["_target_cumsum"] = assets_trajectories.groupby(group_cols)[
+        "scenario_activity_change_target"
+    ].transform("cumsum")
 
     # Determine where trajectory would drop to or below zero
     _target_traj_unconstrained = (
-        companies_trajectories["_company_activity_filled"]
-        + companies_trajectories["_target_cumsum"]
+        assets_trajectories["_asset_activity_filled"]
+        + assets_trajectories["_target_cumsum"]
     )
-    companies_trajectories["_temp_target_zero"] = (
-        _target_traj_unconstrained <= 0
-    ).astype(int)
-    companies_trajectories["_target_zero_reached"] = (
-        companies_trajectories.groupby(group_cols)["_temp_target_zero"]
+    assets_trajectories["_temp_target_zero"] = (_target_traj_unconstrained <= 0).astype(
+        int
+    )
+    assets_trajectories["_target_zero_reached"] = (
+        assets_trajectories.groupby(group_cols)["_temp_target_zero"]
         .transform("cummax")
         .astype(bool)
     )
 
     # Apply zero‐floor constraint directly on the cumsum values
-    companies_trajectories["_target_cumsum"] = np.where(
-        companies_trajectories["_target_zero_reached"],
-        -companies_trajectories[
-            "_company_activity_filled"
+    assets_trajectories["_target_cumsum"] = np.where(
+        assets_trajectories["_target_zero_reached"],
+        -assets_trajectories[
+            "_asset_activity_filled"
         ],  # ensures trajectory hits 0 exactly
-        companies_trajectories["_target_cumsum"],
+        assets_trajectories["_target_cumsum"],
     )
 
     # Final target trajectory
-    companies_trajectories["company_trajectory_target"] = (
-        companies_trajectories["_company_activity_filled"]
-        + companies_trajectories["_target_cumsum"]
+    assets_trajectories["asset_trajectory_target"] = (
+        assets_trajectories["_asset_activity_filled"]
+        + assets_trajectories["_target_cumsum"]
     )
 
     # BASELINE TRAJECTORY: preserve original data, project only after it ends
-    # Find last year with valid company_activity for each group
-    companies_trajectories["_last_valid_year"] = (
-        companies_trajectories.groupby(group_cols)
+    # Find last year with valid asset_activity for each group
+    assets_trajectories["_last_valid_year"] = (
+        assets_trajectories.groupby(group_cols)
         .apply(
             lambda group: (
-                group.loc[group["company_activity"].notna(), "year"].max()
-                if group["company_activity"].notna().any()
+                group.loc[group["asset_activity"].notna(), "year"].max()
+                if group["asset_activity"].notna().any()
                 else None
             )
         )
-        .reindex(companies_trajectories.set_index(group_cols).index)
+        .reindex(assets_trajectories.set_index(group_cols).index)
         .values
     )
 
     # Create mask for years after the last valid data year
-    companies_trajectories["_is_projection_period"] = (
-        companies_trajectories["year"] > companies_trajectories["_last_valid_year"]
+    assets_trajectories["_is_projection_period"] = (
+        assets_trajectories["year"] > assets_trajectories["_last_valid_year"]
     ).fillna(False)
 
     # Prepare masked baseline changes (only during projection period)
-    companies_trajectories["_baseline_changes_masked"] = companies_trajectories[
+    assets_trajectories["_baseline_changes_masked"] = assets_trajectories[
         "scenario_activity_change_baseline"
-    ].where(companies_trajectories["_is_projection_period"], 0)
+    ].where(assets_trajectories["_is_projection_period"], 0)
 
     # Get last valid value for projection
-    companies_trajectories["_last_valid_value"] = companies_trajectories.groupby(
-        group_cols
-    )["company_activity"].transform(
-        lambda x: x.dropna().iloc[-1] if x.notna().any() else np.nan
-    )
+    assets_trajectories["_last_valid_value"] = assets_trajectories.groupby(group_cols)[
+        "asset_activity"
+    ].transform(lambda x: x.dropna().iloc[-1] if x.notna().any() else np.nan)
 
     # Compute baseline constrained cumsum (no extra raw column)
-    companies_trajectories["_baseline_cumsum"] = companies_trajectories.groupby(
-        group_cols
-    )["_baseline_changes_masked"].transform("cumsum")
+    assets_trajectories["_baseline_cumsum"] = assets_trajectories.groupby(group_cols)[
+        "_baseline_changes_masked"
+    ].transform("cumsum")
 
     _baseline_traj_unconstrained = (
-        companies_trajectories["_last_valid_value"]
-        + companies_trajectories["_baseline_cumsum"]
+        assets_trajectories["_last_valid_value"]
+        + assets_trajectories["_baseline_cumsum"]
     )
-    companies_trajectories["_temp_baseline_zero"] = (
+    assets_trajectories["_temp_baseline_zero"] = (
         _baseline_traj_unconstrained <= 0
     ).astype(int)
-    companies_trajectories["_baseline_zero_reached"] = (
-        companies_trajectories.groupby(group_cols)["_temp_baseline_zero"]
+    assets_trajectories["_baseline_zero_reached"] = (
+        assets_trajectories.groupby(group_cols)["_temp_baseline_zero"]
         .transform("cummax")
         .astype(bool)
     )
 
-    companies_trajectories["_baseline_cumsum"] = np.where(
-        companies_trajectories["_baseline_zero_reached"],
-        -companies_trajectories["_last_valid_value"],  # clamp so trajectory exactly 0
-        companies_trajectories["_baseline_cumsum"],
+    assets_trajectories["_baseline_cumsum"] = np.where(
+        assets_trajectories["_baseline_zero_reached"],
+        -assets_trajectories["_last_valid_value"],  # clamp so trajectory exactly 0
+        assets_trajectories["_baseline_cumsum"],
     )
 
     # Combine original data with constrained projections
-    companies_trajectories["company_trajectory_baseline"] = np.where(
-        companies_trajectories["_is_projection_period"],
-        companies_trajectories["_last_valid_value"]
-        + companies_trajectories["_baseline_cumsum"],
-        companies_trajectories["company_activity"],
+    assets_trajectories["asset_trajectory_baseline"] = np.where(
+        assets_trajectories["_is_projection_period"],
+        assets_trajectories["_last_valid_value"]
+        + assets_trajectories["_baseline_cumsum"],
+        assets_trajectories["asset_activity"],
     )
 
     # Clean up temporary columns
     temp_cols = [
-        "_company_activity_filled",
+        "_asset_activity_filled",
         # "_target_cumsum",
         "_temp_target_zero",
         "_target_zero_reached",
@@ -323,6 +313,43 @@ def create_companies_trajectories(
         "_baseline_zero_reached",
         "_last_valid_value",
     ]
-    companies_trajectories = companies_trajectories.drop(columns=temp_cols)
+    assets_trajectories = assets_trajectories.drop(columns=temp_cols)
+
+    return assets_trajectories
+
+
+def aggregate_assets_to_company_level(
+    assets_trajectories: pd.DataFrame,
+) -> pd.DataFrame:
+    """Aggregate asset-level data to company level by calculating total activity."""
+
+    companies_trajectories = (
+        assets_trajectories.groupby(
+            [
+                "company_id",
+                "company_name",
+                "scenario_geography",
+                "sector",
+                "technology",
+                "year",
+            ]
+        )
+        .agg(
+            {
+                "asset_activity": "sum",
+                "asset_trajectory_target": "sum",
+                "asset_trajectory_baseline": "sum",
+            }
+        )
+        .rename(
+            {
+                "asset_activity": "company_activity",
+                "asset_trajectory_target": "company_trajectory_target",
+                "asset_trajectory_baseline": "company_trajectory_baseline",
+            },
+            axis=1,
+        )
+        .reset_index()
+    )
 
     return companies_trajectories

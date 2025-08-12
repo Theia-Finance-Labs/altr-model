@@ -8,18 +8,13 @@ from .nodes import (
     aggregate_assets_to_company_level,
     calculate_tmsr,
     compute_scenarios_trajectories,
-    create_companies_trajectories,
+    create_assets_trajectories,
 )
 
 
 def create_pipeline(**kwargs) -> Pipeline:
     return Pipeline(
         [
-            node(
-                aggregate_assets_to_company_level,
-                inputs=dict(assets_forecasts="allocated_assets_to_companies"),
-                outputs="companies_technology_forecasts",
-            ),
             node(
                 func=calculate_tmsr,
                 inputs=dict(scenarios_pathways="scenarios_pathways"),
@@ -29,16 +24,21 @@ def create_pipeline(**kwargs) -> Pipeline:
                 compute_scenarios_trajectories,
                 inputs=dict(
                     scenarios_pathways="traj_scenario_tmsr",
-                    companies_forecasts="companies_technology_forecasts",
+                    assets_forecasts="allocated_assets_to_companies",
                 ),
                 outputs="scenarios_trajectories",
             ),
             node(
-                create_companies_trajectories,
+                create_assets_trajectories,
                 inputs=dict(
-                    companies_forecasts="companies_technology_forecasts",
+                    assets_forecasts="allocated_assets_to_companies",
                     scenarios_trajectories="scenarios_trajectories",
                 ),
+                outputs="assets_trajectories",
+            ),
+            node(
+                aggregate_assets_to_company_level,
+                inputs=dict(assets_trajectories="assets_trajectories"),
                 outputs="companies_trajectories",
             ),
         ],

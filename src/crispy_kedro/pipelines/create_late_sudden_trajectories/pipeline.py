@@ -22,19 +22,20 @@ def create_pipeline(**kwargs) -> Pipeline:
                 determine_companies_technologies_alignment,
                 inputs=dict(
                     companies_trajectories="companies_trajectories",
+                    assets_trajectories="assets_trajectories",
                     increasing_or_decreasing_techs="increasing_or_decreasing_techs",
                 ),
                 outputs=[
-                    "misaligned_high_carbon_companies_trajectories",
-                    "misaligned_low_carbon_companies_trajectories",
-                    "aligned_high_carbon_companies_trajectories",
-                    "aligned_low_carbon_companies_trajectories",
+                    "misaligned_high_carbon_assets_trajectories",
+                    "misaligned_low_carbon_assets_trajectories",
+                    "aligned_high_carbon_assets_trajectories",
+                    "aligned_low_carbon_assets_trajectories",
                 ],
             ),
             node(
                 late_sudden_misaligned_high_carbon_companies,
                 inputs=dict(
-                    misaligned_high_carbon_companies_trajectories="misaligned_high_carbon_companies_trajectories",
+                    misaligned_high_carbon_assets_trajectories="misaligned_high_carbon_assets_trajectories",
                     assets_retirement_dates="assets_retirement_dates",
                     shock_year="params:shock_year",
                     alignment_year="params:alignment_year",
@@ -44,7 +45,7 @@ def create_pipeline(**kwargs) -> Pipeline:
             node(
                 late_sudden_misaligned_low_carbon_companies,
                 inputs=dict(
-                    misaligned_low_carbon_companies_trajectories="misaligned_low_carbon_companies_trajectories",
+                    misaligned_low_carbon_assets_trajectories="misaligned_low_carbon_assets_trajectories",
                     shock_year="params:shock_year",
                     alignment_year="params:alignment_year",
                 ),
@@ -53,7 +54,7 @@ def create_pipeline(**kwargs) -> Pipeline:
             node(
                 late_sudden_aligned_high_carbon_companies,
                 inputs=dict(
-                    aligned_high_carbon_companies_trajectories="aligned_high_carbon_companies_trajectories",
+                    aligned_high_carbon_assets_trajectories="aligned_high_carbon_assets_trajectories",
                     shock_year="params:shock_year",
                     alignment_year="params:alignment_year",
                 ),
@@ -62,7 +63,7 @@ def create_pipeline(**kwargs) -> Pipeline:
             node(
                 late_sudden_aligned_low_carbon_companies,
                 inputs=dict(
-                    aligned_low_carbon_companies_trajectories="aligned_low_carbon_companies_trajectories",
+                    aligned_low_carbon_assets_trajectories="aligned_low_carbon_assets_trajectories",
                     shock_year="params:shock_year",
                     alignment_year="params:alignment_year",
                 ),

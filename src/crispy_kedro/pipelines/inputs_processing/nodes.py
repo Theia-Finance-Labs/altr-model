@@ -261,6 +261,8 @@ def allocate_assets_to_companies(
         merged_data["capacity"] * merged_data["ownership_percentage"]
     )
 
+    merged_data = merged_data.rename(columns={"capacity": "asset_activity"})
+
     return merged_data
 
 
@@ -380,7 +382,7 @@ def determine_assets_retirement_dates(
                 "sector",
                 "technology",
                 "retirement_year",
-                "capacity",
+                "asset_activity",
             ]
         )
 
@@ -394,7 +396,7 @@ def determine_assets_retirement_dates(
             "sector",
             "technology",
             "retirement_year",
-            "capacity",
+            "asset_activity",
         ],
     ]
 

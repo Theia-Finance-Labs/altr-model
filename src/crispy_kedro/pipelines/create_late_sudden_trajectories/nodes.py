@@ -14,6 +14,7 @@ import re
 
 def determine_companies_technologies_alignment(
     companies_trajectories: pd.DataFrame,
+    assets_trajectories: pd.DataFrame,
     increasing_or_decreasing_techs: pd.DataFrame,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
@@ -36,7 +37,8 @@ def determine_companies_technologies_alignment(
         how="left",
     )
 
-    # 3) Keep only rows where we actually have company_activity:
+    # 3) Keep only rows where we actually have company_activity.
+    # This will restrict the data to the last gem value for each company
     with_activity = companies_with_trend.dropna(subset=["company_activity"])
 
     # 4) Aggregate per companyxtech and grab sums + final-year values:
@@ -103,32 +105,32 @@ def determine_companies_technologies_alignment(
     aligned_low_carbon_pairs = aligned_low_carbon[key_cols_for_filter].drop_duplicates()
 
     # Filter companies_trajectories for each case
-    misaligned_high_carbon_companies_trajectories = companies_trajectories.merge(
+    misaligned_high_carbon_assets_trajectories = assets_trajectories.merge(
         misaligned_high_carbon_pairs, on=key_cols_for_filter, how="inner"
     ).copy()
 
-    misaligned_low_carbon_companies_trajectories = companies_trajectories.merge(
+    misaligned_low_carbon_assets_trajectories = assets_trajectories.merge(
         misaligned_low_carbon_pairs, on=key_cols_for_filter, how="inner"
     ).copy()
 
-    aligned_high_carbon_companies_trajectories = companies_trajectories.merge(
+    aligned_high_carbon_assets_trajectories = assets_trajectories.merge(
         aligned_high_carbon_pairs, on=key_cols_for_filter, how="inner"
     ).copy()
 
-    aligned_low_carbon_companies_trajectories = companies_trajectories.merge(
+    aligned_low_carbon_assets_trajectories = assets_trajectories.merge(
         aligned_low_carbon_pairs, on=key_cols_for_filter, how="inner"
     ).copy()
 
     return (
-        misaligned_high_carbon_companies_trajectories,
-        misaligned_low_carbon_companies_trajectories,
-        aligned_high_carbon_companies_trajectories,
-        aligned_low_carbon_companies_trajectories,
+        misaligned_high_carbon_assets_trajectories,
+        misaligned_low_carbon_assets_trajectories,
+        aligned_high_carbon_assets_trajectories,
+        aligned_low_carbon_assets_trajectories,
     )
 
 
 def late_sudden_misaligned_high_carbon_companies(
-    misaligned_high_carbon_companies_trajectories: pd.DataFrame,
+    misaligned_high_carbon_assets_trajectories: pd.DataFrame,
     assets_retirement_dates: pd.DataFrame,
     shock_year: int,
     alignment_year: int,
@@ -158,17 +160,17 @@ def late_sudden_misaligned_high_carbon_companies(
     Returns
     -------
     DataFrame with added columns:
-      - company_trajectory_latesudden
+      - asset_trajectory_latesudden
       - late_sudden_phase
     """
 
-    companies_for_case = misaligned_high_carbon_companies_trajectories.copy()
+    companies_for_case = misaligned_high_carbon_assets_trajectories.copy()
 
     # Empty early-exit with expected columns
     if companies_for_case.empty:
-        out = misaligned_high_carbon_companies_trajectories.head(0).copy()
+        out = misaligned_high_carbon_assets_trajectories.head(0).copy()
         for col, dtype in [
-            ("company_trajectory_latesudden", float),
+            ("asset_trajectory_latesudden", float),
             ("late_sudden_phase", object),
             ("compensation_volume", float),
             ("compensation_per_year", float),
@@ -202,9 +204,9 @@ def late_sudden_misaligned_high_carbon_companies(
         g = g.sort_values("year").copy()
 
         years = g["year"].to_numpy()
-        baseline = g["company_trajectory_baseline"].to_numpy(dtype=float)
-        target = g["company_trajectory_target"].to_numpy(dtype=float)
-        activity = g["company_activity"].to_numpy(dtype=float)
+        baseline = g["asset_trajectory_baseline"].to_numpy(dtype=float)
+        target = g["asset_trajectory_target"].to_numpy(dtype=float)
+        activity = g["asset_activity"].to_numpy(dtype=float)
 
         # -------- Phase 1: Forecast --------
         valid_idx = np.where(~np.isnan(activity))[0]
@@ -317,7 +319,7 @@ def late_sudden_misaligned_high_carbon_companies(
             )
 
         # -------- Attach outputs --------
-        g["company_trajectory_latesudden"] = ls
+        g["asset_trajectory_latesudden"] = ls
         g["late_sudden_phase"] = phase
 
         return g
@@ -331,7 +333,7 @@ def late_sudden_misaligned_high_carbon_companies(
 
 
 def late_sudden_misaligned_low_carbon_companies(
-    misaligned_low_carbon_companies_trajectories: pd.DataFrame,
+    misaligned_low_carbon_assets_trajectories: pd.DataFrame,
     shock_year: int,
     alignment_year: int,
 ) -> pd.DataFrame:
@@ -339,12 +341,12 @@ def late_sudden_misaligned_low_carbon_companies(
     Build the Late & Sudden pathway for *misaligned low-carbon* companies.
 
     Phases (per company_id x scenario_geography x sector x technology):
-      1) Forecast:    L&S = company_activity for years with available data (<= last GEM year);
+      1) Forecast:    L&S = asset_activity for years with available data (<= last GEM year);
                       if a value is missing inside that window, we fall back to baseline.
-      2) BAU:         L&S = company_trajectory_baseline for (last_GEM_year, shock_year]
+      2) BAU:         L&S = asset_trajectory_baseline for (last_GEM_year, shock_year]
       3) Transition:  Linear interpolation from baseline(shock_year) to target(alignment_year)
                       for years y in [shock_year, alignment_year)
-      4) Alignment:   L&S = company_trajectory_target for y >= alignment_year
+      4) Alignment:   L&S = asset_trajectory_target for y >= alignment_year
 
     Parameters
     ----------
@@ -359,17 +361,17 @@ def late_sudden_misaligned_low_carbon_companies(
     -------
     DataFrame
         Same rows as input with additional columns:
-          - 'company_trajectory_latesudden'
+          - 'asset_trajectory_latesudden'
           - 'late_sudden_phase'
     """
 
-    companies_for_case = misaligned_low_carbon_companies_trajectories.copy()
+    companies_for_case = misaligned_low_carbon_assets_trajectories.copy()
 
     if companies_for_case.empty:
         # Nothing to compute; return empty with expected columns.
-        out = misaligned_low_carbon_companies_trajectories.head(0).copy()
-        out["company_trajectory_latesudden"] = out.get(
-            "company_trajectory_latesudden", pd.Series(dtype=float)
+        out = misaligned_low_carbon_assets_trajectories.head(0).copy()
+        out["asset_trajectory_latesudden"] = out.get(
+            "asset_trajectory_latesudden", pd.Series(dtype=float)
         )
         out["late_sudden_phase"] = out.get("late_sudden_phase", pd.Series(dtype=object))
         return out
@@ -381,11 +383,11 @@ def late_sudden_misaligned_low_carbon_companies(
         g = g.sort_values("year").copy()
 
         years = g["year"].to_numpy()
-        baseline = g["company_trajectory_baseline"].to_numpy(dtype=float)
-        target = g["company_trajectory_target"].to_numpy(dtype=float)
-        activity = g["company_activity"].to_numpy(dtype=float)
+        baseline = g["asset_trajectory_baseline"].to_numpy(dtype=float)
+        target = g["asset_trajectory_target"].to_numpy(dtype=float)
+        activity = g["asset_activity"].to_numpy(dtype=float)
 
-        # Identify last GEM year (last non-NA company_activity)
+        # Identify last GEM year (last non-NA asset_activity)
         valid_idx = np.where(~np.isnan(activity))[0]
         if valid_idx.size > 0:
             y_last_gem = int(years[valid_idx.max()])
@@ -442,7 +444,7 @@ def late_sudden_misaligned_low_carbon_companies(
         ls = np.clip(ls, a_min=0.0, a_max=None)
 
         # Attach outputs
-        g["company_trajectory_latesudden"] = ls
+        g["asset_trajectory_latesudden"] = ls
         g["late_sudden_phase"] = phase
 
         return g
@@ -457,7 +459,7 @@ def late_sudden_misaligned_low_carbon_companies(
 
 
 def late_sudden_aligned_high_carbon_companies(
-    aligned_high_carbon_companies_trajectories: pd.DataFrame,
+    aligned_high_carbon_assets_trajectories: pd.DataFrame,
     shock_year: int,
     alignment_year: int,
 ) -> pd.DataFrame:
@@ -465,12 +467,12 @@ def late_sudden_aligned_high_carbon_companies(
     Build the Late & Sudden pathway for *aligned high-carbon* (decreasing) companies.
 
     Phases (per company_id x scenario_geography x sector x technology):
-      1) Forecast:    L&S = company_activity for years with available data (<= last GEM year);
+      1) Forecast:    L&S = asset_activity for years with available data (<= last GEM year);
                       if a value is missing inside that window, fall back to baseline.
-      2) BAU:         L&S = company_trajectory_baseline for (last_GEM_year, shock_year]
+      2) BAU:         L&S = asset_trajectory_baseline for (last_GEM_year, shock_year]
       3) Transition:  Linear interpolation from baseline(shock_year) to target(alignment_year)
                       for years y in [shock_year, alignment_year)
-      4) Alignment:   L&S = company_trajectory_target for y >= alignment_year
+      4) Alignment:   L&S = asset_trajectory_target for y >= alignment_year
 
     Parameters
     ----------
@@ -485,16 +487,16 @@ def late_sudden_aligned_high_carbon_companies(
     -------
     DataFrame
         Same rows as input with added columns:
-          - 'company_trajectory_latesudden'
+          - 'asset_trajectory_latesudden'
           - 'late_sudden_phase'
     """
 
-    companies_for_case = aligned_high_carbon_companies_trajectories.copy()
+    companies_for_case = aligned_high_carbon_assets_trajectories.copy()
 
     if companies_for_case.empty:
-        out = aligned_high_carbon_companies_trajectories.head(0).copy()
-        out["company_trajectory_latesudden"] = out.get(
-            "company_trajectory_latesudden", pd.Series(dtype=float)
+        out = aligned_high_carbon_assets_trajectories.head(0).copy()
+        out["asset_trajectory_latesudden"] = out.get(
+            "asset_trajectory_latesudden", pd.Series(dtype=float)
         )
         out["late_sudden_phase"] = out.get("late_sudden_phase", pd.Series(dtype=object))
         return out
@@ -506,11 +508,11 @@ def late_sudden_aligned_high_carbon_companies(
         g = g.sort_values("year").copy()
 
         years = g["year"].to_numpy()
-        baseline = g["company_trajectory_baseline"].to_numpy(dtype=float)
-        target = g["company_trajectory_target"].to_numpy(dtype=float)
-        activity = g["company_activity"].to_numpy(dtype=float)
+        baseline = g["asset_trajectory_baseline"].to_numpy(dtype=float)
+        target = g["asset_trajectory_target"].to_numpy(dtype=float)
+        activity = g["asset_activity"].to_numpy(dtype=float)
 
-        # Last GEM year = last non-NA company_activity
+        # Last GEM year = last non-NA asset_activity
         valid_idx = np.where(~np.isnan(activity))[0]
         if valid_idx.size > 0:
             y_last_gem = int(years[valid_idx.max()])
@@ -564,7 +566,7 @@ def late_sudden_aligned_high_carbon_companies(
         # Non-negativity safeguard
         ls = np.clip(ls, a_min=0.0, a_max=None)
 
-        g["company_trajectory_latesudden"] = ls
+        g["asset_trajectory_latesudden"] = ls
         g["late_sudden_phase"] = phase
         return g
 
@@ -578,7 +580,7 @@ def late_sudden_aligned_high_carbon_companies(
 
 
 def late_sudden_aligned_low_carbon_companies(
-    aligned_low_carbon_companies_trajectories: pd.DataFrame,
+    aligned_low_carbon_assets_trajectories: pd.DataFrame,
     shock_year: int,
     alignment_year: Union[int, None] = None,  # kept only for a uniform signature
 ) -> pd.DataFrame:
@@ -588,9 +590,9 @@ def late_sudden_aligned_low_carbon_companies(
     Phase logic (per company_id x geography x sector x technology)
     --------------------------------------------------------------
     1) **Forecast**   – years ≤ last GEM year
-         L&S = company_activity where available, else fallback to baseline.
+         L&S = asset_activity where available, else fallback to baseline.
     2) **BAU**        – (last GEM, shock_year]
-         L&S = company_trajectory_baseline.
+         L&S = asset_trajectory_baseline.
     3) **Aligned**    – years  > shock_year
          Let v0 = L&S(shock_year).
          For every subsequent year y :
@@ -610,12 +612,12 @@ def late_sudden_aligned_low_carbon_companies(
     DataFrame  – same rows as input with extra columns described above.
     """
 
-    subset = aligned_low_carbon_companies_trajectories.copy()
+    subset = aligned_low_carbon_assets_trajectories.copy()
 
     if subset.empty:
         # Return an empty frame with the expected columns
-        out = aligned_low_carbon_companies_trajectories.head(0).copy()
-        out["company_trajectory_latesudden"] = pd.Series(dtype=float)
+        out = aligned_low_carbon_assets_trajectories.head(0).copy()
+        out["asset_trajectory_latesudden"] = pd.Series(dtype=float)
         out["late_sudden_phase"] = pd.Series(dtype=object)
         return out
 
@@ -629,9 +631,9 @@ def late_sudden_aligned_low_carbon_companies(
         g = g.sort_values("year").copy()
 
         years = g["year"].to_numpy()
-        baseline = g["company_trajectory_baseline"].to_numpy(dtype=float)
-        target = g["company_trajectory_target"].to_numpy(dtype=float)
-        activity = g["company_activity"].to_numpy(dtype=float)
+        baseline = g["asset_trajectory_baseline"].to_numpy(dtype=float)
+        target = g["asset_trajectory_target"].to_numpy(dtype=float)
+        activity = g["asset_activity"].to_numpy(dtype=float)
 
         # last GEM year (last non-NA activity)
         valid_idx = np.where(~np.isnan(activity))[0]
@@ -686,7 +688,7 @@ def late_sudden_aligned_low_carbon_companies(
         # clip negatives (shouldn’t happen, but safe-guard)
         ls = np.clip(ls, a_min=0.0, a_max=None)
 
-        g["company_trajectory_latesudden"] = ls
+        g["asset_trajectory_latesudden"] = ls
         g["late_sudden_phase"] = phase
         return g
 
@@ -756,14 +758,16 @@ def concatenate_late_sudden_results(
         all_late_sudden = pd.DataFrame(
             columns=[
                 "company_id",
+                "company_name",
+                "asset_id",
                 "scenario_geography",
                 "sector",
                 "technology",
                 "year",
-                "company_activity",
-                "company_trajectory_baseline",
-                "company_trajectory_target",
-                "company_trajectory_latesudden",
+                "asset_activity",
+                "asset_trajectory_baseline",
+                "asset_trajectory_target",
+                "asset_trajectory_latesudden",
                 "late_sudden_phase",
                 "alignment_type",
             ]
