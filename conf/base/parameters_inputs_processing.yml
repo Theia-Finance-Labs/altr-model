@@ -4,9 +4,8 @@
 # Documentation for this file format can be found in "Parameters"
 # Link: https://docs.kedro.org/en/0.19.12/configuration/parameters.html
 
-
-baseline_scenario: "CO_CurPol"
-target_scenario: "EN_INDCi2030_500f"
+baseline_scenario: "AR6_WITCH 5.0_CO_CurPol"
+target_scenario: "AR6_WITCH 5.0_EN_NPi2020_500"
 max_forecast_horizon: 7
 
 

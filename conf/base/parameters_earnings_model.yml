@@ -10,6 +10,3 @@ earnings:
   include_corporate_tax: false
   include_depreciation_tax_shield: false
   # RFC: set both to true in future to use EBIT route with tax shield.
-
-# DCF parameters moved to parameters_valuation_model.yml to avoid duplication
-# RFC: if enabling taxes later, set use_after_tax_wacc=true in valuation model parameters.

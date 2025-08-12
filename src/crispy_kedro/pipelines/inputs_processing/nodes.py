@@ -19,6 +19,21 @@ def check_input_parameters(
 def filter_scenarios(
     scenarios_pathways: pd.DataFrame, target_scenario: str, baseline_scenario: str
 ) -> pd.DataFrame:
+    # Standardize scenario naming
+    # TODO: remove after integration of scenario data in DBT
+    scenarios_pathways["scenario"] = (
+        "AR6_"
+        + scenarios_pathways["scenario_provider"].astype(str).str.strip()
+        + "_"
+        + scenarios_pathways["scenario"].astype(str).str.strip()
+    )
+
+    assert (
+        target_scenario in scenarios_pathways.scenario.unique()
+    ), "Target scenario not found in scenarios pathways"
+    assert (
+        baseline_scenario in scenarios_pathways.scenario.unique()
+    ), "Baseline scenario not found in scenarios pathways"
 
     scenarios_pathways_filtered = scenarios_pathways.loc[
         scenarios_pathways.scenario.isin([target_scenario, baseline_scenario]), :
@@ -78,7 +93,9 @@ def filter_assets(
 
     # Check if we have any assets after filtering
     if filtered_assets_forecasts.empty:
-        raise ValueError("No assets remaining after filtering by year range and company ownership")
+        raise ValueError(
+            "No assets remaining after filtering by year range and company ownership"
+        )
 
     filtered_assets_forecasts = filtered_assets_forecasts.rename(
         {"production_year": "year"}, axis=1
@@ -317,76 +334,89 @@ def determine_assets_retirement_dates(
 def interpolate_scenarios_annually(scenarios_pathways: pd.DataFrame) -> pd.DataFrame:
     """
     Interpolate scenario data to fill missing years with linear interpolation.
-    
+
     This is a temporary fix to handle the fact that downloaded_scenarios.csv contains
     5-year interval data but the late_sudden trajectory algorithms expect annual data.
-    
+
     Args:
         scenarios_pathways: DataFrame with scenario data (potentially sparse years)
-        
+
     Returns:
         DataFrame with annually interpolated scenario data
     """
-    
+
     # Main grouping columns for interpolation (keeping it simple)
-    group_cols = ['scenario', 'scenario_type', 'scenario_geography', 'sector', 'technology']
-    
+    group_cols = [
+        "scenario",
+        "scenario_type",
+        "scenario_geography",
+        "sector",
+        "technology",
+    ]
+
     # Numeric columns that should be interpolated
-    numeric_cols = ['scenario_price', 'fuel_price', 'scenario_pathway', 'scenario_capacity_factor']
-    existing_numeric_cols = [col for col in numeric_cols if col in scenarios_pathways.columns]
-    
+    numeric_cols = [
+        "scenario_price",
+        "fuel_price",
+        "scenario_pathway",
+        "scenario_capacity_factor",
+    ]
+    existing_numeric_cols = [
+        col for col in numeric_cols if col in scenarios_pathways.columns
+    ]
+
     interpolated_scenarios = []
-    
+
     # Group by main identifiers and interpolate within each group
     for group_key, group_df in scenarios_pathways.groupby(group_cols, dropna=False):
-        group_df = group_df.sort_values('year').copy()
-        
+        group_df = group_df.sort_values("year").copy()
+
         # Get the year range for this group
-        min_year = int(group_df['year'].min())
-        max_year = int(group_df['year'].max())
-        
+        min_year = int(group_df["year"].min())
+        max_year = int(group_df["year"].max())
+
         # Create annual year range
         annual_years = list(range(min_year, max_year + 1))
-        
+
         # Create base template with first row's non-numeric values
         template_row = group_df.iloc[0].copy()
-        
+
         # Create rows for each year
         annual_data = []
         for year in annual_years:
             row = template_row.copy()
-            row['year'] = year
+            row["year"] = year
             annual_data.append(row)
-        
+
         annual_df = pd.DataFrame(annual_data)
-        
+
         # Merge with original data to get actual values where they exist
         merged_df = annual_df.merge(
-            group_df[group_cols + ['year'] + existing_numeric_cols], 
-            on=group_cols + ['year'], 
-            how='left',
-            suffixes=('', '_actual')
+            group_df[group_cols + ["year"] + existing_numeric_cols],
+            on=group_cols + ["year"],
+            how="left",
+            suffixes=("", "_actual"),
         )
-        
+
         # Replace interpolated numeric columns with actual values
         for col in existing_numeric_cols:
             actual_col = f"{col}_actual"
             if actual_col in merged_df.columns:
                 merged_df[col] = merged_df[actual_col]
                 merged_df.drop(columns=[actual_col], inplace=True)
-        
+
         # Interpolate missing values
         for col in existing_numeric_cols:
             if col in merged_df.columns:
-                merged_df[col] = pd.to_numeric(merged_df[col], errors='coerce')
-                merged_df[col] = merged_df[col].interpolate(method='linear')
-        
+                merged_df[col] = pd.to_numeric(merged_df[col], errors="coerce")
+                merged_df[col] = merged_df[col].interpolate(method="linear")
+
         interpolated_scenarios.append(merged_df)
-    
+
     # Combine all groups
     if interpolated_scenarios:
         result = pd.concat(interpolated_scenarios, ignore_index=True)
-        result['year'] = result['year'].astype(int)
+        result["year"] = result["year"].astype(int)
         return result
     else:
         return scenarios_pathways  # Return original if no interpolation was possible

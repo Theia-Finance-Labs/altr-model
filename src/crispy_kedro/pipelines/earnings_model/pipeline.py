@@ -29,19 +29,18 @@ def create_pipeline(**kwargs) -> Pipeline:
                 func=validate_and_standardize_inputs,
                 inputs={
                     "asset_level_staggered_shock": "asset_level_staggered_shock",
-                    "downloaded_scenarios": "downloaded_scenarios", 
+                    "downloaded_scenarios": "scenarios_pathways",
                     "all_alignment_classifications": "all_alignment_classifications",
                     "assets_data": "assets_data",
                 },
                 outputs={
                     "assets_validated": "_temp_assets_validated",
-                    "scenarios_validated": "_temp_scenarios_validated", 
+                    "scenarios_validated": "_temp_scenarios_validated",
                     "alignments_validated": "_temp_alignments_validated",
                     "assets_static_validated": "_temp_assets_static_validated",
                 },
                 name="validate_and_standardize_inputs_node",
             ),
-            
             # Node 2: Build scenario surfaces
             node(
                 func=build_scenario_surfaces,
@@ -49,7 +48,6 @@ def create_pipeline(**kwargs) -> Pipeline:
                 outputs="_temp_scenario_surfaces",
                 name="build_scenario_surfaces_node",
             ),
-            
             # Node 3: Normalize capacity growth to synthetic assets
             node(
                 func=normalize_capacity_growth_to_new_assets,
@@ -60,11 +58,10 @@ def create_pipeline(**kwargs) -> Pipeline:
                 outputs={
                     "assets_adjusted": "_temp_assets_adjusted",
                     "synthetic_tranche_log": "_temp_synthetic_tranche_log",
-                    "synthetic_asset_registry": "_temp_synthetic_asset_registry", 
+                    "synthetic_asset_registry": "_temp_synthetic_asset_registry",
                 },
                 name="normalize_capacity_growth_to_new_assets_node",
             ),
-            
             # Node 4: Assemble asset panel
             node(
                 func=assemble_asset_panel,
@@ -77,7 +74,6 @@ def create_pipeline(**kwargs) -> Pipeline:
                 outputs="_temp_asset_panel_enriched",
                 name="assemble_asset_panel_node",
             ),
-            
             # Node 5: Build tranche ledger per asset
             node(
                 func=build_tranche_ledger_per_asset,
@@ -85,7 +81,6 @@ def create_pipeline(**kwargs) -> Pipeline:
                 outputs="_temp_asset_tranche_ledger",
                 name="build_tranche_ledger_per_asset_node",
             ),
-            
             # Node 6: Retirement/replacement split per asset
             node(
                 func=retirement_replacement_split_per_asset,
@@ -96,7 +91,6 @@ def create_pipeline(**kwargs) -> Pipeline:
                 outputs="_temp_asset_retire_replace",
                 name="retirement_replacement_split_per_asset_node",
             ),
-            
             # Node 7: Compute CapEx and decommissioning (with switches)
             node(
                 func=compute_capex_and_decom,
@@ -109,7 +103,6 @@ def create_pipeline(**kwargs) -> Pipeline:
                 outputs="_temp_asset_capex_block",
                 name="compute_capex_and_decom_node",
             ),
-            
             # Node 8: Compute operations block
             node(
                 func=compute_ops_block,
@@ -120,7 +113,6 @@ def create_pipeline(**kwargs) -> Pipeline:
                 outputs="_temp_asset_ops_block",
                 name="compute_ops_block_node",
             ),
-            
             # Node 9: Compute FCFF
             node(
                 func=compute_fcff,
@@ -128,7 +120,6 @@ def create_pipeline(**kwargs) -> Pipeline:
                 outputs="_temp_asset_cashflows",
                 name="compute_fcff_node",
             ),
-            
             # Node 10: Write final asset earnings series
             node(
                 func=write_asset_earnings_series,
@@ -136,7 +127,6 @@ def create_pipeline(**kwargs) -> Pipeline:
                 outputs="asset_earnings",
                 name="write_asset_earnings_series_node",
             ),
-            
             # Node 11: Aggregate to company-technology level
             node(
                 func=aggregate_to_company_technology_earnings,
@@ -144,7 +134,6 @@ def create_pipeline(**kwargs) -> Pipeline:
                 outputs="company_technology_earnings",
                 name="aggregate_to_company_technology_earnings_node",
             ),
-            
             # Node 12: Aggregate to company level
             node(
                 func=aggregate_to_company_earnings,
