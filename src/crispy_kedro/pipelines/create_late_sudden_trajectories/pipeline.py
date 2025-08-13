@@ -36,7 +36,6 @@ def create_pipeline(**kwargs) -> Pipeline:
                 late_sudden_misaligned_high_carbon_companies,
                 inputs=dict(
                     misaligned_high_carbon_assets_trajectories="misaligned_high_carbon_assets_trajectories",
-                    assets_retirement_dates="assets_retirement_dates",
                     shock_year="params:shock_year",
                     alignment_year="params:alignment_year",
                 ),

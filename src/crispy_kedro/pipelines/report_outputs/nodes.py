@@ -357,43 +357,30 @@ def plot_assets_late_sudden_trajectories(
 
 def plot_staggered_shock(
     late_sudden_trajectories: pd.DataFrame,
-    assets_forecasts: pd.DataFrame,
+    assets_forecasts: pd.DataFrame,  # kept for pipeline signature, unused here
     asset_level_df: pd.DataFrame,
     output_dir: str = "data/08_reporting/companies_staggered_shock_plots",
     asset_after_col: str = "capacity_after_shock",
     asset_before_col: str = "capacity_before_shock",
-    include_before_sum: bool = True,
+    include_before_sum: bool = False,  # off by default now
     include_synthetic: bool = True,
     min_points_for_asset: int = 1,
     debug: bool = False,
 ):
     """
-    For each unique (scenario_geography, company_id, technology) in late_sudden_trajectories, save:
-      1) Company L&S trajectory vs. original asset forecasts vs. post-shock asset forecasts
-      2) Asset ages and shock absorption visualization
+    Produce, for each (scenario_geography, company_id, sector?, technology):
+      • Top plot: company late-sudden total vs. sum of asset late-sudden (post-stagger)
+      • Bottom plot: residual = company - sum(assets)
 
-    Notes
-    -----
-    - Uses 'scenario_geography' at all times (geo-aware).
-    - Shows original asset forecasts extended to the end of the time period
-    - Shows post-shock asset forecasts (asset-level late sudden)
-    - Shows company total shock late sudden trajectory
-    - Annotates assets with ages
-    - Shows bar plots of shock absorption/residual
-    - Can optionally include synthetic assets (is_synthetic==True) or drop them.
-    - Expects asset_level_df to include: ['asset_id','company_id','scenario_geography','technology','year',
-                                          'asset_age', asset_before_col, asset_after_col, 'is_synthetic', 'allocated_shock'].
+    Assumptions / required columns:
+      late_sudden_trajectories  → ['company_id','scenario_geography','technology','year','company_trajectory_latesudden']
+                                   optionally: ['sector','company_name','alignment_type']
+      asset_level_df            → ['asset_id','company_id','scenario_geography','technology','year',
+                                   'asset_age', asset_before_col, asset_after_col, 'allocated_shock', 'is_synthetic']
+                                   optionally: ['sector','late_sudden_phase']
     """
 
-    # Clean up existing directory if it exists
-    if os.path.exists(output_dir):
-        import shutil
-
-        shutil.rmtree(output_dir)
-        print(f"Cleaned up existing directory: {output_dir}")
-
-    os.makedirs(output_dir, exist_ok=True)
-
+    # ---- helpers ----
     def _clean(name: str) -> str:
         if pd.isna(name):
             return "Unknown"
@@ -402,103 +389,24 @@ def plot_staggered_shock(
         cleaned = re.sub(r"\s+", "_", cleaned)
         return cleaned[:120]
 
-    def _extend_original_forecasts(assets_forecasts, cid, geo, sector, tech, max_year):
-        """Extend original asset forecasts to the end of the time period"""
-        original_assets = assets_forecasts[
-            (assets_forecasts["company_id"] == cid)
-            & (assets_forecasts["scenario_geography"] == geo)
-            & (assets_forecasts["sector"] == sector)
-            & (assets_forecasts["technology"] == tech)
-        ].copy()
+    def _present_keys(df, base_keys):
+        return [k for k in base_keys if k in df.columns]
 
-        if original_assets.empty:
-            return pd.DataFrame()
-
-        # For each asset, extend capacity to max_year
-        extended_list = []
-        for asset_id, asset_data in original_assets.groupby("asset_id"):
-            asset_data = asset_data.sort_values("year")
-            last_capacity = asset_data["capacity"].iloc[-1]
-            last_year = int(asset_data["year"].max())
-            last_age = (
-                asset_data["asset_age"].iloc[-1]
-                if "asset_age" in asset_data.columns
-                else 0
-            )
-
-            # Create extended years
-            if last_year < max_year:
-                extended_years = range(last_year + 1, int(max_year) + 1)
-                for i, year in enumerate(extended_years):
-                    extended_row = asset_data.iloc[-1].copy()
-                    extended_row["year"] = year
-                    extended_row["capacity"] = last_capacity  # Keep constant capacity
-                    if "asset_age" in extended_row:
-                        extended_row["asset_age"] = last_age + i + 1
-                    extended_list.append(extended_row)
-
-            # Add original data
-            extended_list.extend([row for _, row in asset_data.iterrows()])
-
-        if extended_list:
-            return pd.DataFrame(extended_list).sort_values(["asset_id", "year"])
-        return pd.DataFrame()
-
-    def _calculate_shock_residuals(late_sudden_traj, asset_level_data, years):
-        """Calculate shock residuals for bar plot visualization"""
-        residuals = []
-
-        for year in years:
-            # Company shock for this year
-            company_shock_data = late_sudden_traj[late_sudden_traj["year"] == year]
-            if company_shock_data.empty:
-                residuals.append(0.0)
-                continue
-
-            # Get company trajectory value and previous year to calculate shock
-            company_val = company_shock_data["company_trajectory_latesudden"].iloc[0]
-            prev_year_data = late_sudden_traj[late_sudden_traj["year"] == year - 1]
-            if not prev_year_data.empty:
-                prev_val = prev_year_data["company_trajectory_latesudden"].iloc[0]
-                company_shock = company_val - prev_val
-            else:
-                company_shock = 0.0
-
-            # Sum of allocated shock to assets for this year
-            asset_year_data = asset_level_data[asset_level_data["year"] == year]
-            if "allocated_shock" in asset_year_data.columns:
-                allocated_shock = asset_year_data["allocated_shock"].sum()
-            else:
-                allocated_shock = 0.0
-
-            # Residual = company shock - allocated shock
-            residual = company_shock - allocated_shock
-            residuals.append(residual)
-
-        return residuals
-
-    # add company_name if missing (best-effort)
-    traj = late_sudden_trajectories.copy()
-    if "company_name" not in traj.columns:
-        traj = traj.merge(
-            assets_forecasts[["company_id", "company_name"]].drop_duplicates(),
-            on="company_id",
-            how="left",
-        )
-
-    # guarantee required cols exist
-    needed_traj = {
-        "scenario_geography",
+    # ---- checks ----
+    need_comp = {
         "company_id",
+        "scenario_geography",
         "technology",
         "year",
         "company_trajectory_latesudden",
     }
-    missing_t = needed_traj - set(traj.columns)
-    if missing_t:
-        raise KeyError(f"late_sudden_trajectories missing columns: {missing_t}")
+    miss_comp = need_comp - set(late_sudden_trajectories.columns)
+    if miss_comp:
+        raise KeyError(
+            f"late_sudden_trajectories missing required columns: {miss_comp}"
+        )
 
-    needed_assets = {
+    need_asset = {
         "asset_id",
         "company_id",
         "scenario_geography",
@@ -508,277 +416,218 @@ def plot_staggered_shock(
         asset_before_col,
         asset_after_col,
     }
-    missing_a = needed_assets - set(asset_level_df.columns)
-    if missing_a:
-        raise KeyError(f"asset_level_df missing columns: {missing_a}")
+    miss_asset = need_asset - set(asset_level_df.columns)
+    if miss_asset:
+        raise KeyError(f"asset_level_df missing required columns: {miss_asset}")
 
-    # group by alignment type for folder structure (if present)
-    if "alignment_type" in traj.columns:
-        groups = traj.groupby("alignment_type")
+    # Add company_name best-effort if missing
+    comp_df = late_sudden_trajectories.copy()
+    if "company_name" not in comp_df.columns:
+        if "company_name" in asset_level_df.columns:
+            comp_df = comp_df.merge(
+                asset_level_df[["company_id", "company_name"]].drop_duplicates(),
+                on="company_id",
+                how="left",
+            )
+
+    # Prepare output directory
+    if os.path.exists(output_dir):
+        import shutil
+
+        shutil.rmtree(output_dir)
+        print(f"Cleaned up existing directory: {output_dir}")
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Grouping keys (sector is optional but recommended)
+    base_keys = ["scenario_geography", "company_id", "sector", "technology"]
+    comp_keys = _present_keys(comp_df, base_keys)
+    aset_keys = _present_keys(asset_level_df, base_keys)
+    if comp_keys != aset_keys:
+        # Harmonize: use intersection to avoid mismatches
+        keys = [k for k in base_keys if k in comp_keys and k in aset_keys]
     else:
-        groups = [("general", traj)]
+        keys = comp_keys
 
-    for alignment_type, df_align in groups:
+    # For folder organization
+    align_present = "alignment_type" in comp_df.columns
+    align_groups = (
+        comp_df.groupby("alignment_type") if align_present else [("general", comp_df)]
+    )
+
+    total_plots = 0
+    for alignment_type, comp_align in align_groups:
         subdir = os.path.join(output_dir, str(alignment_type))
         os.makedirs(subdir, exist_ok=True)
 
-        combos = (
-            df_align[["scenario_geography", "company_id", "technology", "company_name"]]
-            .drop_duplicates()
-            .sort_values(["scenario_geography", "company_id", "technology"])
-        )
+        combos = comp_align[keys + ["company_name"]].drop_duplicates().sort_values(keys)
 
-        for _, row in combos.iterrows():
-            geo = row["scenario_geography"]
-            cid = row["company_id"]
-            tech = row["technology"]
-            comp_name = row.get("company_name", np.nan)
+        for _, combo in combos.iterrows():
+            filt = dict(combo[keys])
+            comp_g = comp_align.copy()
+            for k, v in filt.items():
+                comp_g = comp_g[comp_g[k] == v]
 
-            # company-level
-            comp = (
-                df_align[
-                    (df_align["scenario_geography"] == geo)
-                    & (df_align["company_id"] == cid)
-                    & (df_align["technology"] == tech)
-                ]
-                .sort_values("year")
-                .copy()
-            )
-            if comp.empty:
+            if comp_g.empty:
                 continue
 
-            years = comp["year"].to_numpy(dtype=int)
-            company_vals = comp["company_trajectory_latesudden"].to_numpy(dtype=float)
-            max_year = max(years)
+            # sort by year
+            comp_g = comp_g.sort_values("year")
+            years = comp_g["year"].to_numpy(dtype=int)
+            company_vals = comp_g["company_trajectory_latesudden"].to_numpy(dtype=float)
 
-            # asset-level (filter geo-aware, optionally drop synthetic)
-            aset = asset_level_df[
-                (asset_level_df["scenario_geography"] == geo)
-                & (asset_level_df["company_id"] == cid)
-                & (asset_level_df["technology"] == tech)
-            ].copy()
-            if not include_synthetic and "is_synthetic" in aset.columns:
-                aset = aset[~aset["is_synthetic"].fillna(False)].copy()
+            # asset slice (post-staggered)
+            aset_g = asset_level_df.copy()
+            for k, v in filt.items():
+                aset_g = aset_g[aset_g[k] == v]
 
-            # Get extended original forecasts
-            orig_forecasts = _extend_original_forecasts(
-                assets_forecasts,
-                cid,
-                geo,
-                tech,
-                tech,
-                max_year,
+            if not include_synthetic and "is_synthetic" in aset_g.columns:
+                aset_g = aset_g[~aset_g["is_synthetic"].fillna(False)]
+
+            # Aggregate by year (post-stagger)
+            aset_year = (
+                aset_g.groupby("year", as_index=False)
+                .agg(
+                    total_after=(asset_after_col, "sum"),
+                    total_before=(asset_before_col, "sum"),
+                )
+                .sort_values("year")
             )
 
-            # Create the plot with subplots: main plot + bar plot
-            fig = plt.figure(figsize=(14, 10))
-            gs = gridspec.GridSpec(2, 1, height_ratios=[3, 1], hspace=0.3)
+            # Build aligned series over company years
+            aset_after_series = (
+                aset_year.set_index("year")["total_after"]
+                .reindex(years, fill_value=0.0)
+                .to_numpy(dtype=float)
+            )
+            aset_before_series = (
+                aset_year.set_index("year")["total_before"]
+                .reindex(years, fill_value=0.0)
+                .to_numpy(dtype=float)
+            )
 
-            # Main trajectory plot
+            # Residual (company - assets_sum_after)
+            residual = (company_vals - aset_after_series).tolist()
+
+            # Plot
+            import matplotlib.pyplot as plt
+            import matplotlib.gridspec as gridspec
+
+            fig = plt.figure(figsize=(12, 8))
+            gs = gridspec.GridSpec(2, 1, height_ratios=[3, 1], hspace=0.28)
+
             ax1 = fig.add_subplot(gs[0])
 
-            # Company L&S trajectory
+            ax1.plot(years, company_vals, lw=3.0, label="Company L&S", alpha=0.9)
             ax1.plot(
                 years,
-                company_vals,
-                lw=3.0,
-                label="Company L&S Trajectory",
-                color="red",
+                aset_after_series,
+                lw=2.5,
+                linestyle="--",
+                label="Σ Assets (post-stagger)",
+                alpha=0.9,
+            )
+
+            if include_before_sum:
+                ax1.plot(
+                    years,
+                    aset_before_series,
+                    lw=1.5,
+                    linestyle=":",
+                    label="Σ Assets (before)",
+                    alpha=0.8,
+                )
+
+            # Optional: draw individual asset curves (post-stagger) lightly
+            # (kept lightweight; disable by setting min_points_for_asset > large number)
+            colors = plt.cm.tab20(np.linspace(0, 1, 20))
+            color_idx = 0
+            for aid, df_a in (
+                aset_g[["asset_id", "year", "asset_age", asset_after_col]]
+                .dropna(subset=["year"])
+                .groupby("asset_id")
+            ):
+                df_a = df_a.sort_values("year")
+                if len(df_a) < min_points_for_asset:
+                    continue
+                c = colors[color_idx % len(colors)]
+                ax1.plot(
+                    df_a["year"].to_numpy(dtype=int),
+                    df_a[asset_after_col].to_numpy(dtype=float),
+                    lw=1.0,
+                    alpha=0.45,
+                    color=c,
+                )
+                color_idx += 1
+
+            # Titles & labels
+            title_bits = []
+            for k in ["technology", "scenario_geography"] + (
+                ["sector"] if "sector" in keys else []
+            ):
+                if k in combo:
+                    title_bits.append(str(combo[k]))
+            title_name = combo.get("company_name", np.nan)
+            title_company = (
+                title_name
+                if pd.notna(title_name)
+                else combo.get("company_id", "Unknown")
+            )
+
+            ax1.set_title(" • ".join(title_bits) + f" • {title_company}")
+            ax1.set_xlabel("Year")
+            ax1.set_ylabel("Activity")
+            ax1.legend(loc="upper left")
+
+            # Residual panel
+            ax2 = fig.add_subplot(gs[1])
+            bar_width = 0.7
+            pos = [max(0.0, r) for r in residual]
+            neg = [min(0.0, r) for r in residual]
+            ax2.bar(
+                years,
+                pos,
+                bar_width,
+                label="Company > Assets (under-allocation)",
                 alpha=0.8,
             )
-
-            if not aset.empty:
-                # aggregate sums for post-shock
-                aset_year = (
-                    aset.groupby("year", as_index=False)
-                    .agg(
-                        total_after=(asset_after_col, "sum"),
-                        total_before=(asset_before_col, "sum"),
-                    )
-                    .sort_values("year")
-                )
-
-                # Sum of assets after shock
-                ax1.plot(
-                    aset_year["year"].to_numpy(dtype=int),
-                    aset_year["total_after"].to_numpy(dtype=float),
-                    lw=2.5,
-                    linestyle="--",
-                    label="Sum of assets (post-shock)",
-                    color="blue",
-                    alpha=0.8,
-                )
-
-                # Individual asset lines (post-shock) with age annotations
-                colors = plt.cm.tab10(np.linspace(0, 1, 10))
-                color_idx = 0
-                for aid, df_a in (
-                    aset[["asset_id", "year", "asset_age", asset_after_col]]
-                    .dropna(subset=["year"])
-                    .groupby("asset_id")
-                ):
-                    df_a = df_a.sort_values("year")
-                    if len(df_a) < min_points_for_asset:
-                        continue
-
-                    color = colors[color_idx % len(colors)]
-                    ax1.plot(
-                        df_a["year"].to_numpy(dtype=int),
-                        df_a[asset_after_col].to_numpy(dtype=float),
-                        lw=1.5,
-                        alpha=0.7,
-                        label=f"Asset {aid} (post-shock)",
-                        color=color,
-                    )
-
-                    # Annotate age at first plotted year
-                    try:
-                        y0 = int(df_a["year"].iloc[0])
-                        a0 = float(df_a["asset_age"].iloc[0])
-                        v0 = float(df_a[asset_after_col].iloc[0])
-                        ax1.text(
-                            y0,
-                            v0,
-                            f"age≈{int(round(a0))}",
-                            fontsize=8,
-                            va="bottom",
-                            ha="left",
-                            alpha=0.8,
-                            color=color,
-                            weight="bold",
-                        )
-                    except Exception:
-                        pass
-                    color_idx += 1
-
-            # Original asset forecasts
-            if not orig_forecasts.empty:
-                orig_year = (
-                    orig_forecasts.groupby("year", as_index=False)
-                    .agg(total_orig=("capacity", "sum"))
-                    .sort_values("year")
-                )
-
-                ax1.plot(
-                    orig_year["year"].to_numpy(dtype=int),
-                    orig_year["total_orig"].to_numpy(dtype=float),
-                    lw=2.0,
-                    linestyle=":",
-                    label="Sum of assets (original forecasts)",
-                    color="green",
-                    alpha=0.8,
-                )
-
-                # Individual original asset lines (lighter)
-                for aid, df_orig in orig_forecasts.groupby("asset_id"):
-                    df_orig = df_orig.sort_values("year")
-                    if len(df_orig) < min_points_for_asset:
-                        continue
-                    ax1.plot(
-                        df_orig["year"].to_numpy(dtype=int),
-                        df_orig["capacity"].to_numpy(dtype=float),
-                        lw=1.0,
-                        alpha=0.4,
-                        color="green",
-                    )
-
-            ax1.set_xlabel("Year")
-            ax1.set_ylabel("Production / Capacity")
-            title_name = comp_name if pd.notna(comp_name) else cid
-            ax1.set_title(
-                f"{tech} • {geo} • {title_name}\nTrajectories Comparison | Alignment: {alignment_type}"
+            ax2.bar(
+                years,
+                neg,
+                bar_width,
+                label="Company < Assets (over-allocation)",
+                alpha=0.8,
             )
-
-            # Legend management
-            handles, labels = ax1.get_legend_handles_labels()
-            max_legend = 15
-            if len(labels) > max_legend:
-                # Keep main trajectories + collapse asset entries
-                kept = []
-                kept_labels = []
-                asset_count = 0
-                for h, lab in zip(handles, labels):
-                    if "Asset " in lab and "(post-shock)" in lab:
-                        asset_count += 1
-                        continue
-                    kept.append(h)
-                    kept_labels.append(lab)
-                if asset_count > 0:
-                    kept_labels.append(f"{asset_count} individual assets (post-shock)")
-                ax1.legend(
-                    kept, kept_labels, bbox_to_anchor=(1.05, 1), loc="upper left"
-                )
-            else:
-                ax1.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
-
-            # Shock absorption bar plot
-            ax2 = fig.add_subplot(gs[1])
-
-            if not aset.empty and "allocated_shock" in aset.columns:
-                residuals = _calculate_shock_residuals(comp, aset, years)
-
-                # Create bars, with positive and negative values in different colors
-                pos_residuals = [max(0, r) for r in residuals]
-                neg_residuals = [min(0, r) for r in residuals]
-
-                bar_width = 0.6
-                ax2.bar(
-                    years,
-                    pos_residuals,
-                    bar_width,
-                    label="Unabsorbed shock",
-                    color="orange",
-                    alpha=0.7,
-                )
-                ax2.bar(
-                    years,
-                    neg_residuals,
-                    bar_width,
-                    label="Over-absorbed shock",
-                    color="purple",
-                    alpha=0.7,
-                )
-
-                ax2.axhline(0, linestyle="-", color="black", alpha=0.3)
-                ax2.set_xlabel("Year")
-                ax2.set_ylabel("Shock Residual")
-                ax2.set_title("Shock Absorption Analysis")
-                ax2.legend()
-
-                # Add text annotations for non-zero residuals
-                for year, residual in zip(years, residuals):
-                    if abs(residual) > 1e-6:  # Only annotate significant residuals
+            ax2.axhline(0.0, color="black", lw=1.0, alpha=0.4)
+            ax2.set_xlabel("Year")
+            ax2.set_ylabel("Residual")
+            ax2.legend(loc="upper left")
+            if debug:
+                # annotate non-negligible residuals
+                for y, r in zip(years, residual):
+                    if abs(r) > 1e-8:
                         ax2.text(
-                            year,
-                            residual,
-                            f"{residual:.2e}",
+                            y,
+                            r,
+                            f"{r:.2e}",
                             ha="center",
-                            va="bottom" if residual > 0 else "top",
+                            va="bottom" if r > 0 else "top",
                             fontsize=8,
-                            alpha=0.8,
+                            alpha=0.75,
                         )
-            else:
-                ax2.text(
-                    0.5,
-                    0.5,
-                    "No shock allocation data available",
-                    transform=ax2.transAxes,
-                    ha="center",
-                    va="center",
-                    fontsize=12,
-                    alpha=0.6,
-                )
-                ax2.set_xlim(years[0], years[-1])
 
-            # plt.tight_layout()
+            # Save
+            tech = combo.get("technology", "tech")
+            geo = combo.get("scenario_geography", "geo")
+            sector = combo.get("sector", None)
             tech_clean = _clean(tech)
             geo_clean = _clean(geo)
-            comp_clean = _clean(title_name)
+            comp_clean = _clean(title_company)
+            sector_part = f"-{_clean(sector)}" if sector is not None else ""
             save_path = os.path.join(
-                subdir, f"{tech_clean}-{comp_clean}-{geo_clean}.png"
+                subdir, f"{tech_clean}{sector_part}-{comp_clean}-{geo_clean}.png"
             )
             plt.savefig(save_path, dpi=300, bbox_inches="tight")
             plt.close()
-            print(f"Saved plot: {save_path}")
+            total_plots += 1
 
-    print(f"All plots saved under {output_dir}")
+    print(f"Saved {total_plots} plot(s) under {output_dir}")
