@@ -416,11 +416,11 @@ def plot_staggered_shock(
         if original_assets.empty:
             return pd.DataFrame()
 
-        # For each asset, extend capacity to max_year
+        # For each asset, extend asset_activity to max_year
         extended_list = []
         for asset_id, asset_data in original_assets.groupby("asset_id"):
             asset_data = asset_data.sort_values("year")
-            last_capacity = asset_data["capacity"].iloc[-1]
+            last_capacity = asset_data["asset_activity"].iloc[-1]
             last_year = int(asset_data["year"].max())
             last_age = (
                 asset_data["asset_age"].iloc[-1]
@@ -434,7 +434,9 @@ def plot_staggered_shock(
                 for i, year in enumerate(extended_years):
                     extended_row = asset_data.iloc[-1].copy()
                     extended_row["year"] = year
-                    extended_row["capacity"] = last_capacity  # Keep constant capacity
+                    extended_row["asset_activity"] = (
+                        last_capacity  # Keep constant asset_activity
+                    )
                     if "asset_age" in extended_row:
                         extended_row["asset_age"] = last_age + i + 1
                     extended_list.append(extended_row)
@@ -691,7 +693,7 @@ def plot_staggered_shock(
             if not orig_forecasts.empty:
                 orig_year = (
                     orig_forecasts.groupby("year", as_index=False)
-                    .agg(total_orig=("capacity", "sum"))
+                    .agg(total_orig=("asset_activity", "sum"))
                     .sort_values("year")
                 )
 
@@ -714,7 +716,7 @@ def plot_staggered_shock(
                             continue
                         ax1.plot(
                             df_orig["year"].to_numpy(dtype=int),
-                            df_orig["capacity"].to_numpy(dtype=float),
+                            df_orig["asset_activity"].to_numpy(dtype=float),
                             lw=1.0,
                             alpha=0.4,
                             color="green",
@@ -725,7 +727,7 @@ def plot_staggered_shock(
 
             ax1.set_xlabel("Year")
             ax1.set_ylabel(
-                "Production / Capacity" + (" (log scale)" if use_log_scale else "")
+                "Production / Activity" + (" (log scale)" if use_log_scale else "")
             )
             title_name = comp_name if pd.notna(comp_name) else cid
             ax1.set_title(
@@ -780,7 +782,7 @@ def plot_staggered_shock(
                         candidates.append(orig_year["total_orig"].to_numpy(dtype=float))
                     if not orig_forecasts.empty:
                         candidates.append(
-                            orig_forecasts["capacity"].to_numpy(dtype=float)
+                            orig_forecasts["asset_activity"].to_numpy(dtype=float)
                         )
                     all_vals = (
                         np.concatenate([c for c in candidates if c is not None])
@@ -875,7 +877,7 @@ def plot_staggered_shock(
                         candidates.append(orig_year["total_orig"].to_numpy(dtype=float))
                     if not orig_forecasts.empty:
                         candidates.append(
-                            orig_forecasts["capacity"].to_numpy(dtype=float)
+                            orig_forecasts["asset_activity"].to_numpy(dtype=float)
                         )
                     all_vals = (
                         np.concatenate([c for c in candidates if c is not None])
