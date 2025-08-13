@@ -370,11 +370,14 @@ def stagger_decreasing_technologies(
             ages_y = sub.set_index("asset_id")["asset_age"].astype(float)
 
             # -------- Determine 'before' (the base we modify this year)
-            if i == 0:
-                # first year: anchor on forecast/BAU
+            if y < int(shock_year):
+                # Before shock year: always use BAU-filled forecast values
+                before = sub.set_index("asset_id")["asset_activity"].astype(float)
+            elif i == 0:
+                # First year at/after shock: anchor on forecast/BAU
                 before = sub.set_index("asset_id")["asset_activity"].astype(float)
             else:
-                # after first year, ALWAYS chain from last year's after (no forecast reset!)
+                # After first year at/after shock: chain from last year's after (modified values)
                 # include any new assets appearing with 0 base so they don't create oscillations
                 idx = sorted(set(prev_after_by_asset.keys()) | set(sub["asset_id"]))
                 before = pd.Series(
