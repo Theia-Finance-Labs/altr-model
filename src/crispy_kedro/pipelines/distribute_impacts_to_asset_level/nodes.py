@@ -1,1012 +1,790 @@
-import pandas as pd
 import numpy as np
-import warnings
+import pandas as pd
+from typing import Dict, Tuple, List
 from tqdm import tqdm
 
-# ============================ helpers ============================
+
+# =========================================================
+# ==================== Common helpers =====================
+# =========================================================
+
+GROUP_COLS = ["company_id", "scenario_geography", "sector", "technology"]
+
+
+def _ensure_int_year(s: pd.Series) -> pd.Series:
+    return s.fillna(0).astype(int)
 
 
 def _compute_g_weights(
     ages: pd.Series,
     k: float,
-    min_active_share: float,
     n_quantiles: int,
-    for_decreasing: bool = True,
+    for_decreasing: bool,
+    min_active_share: float = 1e-12,
 ) -> pd.Series:
-    """Compute logistic-sum g(a) weights, clip and normalize.
-
-    Args:
-        ages: Asset ages
-        k: Steepness parameter for logistic function
-        min_active_share: Minimum weight for any asset
-        n_quantiles: Number of quantiles to use for age thresholds
-        for_decreasing: If True, older assets get higher weights (for decreasing tech).
-                       If False, younger assets get higher weights (for increasing tech).
     """
-    if ages.empty:
-        return pd.Series(dtype=float)
+    Logistic-sum g(a) per your spec. We invert sign for decreasing (older favored).
+    Then shift to positive, clip by min_active_share, and normalize to sum=1.
+    """
     ages = ages.astype(float)
-    med = float(ages.median()) if np.isfinite(ages.median()) else 0.0
-    filled = ages.fillna(med)
-    qs = np.linspace(0, 1, n_quantiles + 1)[1:-1]
-    age_q = np.quantile(filled, qs) if len(qs) else []
+    if ages.empty:
+        return pd.Series(dtype=float, index=ages.index)
 
-    def g(a):
-        a = med if pd.isna(a) else a
-        base_weight = 1 - sum(1 / (1 + np.exp(-k * (a - q))) for q in age_q)
-        # For decreasing tech: older assets should get higher weights, so invert
-        # For increasing tech: younger assets should get higher weights, so keep original
-        return -base_weight if for_decreasing else base_weight
+    qs = np.linspace(0, 1, n_quantiles + 1)[1:-1]  # exclude 0 and 1
+    cuts = np.quantile(ages.values, qs) if len(qs) else np.array([])
 
-    raw = filled.map(g)
-    clipped = raw.clip(lower=min_active_share)
-    s = clipped.sum()
-    if not np.isfinite(s) or s <= min_active_share:
-        return pd.Series(1.0 / len(clipped), index=clipped.index)
-    return clipped / s
+    def base(a):
+        if cuts.size == 0:
+            return 1.0
+        return 1.0 - np.sum(1.0 / (1.0 + np.exp(-k * (a - cuts))))
 
+    raw = ages.map(base)
+    if for_decreasing:
+        raw = -raw  # older => higher
 
-def _infer_age_ffill(df: pd.DataFrame) -> pd.Series:
-    """Forward-fill asset_age, inferring by year increments where needed."""
-    years = df["year"].values
-    ages = df["asset_age"].values.astype(float)
-    out = np.full_like(ages, np.nan, dtype=float)
-    last_age, last_year = np.nan, None
-    for i, (y, a) in enumerate(zip(years, ages)):
-        if np.isfinite(a):
-            out[i], last_age, last_year = a, a, y
-        elif np.isfinite(last_age):
-            out[i], last_year = last_age + (y - last_year), y
-        else:
-            out[i] = np.nan
-    return pd.Series(out, index=df.index).ffill().fillna(0.0)
+    raw = raw - raw.min() + min_active_share
+    s = raw.sum()
+    if not np.isfinite(s) or s <= 0:
+        return pd.Series(1.0 / len(raw), index=ages.index)
+    return raw / s
 
 
-def _build_asset_panel_full_horizon(
+def _index_company_by_year(
+    df_company: pd.DataFrame,
+) -> Dict[Tuple[str, str, str, str], pd.DataFrame]:
+    return {
+        k: g.sort_values("year").set_index("year")
+        for k, g in df_company.groupby(GROUP_COLS, sort=False)
+    }
+
+
+def _build_retirement_map(
+    assets_retirement_dates: pd.DataFrame,
+) -> Dict[Tuple[str, str, str, str], Dict[str, int]]:
+    """
+    Returns: { (cid, geo, sector, tech): {asset_id: retirement_year_int, ...}, ... }
+    Full retirement: capacity must be 0 for y >= retirement_year.
+    """
+    if assets_retirement_dates is None or assets_retirement_dates.empty:
+        return {}
+
+    need_cols = GROUP_COLS + ["asset_id", "retirement_year"]
+    miss = [c for c in need_cols if c not in assets_retirement_dates.columns]
+    if miss:
+        raise ValueError(f"assets_retirement_dates missing columns: {miss}")
+
+    ret_map: Dict[Tuple[str, str, str, str], Dict[str, int]] = {}
+    tmp = assets_retirement_dates[need_cols].copy()
+    tmp["retirement_year"] = _ensure_int_year(tmp["retirement_year"])
+
+    for key, sub in tmp.groupby(GROUP_COLS, sort=False):
+        r = dict(zip(sub["asset_id"].astype(str), sub["retirement_year"].astype(int)))
+        ret_map[key] = r
+    return ret_map
+
+
+def _emit_rows(
+    key: Tuple[str, str, str, str],
+    year: int,
+    before: pd.Series,
+    alloc: pd.Series,
+    ages: pd.Series,
+    synthetic_mask: pd.Series = None,
+    late_sudden_phase: pd.Series = None,
+) -> pd.DataFrame:
+    after = before.add(alloc, fill_value=0.0)
+    if synthetic_mask is None:
+        synthetic_mask = pd.Series(False, index=before.index)
+    if late_sudden_phase is None:
+        late_sudden_phase = pd.Series("", index=before.index)
+
+    out = pd.DataFrame(
+        {
+            "asset_id": before.index,
+            "company_id": key[0],
+            "scenario_geography": key[1],
+            "sector": key[2],
+            "technology": key[3],
+            "year": int(year),
+            "asset_age": ages.reindex(before.index).astype(float).values,
+            "capacity_before_shock": before.values.astype(float),
+            "allocated_shock": alloc.reindex(before.index)
+            .fillna(0.0)
+            .values.astype(float),
+            "capacity_after_shock": after.reindex(before.index)
+            .fillna(0.0)
+            .values.astype(float),
+            "is_synthetic": synthetic_mask.reindex(before.index)
+            .fillna(False)
+            .astype(bool)
+            .values,
+            "late_sudden_phase": late_sudden_phase.reindex(before.index)
+            .fillna("")
+            .astype(str)
+            .values,
+        }
+    )
+    # numeric hygiene
+    out["capacity_after_shock"] = np.maximum(out["capacity_after_shock"], 0.0)
+    return out
+
+
+def _bau_fill_assets_until_shock(
+    lsc: pd.DataFrame,
     assets: pd.DataFrame,
-    cid: str,
-    geo: str,
-    sector: str,
-    tech: str,
-    min_year: int,
-    max_year: int,
+    shock_year: int,
 ) -> pd.DataFrame:
     """
-    Build expanding panel from min_year..max_year:
-      - asset appears from its first observed year onward (no pre-birth zeros)
-      - capacity uses actual forecast values (no forward-filling)
-      - age forward-fills / inferred linearly
-    Returns: ['asset_id','company_id','scenario_geography','sector','technology','year','capacity','asset_age']
+    Step 2 (BAU extrapolation): for each (company, geo, sector, tech, asset_id),
+    find y0 = last year <= shock_year where asset_activity is not NA (GEM or forecast),
+    and fill NA years in (y0, shock_year] using business-as-usual scaling:
+        asset_activity[y] = asset_activity[y0] * (company_baseline[y] / company_baseline[y0]).
+
+    From the shock year onward (y > shock_year), fill NA values with a constant equal to the
+    shock-year level (or the last available level <= shock_year if shock year row is absent).
+
+    - Uses lsc['company_trajectory_baseline'] for the baseline.
+    - Rows are filled the entire way to the end of the forecast.
+    - Returns a copy of `assets` with asset_activity filled.
     """
-    cols = [
-        "asset_id",
-        "company_id",
-        "scenario_geography",
-        "sector",
-        "technology",
-        "year",
-        "capacity",
-        "asset_age",
-    ]
-    pool = assets.loc[
-        (assets["company_id"] == cid)
-        & (assets["scenario_geography"] == geo)
-        & (assets["sector"] == sector)
-        & (assets["technology"] == tech),
-        cols,
-    ].copy()
-    if pool.empty:
-        return pd.DataFrame(columns=cols)
+    if assets.empty:
+        return assets.copy()
 
-    pool["year"] = pool["year"].astype(int)
+    # Need baseline per (key, year)
+    base_cols = GROUP_COLS + ["year", "company_trajectory_baseline"]
+    missing = [c for c in base_cols if c not in lsc.columns]
+    if missing:
+        raise ValueError(
+            f"late_sudden_trajectories missing columns for BAU fill: {missing}"
+        )
 
-    # For the staggered shock mechanism, we only want years where we have actual forecast data
-    # Don't create artificial years beyond the forecast horizon
-    years_with_data = sorted(pool["year"].unique())
-    available_years = [y for y in range(min_year, max_year + 1) if y in years_with_data]
+    comp_base = (
+        lsc[base_cols]
+        .drop_duplicates(GROUP_COLS + ["year"])
+        .rename(columns={"company_trajectory_baseline": "_company_baseline"})
+    )
 
-    if not available_years:
-        return pd.DataFrame(columns=cols)
+    out = assets.copy()
+    out["year"] = _ensure_int_year(out["year"])
+    out = out.merge(comp_base, on=GROUP_COLS + ["year"], how="left")
 
-    # Filter pool to only include the requested year range
-    pool = pool[pool["year"].isin(available_years)].copy()
+    # Group by key + asset
+    gcols = GROUP_COLS + ["asset_id"]
+    out.sort_values(gcols + ["year"], inplace=True)
 
-    # Get asset metadata
-    meta = pool[
-        ["asset_id", "company_id", "scenario_geography", "sector", "technology"]
-    ].drop_duplicates()
+    def _fill_one(group: pd.DataFrame) -> pd.DataFrame:
+        mask_pre = group["year"] <= int(shock_year)
+        mask_post = group["year"] > int(shock_year)
+        if not (mask_pre.any() or mask_post.any()):
+            return group
 
-    # Use actual data without forward-filling capacity
-    panel = pool.copy()
+        # PRE-SHOCK: BAU scaling from last known <= shock_year
+        gpre = group.loc[mask_pre].copy()
+        if not gpre.empty:
+            notna_pre = ~gpre["asset_activity"].isna()
+            if notna_pre.any():
+                idx0 = gpre.index[notna_pre][-1]  # last non-NA row index <= shock
+                y0 = int(group.at[idx0, "year"])
+                v0 = float(group.at[idx0, "asset_activity"])  # anchor level
+                B0 = (
+                    float(group.at[idx0, "_company_baseline"])
+                    if pd.notna(group.at[idx0, "_company_baseline"])
+                    else np.nan
+                )
+                if not np.isfinite(B0) or B0 == 0.0:
+                    B0 = np.nan  # triggers flat carry if baseline missing/zero
 
-    # Only forward-fill/infer asset_age, keep actual capacity values
-    panel = panel.sort_values(["asset_id", "year"]).reset_index(drop=True)
-    panel["asset_age"] = _infer_age_ffill(panel)
+                tgt_pre = (
+                    mask_pre & group["asset_activity"].isna() & (group["year"] > y0)
+                )
+                if tgt_pre.any():
+                    if np.isnan(B0).all():
+                        group.loc[tgt_pre, "asset_activity"] = v0
+                    else:
+                        By = group.loc[tgt_pre, "_company_baseline"].astype(float)
+                        ratio = (By / B0).fillna(1.0)
+                        group.loc[tgt_pre, "asset_activity"] = v0 * ratio.values
 
-    return panel[
-        [
+        # Determine the shock-year constant level
+        v_const = np.nan
+        if mask_pre.any():
+            # prefer exact shock-year value if present
+            at_shock = group["year"] == int(shock_year)
+            if at_shock.any():
+                v_at_shock = group.loc[at_shock, "asset_activity"].iloc[0]
+                if pd.notna(v_at_shock):
+                    v_const = float(v_at_shock)
+            if not np.isfinite(v_const):
+                # fallback to last available <= shock_year
+                gpre_filled = group.loc[mask_pre]
+                notna_pre_after = ~gpre_filled["asset_activity"].isna()
+                if notna_pre_after.any():
+                    idx_last = gpre_filled.index[notna_pre_after][-1]
+                    v_const = float(group.at[idx_last, "asset_activity"])
+
+        # POST-SHOCK: fill NAs with constant v_const if available
+        if mask_post.any() and np.isfinite(v_const):
+            tgt_post = mask_post & group["asset_activity"].isna()
+            if tgt_post.any():
+                group.loc[tgt_post, "asset_activity"] = v_const
+
+        return group
+
+    out = out.groupby(gcols, sort=False, group_keys=False).apply(_fill_one)
+
+    # Clean up helper column
+    out.drop(columns=["_company_baseline"], inplace=True)
+    return out
+
+
+def _reduce_weighted_with_caps(
+    floors: pd.Series,  # >=0, per-asset max reducible this year = Plate_{y-1,a}
+    g_weights: pd.Series,  # >=0, sum to 1 (we'll renormalize on the fly)
+    R: float,  # >0 total amount to reduce this year
+) -> pd.Series:
+    """
+    Allocate R across assets by g-weights with per-asset caps (floors),
+    with iterative reweighting as assets saturate. Returns *negative* deltas.
+    """
+    alloc_pos = pd.Series(0.0, index=floors.index, dtype=float)
+    if R <= 1e-12 or floors.empty:
+        return alloc_pos.rename("allocated_pos") * -1.0  # negative outward
+
+    rem = float(R)
+    cap = floors.clip(lower=0.0).astype(float).copy()
+    w = g_weights.clip(lower=0.0).astype(float).reindex(cap.index).fillna(0.0)
+
+    # iterative water-filling
+    for _ in range(len(cap)):
+        ws = w.sum()
+        if ws <= 0 or rem <= 1e-12:
+            break
+        share = rem * (w / ws)
+        take = np.minimum(share, cap)
+        alloc_pos += take
+        rem -= float(take.sum())
+        cap -= take
+        # zero out saturated assets and renormalize next round
+        w[cap <= 1e-12] = 0.0
+
+    return -alloc_pos  # return negative allocations
+
+
+# =========================================================
+# ============== DECREASING technologies node =============
+# =========================================================
+
+
+def split_late_sudden_trajectories_by_alignment_type(
+    companies_late_sudden_trajectories: pd.DataFrame,
+):
+    """Return (decreasing_df, increasing_df)."""
+    dec_mask = companies_late_sudden_trajectories["alignment_type"].isin(
+        ["misaligned_high_carbon", "aligned_high_carbon"]
+    )
+    inc_mask = companies_late_sudden_trajectories["alignment_type"].isin(
+        ["misaligned_low_carbon", "aligned_low_carbon"]
+    )
+    return (
+        companies_late_sudden_trajectories[dec_mask].copy(),
+        companies_late_sudden_trajectories[inc_mask].copy(),
+    )
+
+
+def stagger_decreasing_technologies(
+    late_sudden_trajectories: pd.DataFrame,
+    allocated_assets_to_companies: pd.DataFrame,
+    assets_retirement_dates: pd.DataFrame,
+    shock_year: int,
+    alignment_year: int,
+    apply_retirement: bool = True,
+    g_k: float = 6.0,
+    n_quantiles: int = 3,
+) -> pd.DataFrame:
+    """
+    Decreasing techs:
+
+    - y < shock_year: follow forecast/BAU (no allocations).
+    - shock_year ≤ y ≤ alignment_year: allocate negative company deltas by g-weights
+      with caps, using *previous year's after* as the per-asset base/floor.
+    - y > alignment_year: enforce retirements (effective retirement =
+      max(retirement_year, alignment_year+1)) and keep allocating remaining
+      negative deltas by g-weights with caps, still chaining from last year's after.
+    """
+    need_c = GROUP_COLS + ["year", "company_trajectory_latesudden"]
+    miss_c = [c for c in need_c if c not in late_sudden_trajectories.columns]
+    if miss_c:
+        raise ValueError(f"late_sudden_trajectories missing columns: {miss_c}")
+    need_a = GROUP_COLS + ["asset_id", "year", "asset_activity", "asset_age"]
+    miss_a = [c for c in need_a if c not in allocated_assets_to_companies.columns]
+    if miss_a:
+        raise ValueError(f"allocated_assets_to_companies missing columns: {miss_a}")
+
+    lsc = late_sudden_trajectories.copy()
+    lsc["year"] = _ensure_int_year(lsc["year"])
+
+    # Step 1–2: BAU fill up to shock year (you already had this)
+    assets = _bau_fill_assets_until_shock(
+        lsc=lsc, assets=allocated_assets_to_companies.copy(), shock_year=shock_year
+    )
+    assets["year"] = _ensure_int_year(assets["year"])
+    assets["asset_id"] = assets["asset_id"].astype(str)
+
+    comp_by_key = _index_company_by_year(lsc)
+    ret_map_by_key = _build_retirement_map(assets_retirement_dates)
+    out_parts: List[pd.DataFrame] = []
+
+    for key, comp_years in tqdm(
+        list(comp_by_key.items()), desc="Stagger dec", unit="grp"
+    ):
+        cid, geo, sector, tech = key
+        aset_g = assets[
+            (assets["company_id"] == cid)
+            & (assets["scenario_geography"] == geo)
+            & (assets["sector"] == sector)
+            & (assets["technology"] == tech)
+        ][["asset_id", "year", "asset_activity", "asset_age"]].copy()
+        if aset_g.empty:
+            continue
+
+        raw_ret = ret_map_by_key.get(key, {})
+        # effective retirement after alignment
+        eff_ret = {
+            aid: max(int(y_r), int(alignment_year) + 1) for aid, y_r in raw_ret.items()
+        }
+
+        years = sorted(map(int, comp_years.index.tolist()))
+        prev_company = None
+
+        # THIS is the key state: Plate_{y-1,a} (previous year's after-shock)
+        prev_after_by_asset: Dict[str, float] = {}
+
+        for i, y in enumerate(years):
+            C_y = float(comp_years.at[y, "company_trajectory_latesudden"])
+            comp_phase = str(comp_years.at[y, "late_sudden_phase"])
+            alignment_type = str(comp_years.at[y, "alignment_type"])
+
+            # Pull ages for g-weights from the forecast table for this year (fallback to prev+1)
+            sub = aset_g[aset_g["year"] == y].copy()
+            sub["asset_id"] = sub["asset_id"].astype(str)
+            ages_y = sub.set_index("asset_id")["asset_age"].astype(float)
+
+            # -------- Determine 'before' (the base we modify this year)
+            if y < int(shock_year):
+                # Before shock year: always use BAU-filled forecast values
+                before = sub.set_index("asset_id")["asset_activity"].astype(float)
+            elif i == 0:
+                # First year at/after shock: anchor on forecast/BAU
+                before = sub.set_index("asset_id")["asset_activity"].astype(float)
+            else:
+                # After first year at/after shock: chain from last year's after (modified values)
+                # include any new assets appearing with 0 base so they don't create oscillations
+                idx = sorted(set(prev_after_by_asset.keys()) | set(sub["asset_id"]))
+                before = pd.Series(
+                    {aid: prev_after_by_asset.get(aid, 0.0) for aid in idx}, dtype=float
+                )
+                # keep age alignment for all ids we track
+                if not ages_y.empty:
+                    ages_y = ages_y.reindex(before.index).ffill().bfill().fillna(0.0)
+                else:
+                    ages_y = pd.Series(0.0, index=before.index, dtype=float)
+
+            # -------- company delta (negative part from shock year onward)
+            if prev_company is None:
+                shock_neg = 0.0
+            else:
+                delta = C_y - prev_company
+                shock_neg = min(delta, 0.0) if y >= int(shock_year) else 0.0
+            prev_company = C_y
+
+            # -------- retirement only AFTER alignment_year and for misaligned_high_carbon companies
+            forced = pd.Series(0.0, index=before.index, dtype=float)
+            phase = pd.Series(comp_phase, index=before.index, dtype=object)
+            if (
+                apply_retirement
+                and alignment_type == "misaligned_high_carbon"
+                and y > int(alignment_year)
+                and eff_ret
+            ):
+                retire_now = [
+                    aid
+                    for aid, yr in eff_ret.items()
+                    if aid in before.index and y >= yr
+                ]
+                if retire_now:
+                    forced.loc[retire_now] = -before.loc[retire_now].astype(float)
+                for aid, yr in eff_ret.items():
+                    if aid in before.index and y == yr:
+                        phase.at[aid] = "retirement"
+
+            # -------- apply negative shock by g-weights with caps (Plate_{y-1,a})
+            extra = pd.Series(0.0, index=before.index, dtype=float)
+            remaining = shock_neg - float(forced.sum())  # ≤ 0 desired
+            if remaining < -1e-12:
+                # active = those not force-retired this year
+                active = before.index[forced >= 0.0]
+                if len(active) > 0:
+                    # Plate_{y-1,a} = 'before' (because we are chaining)
+                    floors = before.loc[active].clip(lower=0.0)
+                    g = _compute_g_weights(
+                        ages_y.loc[active],
+                        k=g_k,
+                        n_quantiles=n_quantiles,
+                        for_decreasing=True,
+                    )
+                    extra.loc[active] = _reduce_weighted_with_caps(
+                        floors=floors, g_weights=g, R=-remaining
+                    )
+
+            alloc = forced.add(extra, fill_value=0.0)
+            after = before.add(alloc, fill_value=0.0).clip(lower=0.0)
+
+            # update Plate_{y,a} for next year
+            prev_after_by_asset = {aid: float(after.at[aid]) for aid in after.index}
+
+            out_parts.append(
+                _emit_rows(
+                    key,
+                    year=y,
+                    before=before,
+                    alloc=alloc,
+                    ages=ages_y,
+                    synthetic_mask=pd.Series(False, index=before.index),
+                    late_sudden_phase=phase,
+                )
+            )
+
+    if out_parts:
+        return pd.concat(out_parts, ignore_index=True)
+    return pd.DataFrame(
+        columns=[
             "asset_id",
             "company_id",
             "scenario_geography",
             "sector",
             "technology",
             "year",
-            "capacity",
             "asset_age",
+            "capacity_before_shock",
+            "allocated_shock",
+            "capacity_after_shock",
+            "is_synthetic",
+            "late_sudden_phase",
         ]
-    ].copy()
-
-
-def _unique_base(df: pd.DataFrame) -> pd.DataFrame:
-    """Ensure 1 row per asset_id with summed capacity_after_shock."""
-    if df.empty:
-        return df
-    if df.index.name == "asset_id":
-        df = df.reset_index()
-    agg = df.groupby("asset_id", as_index=False).agg(
-        company_id=("company_id", "first"),
-        scenario_geography=("scenario_geography", "first"),
-        sector=("sector", "first"),
-        technology=("technology", "first"),
-        asset_age=("asset_age", "max"),
-        capacity_after_shock=("capacity_after_shock", "sum"),
     )
-    return agg.set_index("asset_id")
 
 
-# ===================== one-year allocators ======================
+# =========================================================
+# ============== INCREASING technologies node =============
+# =========================================================
 
 
-def _apply_asset_retirements(
-    cap0: pd.Series,
-    current_year: int,
-    retirement_events: list,
-) -> pd.Series:
-    """
-    Apply asset retirements unconditionally, independent of any shocks.
-    This mimics the retirement logic from the late & sudden mechanism.
-
-    Args:
-        cap0: Current capacity by asset_id
-        current_year: The year for which to apply retirements
-        retirement_events: List of (retirement_year, asset_id, capacity) tuples
-
-    Returns:
-        Updated capacity series after applying retirements
-    """
-    cap_after_retirement = cap0.copy()
-
-    # Apply retirements for assets scheduled to retire this year
-    for retirement_year, asset_id, retirement_capacity in retirement_events:
-        if retirement_year == current_year and asset_id in cap_after_retirement.index:
-            current_capacity = cap_after_retirement[asset_id]
-            if current_capacity > 0:
-                # Calculate percentage decrease like in late & sudden mechanism
-                percentage_decrease = min(retirement_capacity / current_capacity, 1.0)
-                cap_after_retirement[asset_id] *= 1 - percentage_decrease
-                # Ensure non-negative
-                cap_after_retirement[asset_id] = max(
-                    cap_after_retirement[asset_id], 0.0
-                )
-
-    return cap_after_retirement
-
-
-def _allocate_decrease_one_year(
-    base_prev: pd.DataFrame,
-    ceiling_y: pd.DataFrame,
-    shock: float,
-    k: float,
-    min_active_share: float,
-    n_quantiles: int,
-    max_depth: int,
-):
-    """Allocate a negative shock across assets (decreasing tech)."""
-    base = _unique_base(base_prev)
-
-    # Use actual forecast capacity from ceiling_y as the starting point
-    ceiling_indexed = ceiling_y.set_index("asset_id")
-    if not ceiling_indexed.empty:
-        # Use actual forecast capacity for current year
-        cap0 = ceiling_indexed["capacity"].rename("capacity_before_shock")
-        ages = ceiling_indexed["asset_age"]
-        # Only consider assets that exist in the forecast for this year
-        base = base.reindex(cap0.index).dropna()
-    else:
-        # Fallback to previous capacity if no current year data
-        cap0 = base["capacity_after_shock"].rename("capacity_before_shock")
-        ages = (
-            ceiling_y.set_index("asset_id")["asset_age"]
-            .reindex(cap0.index)
-            .fillna(base["asset_age"] + 1)
-        )
-
-    g = _compute_g_weights(ages, k, min_active_share, n_quantiles, for_decreasing=True)
-    order = ages.sort_values(ascending=False).index.tolist()  # oldest → youngest
-
-    alloc = pd.Series(0.0, index=order)
-    rem = shock
-    depth = 0
-    active = order.copy()
-
-    while rem < -1e-12 and active and depth < max_depth:
-        depth += 1
-        gw = g.loc[active] / g.loc[active].sum()
-        prop = gw * rem  # negative
-        changed = False
-        for aid in list(active):
-            base_cap = float(cap0[aid])
-            lower = -base_cap  # floor at zero
-            delta = max(float(prop[aid]), lower - alloc[aid])
-            if delta != 0.0:
-                alloc[aid] += delta
-                changed = True
-        rem = float(shock - alloc.sum())
-        active = [a for a in active if cap0[a] + alloc[a] > 0]
-        if not changed:
-            break
-
-    out = pd.DataFrame(
-        {
-            "asset_id": order,
-            "capacity_before_shock": cap0.reindex(order).values,
-            "allocated_shock": alloc.reindex(order).values,
-            "capacity_after_shock": (cap0.reindex(order) + alloc.reindex(order)).values,
-            "asset_age": ages.reindex(order).values,
-        }
-    ).set_index("asset_id")
-    return out, rem, depth
-
-
-def _allocate_increase_one_year(
-    base_prev: pd.DataFrame,
-    ceiling_y: pd.DataFrame,
-    shock: float,
-    k: float,
-    min_active_share: float,
-    n_quantiles: int,
-    max_depth: int,
-):
-    """Allocate a positive shock across assets (increasing tech)."""
-    base = _unique_base(base_prev)
-    cap0 = base["capacity_after_shock"].rename("capacity_before_shock")
-    ceil = ceiling_y.set_index("asset_id")
-    ages = ceil["asset_age"].reindex(cap0.index).fillna(base["asset_age"] + 1)
-
-    g = _compute_g_weights(ages, k, min_active_share, n_quantiles, for_decreasing=False)
-    order = ages.sort_values(ascending=True).index.tolist()  # newest → oldest
-
-    alloc = pd.Series(0.0, index=order)
-    rem = shock
-    depth = 0
-    active = order.copy()
-
-    while rem > 1e-12 and active and depth < max_depth:
-        depth += 1
-        gw = g.loc[active] / g.loc[active].sum()
-        prop = gw * rem
-        changed = False
-        for aid in list(active):
-            headroom = 0.0
-            if aid in ceil.index:
-                headroom = max(0.0, float(ceil.at[aid, "capacity"]) - float(cap0[aid]))
-            delta = min(float(prop[aid]), headroom - alloc[aid])
-            if delta > 0:
-                alloc[aid] += delta
-                changed = True
-        rem = float(shock - alloc.sum())
-        active = [
-            a
-            for a in active
-            if a in ceil.index
-            and float(cap0[a]) + float(alloc[a]) < float(ceil.at[a, "capacity"])
-        ]
-        if not changed:
-            break
-
-    out = pd.DataFrame(
-        {
-            "asset_id": order,
-            "capacity_before_shock": cap0.reindex(order).values,
-            "allocated_shock": alloc.reindex(order).values,
-            "capacity_after_shock": (cap0.reindex(order) + alloc.reindex(order)).values,
-            "asset_age": ages.reindex(order).values,
-        }
-    ).set_index("asset_id")
-    return out, rem, depth
-
-
-# =================== allocators by bucket ======================
-
-
-def allocate_decreasing_tech(
+def stagger_increasing_technologies(
     late_sudden_trajectories: pd.DataFrame,
-    assets_forecasts: pd.DataFrame,
-    assets_retirement_dates: pd.DataFrame,
-    g_k: float = 6.0,
-    min_active_share: float = 1e-12,
-    n_quantiles: int = 3,
-    max_recursion_depth: int = 100,
-    debug: bool = False,
-):
+    allocated_assets_to_companies: pd.DataFrame,
+    shock_year: int,
+) -> pd.DataFrame:
     """
-    Distribute **all negative changes** in L&S (full horizon) to assets for decreasing techs.
-    Geography-aware (scenario_geography).
+    Increasing techs (vectorized, simple):
+      - Keep real assets at BAU/forecast for all years.
+      - From shock_year onward, assign all capacity above S_shock
+        (sum of BAU real assets at shock_year) to ONE synthetic asset.
+      - No retirements.
+    """
+    lsc = late_sudden_trajectories.copy()
+    need_c = GROUP_COLS + ["year", "company_trajectory_latesudden"]
+    miss_c = [c for c in need_c if c not in lsc.columns]
+    if miss_c:
+        raise ValueError(f"late_sudden_trajectories missing columns: {miss_c}")
 
-    For misaligned_high_carbon companies, asset retirements are applied first to match
-    the late & sudden shock mechanism behavior before applying age-based allocation rules.
-    """
-    group_cols = ["company_id", "scenario_geography", "sector", "technology"]
-    d = (
-        late_sudden_trajectories[
-            group_cols + ["year", "company_trajectory_latesudden", "alignment_type"]
-        ]
-        .sort_values(group_cols + ["year"])
-        .copy()
+    need_a = GROUP_COLS + ["asset_id", "year", "asset_activity", "asset_age"]
+    miss_a = [c for c in need_a if c not in allocated_assets_to_companies.columns]
+    if miss_a:
+        raise ValueError(f"allocated_assets_to_companies missing columns: {miss_a}")
+
+    # Ensure numeric years
+    lsc["year"] = _ensure_int_year(lsc["year"])
+
+    # BAU fill up to shock & hold constant for missing values after (your helper)
+    assets_bau = _bau_fill_assets_until_shock(
+        lsc=lsc, assets=allocated_assets_to_companies.copy(), shock_year=shock_year
     )
-    d["prev"] = d.groupby(group_cols)["company_trajectory_latesudden"].shift(1)
-    d["shock_raw"] = d["company_trajectory_latesudden"] - d["prev"]
-    d["shock_eff"] = np.minimum(d["shock_raw"].fillna(0.0), 0.0)
+    assets_bau["year"] = _ensure_int_year(assets_bau["year"])
+    assets_bau["asset_id"] = assets_bau["asset_id"].astype(str)
 
-    # Prepare retirement events lookup for misaligned high carbon companies
-    # Keep asset-level retirement information for precise asset targeting
-    retirement_events = {}
-    if not assets_retirement_dates.empty:
-        retire_df = assets_retirement_dates.copy()
-        retire_key_cols = ["company_id", "scenario_geography", "sector", "technology"]
-        retire_df = retire_df.sort_values(retire_key_cols + ["retirement_year"])
-        for key, sub in retire_df.groupby(retire_key_cols, sort=False):
-            # Store list of (year, asset_id, capacity) tuples for precise targeting
-            retirement_events[key] = list(
-                zip(
-                    sub["retirement_year"].tolist(),
-                    sub["asset_id"].tolist(),
-                    sub["capacity"].astype(float).tolist(),
+    # Preindex company LS by key/year (vectorized join later)
+    comp_by_key = {
+        k: g.sort_values("year")[["year", "company_trajectory_latesudden"]]
+        for k, g in lsc.groupby(GROUP_COLS, sort=False)
+    }
+
+    out_real = []
+    out_synth = []
+
+    for key, comp_years in comp_by_key.items():
+        cid, geo, sector, tech = key
+        synth_id = f"NEW_{cid}_{sector}_{tech}_{geo}"
+
+        # Filter assets of this bucket and keep only years present in company LS
+        aset = assets_bau[
+            (assets_bau["company_id"] == cid)
+            & (assets_bau["scenario_geography"] == geo)
+            & (assets_bau["sector"] == sector)
+            & (assets_bau["technology"] == tech)
+        ][["asset_id", "year", "asset_activity", "asset_age"]].copy()
+
+        years = comp_years["year"].to_numpy()
+        if aset.empty and years.size == 0:
+            continue
+
+        # -------- Real assets: keep BAU for all years (vectorized)
+        if not aset.empty:
+            aset_key = aset.merge(
+                comp_years[["year"]], on="year", how="inner"  # align to LS years
+            )
+            if not aset_key.empty:
+                before = aset_key.set_index("asset_id")[
+                    ["year", "asset_activity", "asset_age"]
+                ]
+                # emit rows per year by simple rename (alloc = 0, after = before)
+                block = before.reset_index().rename(
+                    columns={"asset_activity": "capacity_before_shock"}
                 )
+                block["allocated_shock"] = 0.0
+                block["capacity_after_shock"] = block["capacity_before_shock"]
+                block["company_id"] = cid
+                block["scenario_geography"] = geo
+                block["sector"] = sector
+                block["technology"] = tech
+                block["is_synthetic"] = False
+                block["late_sudden_phase"] = ""
+                out_real.append(
+                    block[
+                        [
+                            "asset_id",
+                            "company_id",
+                            "scenario_geography",
+                            "sector",
+                            "technology",
+                            "year",
+                            "asset_age",
+                            "capacity_before_shock",
+                            "allocated_shock",
+                            "capacity_after_shock",
+                            "is_synthetic",
+                            "late_sudden_phase",
+                        ]
+                    ]
+                )
+
+        # -------- Synthetic: from shock_year onward, max(0, LS - S_shock)
+        # Compute S_shock from BAU snapshot at shock_year (sum over real assets)
+        if aset.empty:
+            S_shock = 0.0
+        else:
+            shock_slice = aset[aset["year"] == int(shock_year)]
+            S_shock = (
+                float(shock_slice["asset_activity"].sum())
+                if not shock_slice.empty
+                else 0.0
             )
 
-    outputs, diags = [], []
-    cols_out = [
-        "asset_id",
-        "company_id",
-        "scenario_geography",
-        "sector",
-        "technology",
-        "year",
-        "asset_age",
-        "capacity_before_shock",
-        "allocated_shock",
-        "capacity_after_shock",
-        "is_synthetic",
-    ]
+        if years.size > 0:
+            # Vectorized series for LS
+            C = comp_years["company_trajectory_latesudden"].to_numpy(dtype=float)
+            # synthetic capacity per year
+            synth_cap = np.where(
+                years >= int(shock_year), np.maximum(0.0, C - S_shock), 0.0
+            )
+            # capacity_before (prev year's synthetic), allocated = delta
+            synth_before = np.concatenate(([0.0], synth_cap[:-1]))
+            alloc = synth_cap - synth_before
 
-    groups = list(d.groupby(group_cols, sort=False))
-    for key, grp in tqdm(
-        groups, desc="Processing companies (decreasing tech)", unit="company"
-    ):
-        cid, geo, sector, tech = key
-        years = sorted(grp["year"].unique())
-        y0, yN = int(years[0]), int(years[-1])
-
-        # Check if this is a misaligned high carbon company
-        is_misaligned_high_carbon = any(
-            grp["alignment_type"] == "misaligned_high_carbon"
-        )
-
-        panel = _build_asset_panel_full_horizon(
-            assets_forecasts, cid, geo, sector, tech, y0, yN
-        )
-
-        # anchor at first L&S year
-        ceil0 = panel[panel["year"] == y0].copy()
-        out0 = ceil0.assign(
-            capacity_before_shock=ceil0["capacity"],
-            allocated_shock=0.0,
-            capacity_after_shock=ceil0["capacity"],
-            is_synthetic=False,
-        )[cols_out]
-        outputs.append(out0)
-        base_prev = out0.set_index("asset_id")[
-            [
-                "company_id",
-                "scenario_geography",
-                "sector",
-                "technology",
-                "asset_age",
-                "capacity_after_shock",
-            ]
-        ]
-
-        for _, row in grp[grp["year"] > y0].iterrows():
-            y = int(row["year"])
-            shock = float(row["shock_eff"])  # <= 0
-            ceil_y = panel[panel["year"] == y].copy()
-
-            # Get the starting capacity (from forecast data)
-            ceil_y_indexed = ceil_y.set_index("asset_id")
-            if not ceil_y_indexed.empty:
-                cap_before_retirement = ceil_y_indexed["capacity"]
-                ages = ceil_y_indexed["asset_age"]
+            # synthetic age: 0 at first positive year, then +1 each subsequent positive year,
+            # stays 0 when capacity is 0.
+            pos = synth_cap > 0.0
+            if pos.any():
+                first_idx = np.argmax(pos)  # first True position
+                synth_age = np.where(pos, years - years[first_idx], 0.0).astype(float)
             else:
-                # Fallback to previous year if no forecast data available
-                cap_before_retirement = base_prev["capacity_after_shock"]
-                ages = (
-                    ceil_y.set_index("asset_id")["asset_age"]
-                    .reindex(cap_before_retirement.index)
-                    .fillna(base_prev["asset_age"] + 1)
-                )
+                synth_age = np.zeros_like(synth_cap, dtype=float)
 
-            # Step 1: Apply retirements unconditionally for misaligned high carbon companies
-            if is_misaligned_high_carbon:
-                cap_after_retirement = _apply_asset_retirements(
-                    cap_before_retirement, y, retirement_events.get(key, [])
-                )
-            else:
-                cap_after_retirement = cap_before_retirement.copy()
-
-            # Step 2: Apply shocks on top of post-retirement capacities
-            if np.isclose(shock, 0.0) or base_prev.empty:
-                # No shock to apply, just use post-retirement capacities
-                out = pd.DataFrame(
-                    {
-                        "asset_id": cap_after_retirement.index,
-                        "company_id": cid,
-                        "scenario_geography": geo,
-                        "sector": sector,
-                        "technology": tech,
-                        "year": y,
-                        "asset_age": ages.values,
-                        "capacity_before_shock": cap_before_retirement.values,
-                        "allocated_shock": (
-                            cap_after_retirement - cap_before_retirement
-                        ).values,
-                        "capacity_after_shock": cap_after_retirement.values,
-                        "is_synthetic": False,
-                    }
-                )
-                outputs.append(out[cols_out])
-                base_prev = out.set_index("asset_id")[
-                    [
-                        "company_id",
-                        "scenario_geography",
-                        "sector",
-                        "technology",
-                        "asset_age",
-                        "capacity_after_shock",
-                    ]
-                ]
-                diags.append(
-                    {
-                        "company_id": cid,
-                        "technology": tech,
-                        "year": y,
-                        "residual": 0.0,
-                        "iters": 0,
-                    }
-                )
-                continue
-
-            # Apply shocks using post-retirement capacities as the base
-            # Create a temporary base_prev that reflects post-retirement state
-            temp_base = pd.DataFrame(
+            synth_df = pd.DataFrame(
                 {
-                    "asset_id": cap_after_retirement.index,
+                    "asset_id": synth_id,
                     "company_id": cid,
                     "scenario_geography": geo,
                     "sector": sector,
                     "technology": tech,
-                    "asset_age": ages.values,
-                    "capacity_after_shock": cap_after_retirement.values,
-                }
-            ).set_index("asset_id")
-
-            # For misaligned high carbon companies, use standard allocation (retirement already applied)
-            if is_misaligned_high_carbon:
-                out, rem, iters = _allocate_decrease_one_year(
-                    temp_base.reset_index(),
-                    ceil_y,
-                    shock,
-                    g_k,
-                    min_active_share,
-                    n_quantiles,
-                    max_recursion_depth,
-                )
-            else:
-                # Use standard allocation for aligned high carbon companies
-                out, rem, iters = _allocate_decrease_one_year(
-                    temp_base.reset_index(),
-                    ceil_y,
-                    shock,
-                    g_k,
-                    min_active_share,
-                    n_quantiles,
-                    max_recursion_depth,
-                )
-
-            # Adjust the output to show retirement + shock effects
-            out = out.reset_index()
-            out["capacity_before_shock"] = cap_before_retirement.reindex(
-                out["asset_id"]
-            ).values
-            # allocated_shock should include both retirement and shock effects
-            out["allocated_shock"] = (
-                out["capacity_after_shock"] - out["capacity_before_shock"]
-            )
-
-            out = out.assign(
-                company_id=cid,
-                scenario_geography=geo,
-                sector=sector,
-                technology=tech,
-                year=y,
-                is_synthetic=False,
-            )
-            outputs.append(out[cols_out])
-            base_prev = out.set_index("asset_id")[
-                [
-                    "company_id",
-                    "scenario_geography",
-                    "sector",
-                    "technology",
-                    "asset_age",
-                    "capacity_after_shock",
-                ]
-            ]
-            diags.append(
-                {
-                    "company_id": cid,
-                    "technology": tech,
-                    "year": y,
-                    "residual": rem,
-                    "iters": iters,
+                    "year": years.astype(int),
+                    "asset_age": synth_age,
+                    "capacity_before_shock": synth_before,
+                    "allocated_shock": alloc,
+                    "capacity_after_shock": synth_cap,
+                    "is_synthetic": True,
+                    "late_sudden_phase": "",
                 }
             )
+            out_synth.append(synth_df)
 
-    df = (
-        pd.concat(outputs, ignore_index=True)
-        if outputs
-        else pd.DataFrame(columns=cols_out)
+    # concat results
+    parts = []
+    if out_real:
+        parts.append(pd.concat(out_real, ignore_index=True))
+    if out_synth:
+        parts.append(pd.concat(out_synth, ignore_index=True))
+    if parts:
+        return pd.concat(parts, ignore_index=True)
+
+    return pd.DataFrame(
+        columns=[
+            "asset_id",
+            "company_id",
+            "scenario_geography",
+            "sector",
+            "technology",
+            "year",
+            "asset_age",
+            "capacity_before_shock",
+            "allocated_shock",
+            "capacity_after_shock",
+            "is_synthetic",
+            "late_sudden_phase",
+        ]
     )
-    if debug:
-        return df, pd.DataFrame(diags)
-    return df
 
 
-def allocate_increasing_tech(
-    late_sudden_trajectories: pd.DataFrame,
-    assets_forecasts: pd.DataFrame,
-    g_k: float = 6.0,
-    min_active_share: float = 1e-12,
-    n_quantiles: int = 3,
-    max_recursion_depth: int = 100,
-    debug: bool = False,
-):
+def concatenate_staggered_shock_results(
+    dec_late_sudden_trajectories: pd.DataFrame,
+    inc_late_sudden_trajectories: pd.DataFrame,
+) -> pd.DataFrame:
+
+    assets_staggered_late_sudden = pd.concat(
+        [dec_late_sudden_trajectories, inc_late_sudden_trajectories], ignore_index=True
+    ).reset_index(drop=True)
+
+    return assets_staggered_late_sudden
+
+
+def compute_capex_indicators(
+    assets_staggered_late_sudden: pd.DataFrame,
+) -> pd.DataFrame:
     """
-    Distribute **all positive changes** in L&S (full horizon) to assets for increasing techs.
-    Geography-aware. Uses ONE persistent synthetic asset per (company_id, scenario_geography, sector, technology).
-    Ensures the synthetic row is never duplicated (never included in the 'real' block).
-    """
-    group_cols = ["company_id", "scenario_geography", "sector", "technology"]
-    d = (
-        late_sudden_trajectories[group_cols + ["year", "company_trajectory_latesudden"]]
-        .sort_values(group_cols + ["year"])
-        .copy()
-    )
-    d["prev"] = d.groupby(group_cols)["company_trajectory_latesudden"].shift(1)
-    d["shock_raw"] = d["company_trajectory_latesudden"] - d["prev"]
-    d["shock_eff"] = np.maximum(d["shock_raw"].fillna(0.0), 0.0)
+    Build capex indicators per asset based on assets_staggered_late_sudden.
 
-    outputs, diags = [], []
-    cols_out = [
-        "asset_id",
+    Inputs (required columns):
+      - company_id, asset_id, year, capacity_after_shock, is_synthetic, late_sudden_phase
+
+    Rules:
+      - retired_max_cap: for decreasing technologies in misaligned_high_carbon that retire
+        (identified by any row with late_sudden_phase == "retirement"). Value = max(capacity_after_shock)
+        over the asset's horizon.
+      - roll_over_cap: for decreasing tech assets (late_sudden_phase != "") that do NOT retire and have
+        last known capacity_after_shock > 0. Value = last capacity_after_shock.
+      - new_buildout_cap: for newly created synthetic assets in increasing technologies
+        (is_synthetic == True). Value = max(capacity_after_shock).
+
+    Output columns:
+      - company_id, asset_id, capex_indicator, capex_capacity
+    """
+    need_cols = [
         "company_id",
-        "scenario_geography",
-        "sector",
-        "technology",
+        "asset_id",
         "year",
-        "asset_age",
-        "capacity_before_shock",
-        "allocated_shock",
         "capacity_after_shock",
         "is_synthetic",
+        "late_sudden_phase",
     ]
-
-    def _get_prev_scalar(
-        df: pd.DataFrame, aid: str, col: str, default: float = 0.0
-    ) -> float:
-        """Safe and fast scalar getter even if df might contain duplicate index rows.
-        Tries direct .at access when unique, otherwise falls back to last row selection.
-        """
-        if df.empty or aid not in df.index:
-            return default
-        # Fast path when there are no duplicates
-        if not df.index.has_duplicates:
-            try:
-                val = df.at[aid, col]
-                return float(val)
-            except Exception:
-                return default
-        # Fallback when duplicates exist
-        vals = df.loc[[aid], col]
-        try:
-            return float(vals.iloc[-1])
-        except Exception:
-            return default
-
-    groups = list(d.groupby(group_cols, sort=False))
-    for key, grp in tqdm(
-        groups, desc="Processing companies (increasing tech)", unit="company"
-    ):
-        cid, geo, sector, tech = key
-        synth_id = f"NEW_{cid}_{sector}_{tech}_{geo}"
-
-        years = sorted(grp["year"].unique())
-        if not years:
-            continue
-        y0, yN = int(years[0]), int(years[-1])
-
-        # Build full panel of *real* assets (synthetic never enters this)
-        panel = _build_asset_panel_full_horizon(
-            assets_forecasts, cid, geo, sector, tech, y0, yN
+    missing = [c for c in need_cols if c not in assets_staggered_late_sudden.columns]
+    if missing:
+        raise ValueError(
+            f"assets_staggered_late_sudden missing required columns for capex indicators: {missing}"
         )
-        # Ensure asset_id is string for stable indexing and comparisons
-        if not panel.empty and panel["asset_id"].dtype != object:
-            panel["asset_id"] = panel["asset_id"].astype(str)
 
-        # Cache per-year slices and age series to avoid repeated filtering/indexing
-        if panel.empty:
-            panel_by_year = {y: panel.iloc[0:0].copy() for y in years}
-            ages_by_year = {y: pd.Series(dtype=float) for y in years}
-        else:
-            panel_by_year = {
-                int(y): sub.copy() for y, sub in panel.groupby("year", sort=False)
-            }
-            ages_by_year = {
-                int(y): sub.set_index("asset_id")["asset_age"]
-                for y, sub in panel_by_year.items()
-            }
+    df = assets_staggered_late_sudden.copy()
+    if df.empty:
+        return pd.DataFrame(
+            columns=["company_id", "asset_id", "capex_indicator", "capex_capacity"]
+        )
 
-        # Anchor at first L&S year using panel capacities (real assets only)
-        ceil0 = panel_by_year.get(y0, panel.iloc[0:0].copy())
-        out0 = ceil0.assign(
-            capacity_before_shock=ceil0["capacity"],
-            allocated_shock=0.0,
-            capacity_after_shock=ceil0["capacity"],
-            is_synthetic=False,
-        )[cols_out]
-        outputs.append(out0)
+    # normalize types
+    df["company_id"] = df["company_id"].astype(str)
+    df["asset_id"] = df["asset_id"].astype(str)
+    df["year"] = _ensure_int_year(df["year"]).astype(int)
+    df["capacity_after_shock"] = df["capacity_after_shock"].astype(float)
+    df["is_synthetic"] = df["is_synthetic"].fillna(False).astype(bool)
+    df["late_sudden_phase"] = df["late_sudden_phase"].fillna("").astype(str)
 
-        base_prev = out0.set_index("asset_id")[
-            [
-                "company_id",
-                "scenario_geography",
-                "sector",
-                "technology",
-                "asset_age",
-                "capacity_after_shock",
-            ]
-        ]
-        # Keep index as string, ensure uniqueness only if needed
-        if not base_prev.empty and base_prev.index.dtype != object:
-            base_prev.index = base_prev.index.map(str)
-        if base_prev.index.has_duplicates:
-            base_prev = _unique_base(base_prev.reset_index())
+    out_rows: List[Dict[str, object]] = []
 
-        for _, row in grp[grp["year"] > y0].iterrows():
-            y = int(row["year"])
-            shock = float(row["shock_eff"])  # >= 0
-            ceil_y = panel_by_year.get(y, panel.iloc[0:0].copy())
+    # 1) Decreasing tech assets: identified by presence of any non-empty phase
+    dec_real = df[(~df["is_synthetic"]) & (df["late_sudden_phase"] != "")]
 
-            # De-dup and split base into real vs synthetic parts
-            if not base_prev.empty and base_prev.index.has_duplicates:
-                base_prev = _unique_base(base_prev.reset_index())
-            base_real_prev = base_prev.drop(index=[synth_id], errors="ignore")
-            has_synth = synth_id in base_prev.index
+    if not dec_real.empty:
+        g = dec_real.groupby(["company_id", "asset_id"], sort=False)
 
-            # ---------- Case 1: carry-forward (no positive change) ----------
-            if np.isclose(shock, 0.0) and not base_prev.empty:
-                # Real block carry-forward (exclude synthetic)
-                if base_real_prev.empty:
-                    real_out = pd.DataFrame(columns=cols_out)
-                else:
-                    cap0 = base_real_prev["capacity_after_shock"].rename(
-                        "capacity_before_shock"
-                    )
-                    ages_src = ages_by_year.get(y, pd.Series(dtype=float))
-                    ages = ages_src.reindex(cap0.index).fillna(
-                        base_real_prev["asset_age"] + 1
-                    )
-                    real_out = pd.DataFrame(
-                        {
-                            "asset_id": cap0.index,
-                            "company_id": cid,
-                            "scenario_geography": geo,
-                            "sector": sector,
-                            "technology": tech,
-                            "year": y,
-                            "asset_age": ages.values,
-                            "capacity_before_shock": cap0.values,
-                            "allocated_shock": np.zeros_like(cap0.values),
-                            "capacity_after_shock": cap0.values,
-                            "is_synthetic": False,
-                        }
-                    )
+        # retired_max_cap: any row marked as retirement
+        retired_flag = (
+            g["late_sudden_phase"]
+            .apply(lambda s: (s == "retirement").any())
+            .rename("is_retired")
+        )
+        max_cap = g["capacity_after_shock"].max().rename("max_cap")
+        last_row = g.apply(lambda x: x.sort_values("year").iloc[-1])
+        last_cap = last_row["capacity_after_shock"].rename("last_cap")
 
-                # Synthetic carry-forward (single row, if exists)
-                synth_out = pd.DataFrame(columns=cols_out)
-                if has_synth:
-                    prev_cap = _get_prev_scalar(
-                        base_prev, synth_id, "capacity_after_shock", 0.0
-                    )
-                    prev_age = (
-                        _get_prev_scalar(base_prev, synth_id, "asset_age", 0.0) + 1.0
-                    )
-                    synth_out = pd.DataFrame(
-                        [
-                            {
-                                "asset_id": synth_id,
-                                "company_id": cid,
-                                "scenario_geography": geo,
-                                "sector": sector,
-                                "technology": tech,
-                                "year": y,
-                                "asset_age": prev_age,
-                                "capacity_before_shock": prev_cap,
-                                "allocated_shock": 0.0,
-                                "capacity_after_shock": prev_cap,
-                                "is_synthetic": True,
-                            }
-                        ]
-                    )
-                with warnings.catch_warnings():
-                    warnings.filterwarnings(
-                        "ignore", category=FutureWarning, message=".*all-NA columns.*"
-                    )
-                    # TODO: remove this warning silencer once synthetic assets are deduplicated properly
-                    out = pd.concat([real_out, synth_out], ignore_index=True)
-
-                outputs.append(out[cols_out])
-
-                # chain base to next year
-                base_prev = out.set_index("asset_id")[
-                    [
-                        "company_id",
-                        "scenario_geography",
-                        "sector",
-                        "technology",
-                        "asset_age",
-                        "capacity_after_shock",
-                    ]
-                ]
-                if not base_prev.empty and base_prev.index.dtype != object:
-                    base_prev.index = base_prev.index.map(str)
-                if base_prev.index.has_duplicates:
-                    base_prev = _unique_base(base_prev.reset_index())
-                diags.append(
-                    {
-                        "company_id": cid,
-                        "technology": tech,
-                        "year": y,
-                        "residual": 0.0,
-                        "iters": 0,
-                    }
-                )
-                continue
-
-            # ---------- Case 2: positive change to allocate ----------
-            # If we have no *real* base yet (e.g., new fleet), initialize from real assets at y
-            if base_real_prev.empty:
-                real = ceil_y.copy()
-                real["capacity_before_shock"] = real["capacity"]
-                real["allocated_shock"] = 0.0
-                real["capacity_after_shock"] = real["capacity"]
-                real["is_synthetic"] = False
-                real_out_init = real[cols_out]
-                outputs.append(real_out_init)
-
-                base_real_prev = real_out_init.set_index("asset_id")[
-                    [
-                        "company_id",
-                        "scenario_geography",
-                        "sector",
-                        "technology",
-                        "asset_age",
-                        "capacity_after_shock",
-                    ]
-                ]
-                if not base_real_prev.empty and base_real_prev.index.dtype != object:
-                    base_real_prev.index = base_real_prev.index.map(str)
-                if base_real_prev.index.has_duplicates:
-                    base_real_prev = _unique_base(base_real_prev.reset_index())
-
-            if shock <= 1e-12:
-                diags.append(
-                    {
-                        "company_id": cid,
-                        "technology": tech,
-                        "year": y,
-                        "residual": 0.0,
-                        "iters": 0,
-                    }
-                )
-                # keep the old base (we already appended init real rows if needed)
-                base_prev = pd.concat(
-                    [base_real_prev, base_prev.loc[[synth_id]]]
-                    if has_synth
-                    else [base_real_prev]
-                )
-                if base_prev.index.has_duplicates:
-                    base_prev = _unique_base(base_prev.reset_index())
-                continue
-
-            # Allocate to real assets ONLY
-            out_real, rem, iters = _allocate_increase_one_year(
-                base_real_prev,
-                ceil_y,
-                shock,
-                g_k,
-                min_active_share,
-                n_quantiles,
-                max_recursion_depth,
-            )
-            out_real = out_real.reset_index().assign(
-                company_id=cid,
-                scenario_geography=geo,
-                sector=sector,
-                technology=tech,
-                year=y,
-                is_synthetic=False,
-            )
-            outputs.append(out_real[cols_out])
-
-            # If leftover, update/create ONE synthetic row (not included in the real block)
-            synth_out = pd.DataFrame(columns=cols_out)
-            if rem > 1e-12:
-                prev_cap = _get_prev_scalar(
-                    base_prev, synth_id, "capacity_after_shock", 0.0
-                )
-                prev_age = _get_prev_scalar(base_prev, synth_id, "asset_age", 0.0)
-                age_y = (prev_age + 1.0) if has_synth else 0.0
-                synth_out = pd.DataFrame(
-                    [
-                        {
-                            "asset_id": synth_id,
-                            "company_id": cid,
-                            "scenario_geography": geo,
-                            "sector": sector,
-                            "technology": tech,
-                            "year": y,
-                            "asset_age": age_y,
-                            "capacity_before_shock": prev_cap,
-                            "allocated_shock": rem,
-                            "capacity_after_shock": prev_cap + rem,
-                            "is_synthetic": True,
-                        }
-                    ]
-                )
-                outputs.append(synth_out[cols_out])
-                rem = 0.0
-
-            # chain base to next year: real next + (optional) synthetic next
-            base_real_next = out_real.set_index("asset_id")[
-                [
-                    "company_id",
-                    "scenario_geography",
-                    "sector",
-                    "technology",
-                    "asset_age",
-                    "capacity_after_shock",
-                ]
-            ]
-            if not synth_out.empty:
-                base_prev = pd.concat(
-                    [
-                        base_real_next,
-                        synth_out.set_index("asset_id")[
-                            [
-                                "company_id",
-                                "scenario_geography",
-                                "sector",
-                                "technology",
-                                "asset_age",
-                                "capacity_after_shock",
-                            ]
-                        ],
-                    ],
-                    axis=0,
-                )
-            else:
-                # keep old synthetic if it existed and we didn't write a new row for it this year
-                base_prev = (
-                    pd.concat(
-                        [base_real_next, base_prev.loc[[synth_id]]],
-                        axis=0,
-                        join="inner",
-                    )
-                    if has_synth
-                    else base_real_next
-                )
-
-            if not base_prev.empty and base_prev.index.dtype != object:
-                base_prev.index = base_prev.index.map(str)
-            if base_prev.index.has_duplicates:
-                base_prev = _unique_base(base_prev.reset_index())
-
-            diags.append(
+        retired_assets = retired_flag[retired_flag].index.tolist()
+        for comp_id, asset_id in retired_assets:
+            out_rows.append(
                 {
-                    "company_id": cid,
-                    "technology": tech,
-                    "year": y,
-                    "residual": rem,
-                    "iters": iters,
+                    "company_id": comp_id,
+                    "asset_id": asset_id,
+                    "capex_indicator": "retired_max_cap",
+                    "capex_capacity": float(max_cap.loc[(comp_id, asset_id)]),
                 }
             )
 
-    df = (
-        pd.concat(outputs, ignore_index=True)
-        if outputs
-        else pd.DataFrame(columns=cols_out)
-    )
-    if debug:
-        return df, pd.DataFrame(diags)
-    return df
+        # roll_over_cap: dec, not retired, last cap > 0
+        not_retired = retired_flag[~retired_flag].index.tolist()
+        for comp_id, asset_id in not_retired:
+            cap_last = float(last_cap.loc[(comp_id, asset_id)])
+            if cap_last > 0.0:
+                out_rows.append(
+                    {
+                        "company_id": comp_id,
+                        "asset_id": asset_id,
+                        "capex_indicator": "roll_over_cap",
+                        "capex_capacity": cap_last,
+                    }
+                )
 
+    # 2) Increasing tech synthetic assets (new builds)
+    synth = df[df["is_synthetic"]]
+    if not synth.empty:
+        g_s = synth.groupby(["company_id", "asset_id"], sort=False)
+        max_s = g_s["capacity_after_shock"].max()
+        for (comp_id, asset_id), cap in max_s.items():
+            out_rows.append(
+                {
+                    "company_id": comp_id,
+                    "asset_id": asset_id,
+                    "capex_indicator": "new_buildout_cap",
+                    "capex_capacity": float(cap),
+                }
+            )
 
-# ========================= orchestrator =========================
-
-
-def apply_staggered_shock_split(
-    late_sudden_trajectories: pd.DataFrame,
-    allocated_assets_to_companies: pd.DataFrame,
-    assets_retirement_dates: pd.DataFrame,
-    shock_year: int,  # unused gating, kept for signature compatibility
-    g_k: float = 6.0,
-    min_active_share: float = 1e-12,
-    n_quantiles: int = 3,
-    max_recursion_depth: int = 100,
-    debug: bool = False,
-):
-    """
-    Run the decreasing and increasing allocators across the full L&S horizon
-    (no gating by shock_year) and concatenate.
-
-    For decreasing technologies (misaligned_high_carbon), asset retirement information
-    is used to prioritize specific assets for capacity reduction.
-    """
-    # Split by alignment type (unchanged behavior)
-    dec_mask = late_sudden_trajectories["alignment_type"].isin(
-        ["misaligned_high_carbon", "aligned_high_carbon"]
-    )
-    inc_mask = late_sudden_trajectories["alignment_type"].isin(
-        ["misaligned_low_carbon", "aligned_low_carbon"]
-    )
-
-    dec = allocate_decreasing_tech(
-        late_sudden_trajectories[dec_mask],
-        allocated_assets_to_companies,
-        assets_retirement_dates,
-        g_k,
-        min_active_share,
-        n_quantiles,
-        max_recursion_depth,
-        debug,
-    )
-    inc = allocate_increasing_tech(
-        late_sudden_trajectories[inc_mask],
-        allocated_assets_to_companies,
-        g_k,
-        min_active_share,
-        n_quantiles,
-        max_recursion_depth,
-        debug,
-    )
-
-    if debug:
-        dec_df, dec_diag = dec
-        inc_df, inc_diag = inc
-        return (
-            pd.concat([dec_df, inc_df], ignore_index=True),
-            pd.concat([dec_diag, inc_diag], ignore_index=True),
+    if not out_rows:
+        return pd.DataFrame(
+            columns=["company_id", "asset_id", "capex_indicator", "capex_capacity"]
         )
 
-    return pd.concat([dec, inc], ignore_index=True)
+    out_df = pd.DataFrame(
+        out_rows,
+        columns=[
+            "company_id",
+            "asset_id",
+            "capex_indicator",
+            "capex_capacity",
+        ],
+    )
+    return out_df

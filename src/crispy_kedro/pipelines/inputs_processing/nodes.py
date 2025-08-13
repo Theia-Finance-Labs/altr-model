@@ -29,10 +29,16 @@ def filter_scenarios(
     )
 
     assert (
-        target_scenario in scenarios_pathways.scenario.unique()
+        target_scenario
+        in scenarios_pathways[
+            scenarios_pathways["scenario_type"] == "target"
+        ].scenario.unique()
     ), "Target scenario not found in scenarios pathways"
     assert (
-        baseline_scenario in scenarios_pathways.scenario.unique()
+        baseline_scenario
+        in scenarios_pathways[
+            scenarios_pathways["scenario_type"] == "baseline"
+        ].scenario.unique()
     ), "Baseline scenario not found in scenarios pathways"
 
     scenarios_pathways_filtered = scenarios_pathways.loc[
@@ -91,11 +97,48 @@ def filter_assets(
         :,
     ]
 
-    # Check if we have any assets after filtering
-    if filtered_assets_forecasts.empty:
-        raise ValueError(
-            "No assets remaining after filtering by year range and company ownership"
-        )
+    # Log how many unique assets were filtered out
+    initial_unique_assets = len(filtered_assets_forecasts["asset_id"].unique())
+
+    # Filter out assets-technology combinations whose first known year is higher than scenario_start_year
+    # or whose capacity is 0 in the first year
+    first_year_by_asset_tech = filtered_assets_forecasts.groupby(
+        ["asset_id", "technology"]
+    ).agg({"production_year": "min", "capacity": "first"})
+
+    valid_asset_tech_combinations = first_year_by_asset_tech[
+        (first_year_by_asset_tech["production_year"] <= scenario_start_year)
+        & (first_year_by_asset_tech["capacity"] > 0)
+    ].index
+
+    filtered_assets_forecasts = (
+        filtered_assets_forecasts.set_index(["asset_id", "technology"])
+        .loc[valid_asset_tech_combinations]
+        .reset_index()
+    )
+
+    remaining_unique_assets = len(filtered_assets_forecasts["asset_id"].unique())
+    removed_assets = initial_unique_assets - remaining_unique_assets
+    removed_pct = 100 * removed_assets / initial_unique_assets
+
+    print(
+        f"Filtered out {removed_assets:,} unique assets "
+        f"({removed_pct:.1f}% of {initial_unique_assets:,} total)"
+    )
+
+    filtered_assets_forecasts = filtered_assets_forecasts.reset_index(drop=True)
+
+    # Update assertion to reflect that we may now have different first production years
+    # since we filtered out some asset-technology combinations
+    if not filtered_assets_forecasts.empty:
+        first_years = filtered_assets_forecasts.groupby(["asset_id", "technology"])[
+            "production_year"
+        ].min()
+        assert all(
+            first_years <= scenario_start_year
+        ), "All remaining assets-technology combinations should have first production_year <= scenario_start_year"
+    else:
+        raise ValueError("No assets remaining after filtering")
 
     filtered_assets_forecasts = filtered_assets_forecasts.rename(
         {"production_year": "year"}, axis=1
@@ -110,7 +153,13 @@ def filter_assets(
 def assign_scenario_geographies_to_assets(
     assets_forecasts: pd.DataFrame, scenarios_pathways: pd.DataFrame
 ) -> pd.DataFrame:
-    """Assign scenario geographies to assets based on country mapping."""
+    """Assign scenario geographies to assets based on country mapping.
+
+    If a country maps to multiple scenario geographies, pick the geography with the
+    smallest number of countries (most granular). If there is a tie for smallest,
+    raise an error listing the conflicting geographies and the asset+country pair(s).
+    """
+    # Build mapping of scenario geographies to individual countries
     geographies_to_countries_mapping = (
         scenarios_pathways[["scenario_geography", "country_iso2_list"]]
         .drop_duplicates()
@@ -119,41 +168,97 @@ def assign_scenario_geographies_to_assets(
         .rename(columns={"country_iso2_list": "country_iso2"})
     )
 
-    assets_forecasts_with_scenario_geographies = assets_forecasts.merge(
-        geographies_to_countries_mapping,
-        on="country_iso2",
-        how="left",
+    # Count how many countries each geography contains (NaNs are excluded from the count)
+    geography_sizes = (
+        geographies_to_countries_mapping.groupby("scenario_geography", as_index=False)[
+            "country_iso2"
+        ]
+        .count()
+        .rename(columns={"country_iso2": "geography_country_count"})
     )
 
-    # Check if there are unassigned assets and a global geography exists
-    unassigned_mask = assets_forecasts_with_scenario_geographies[
-        "scenario_geography"
-    ].isna()
+    # Determine best (most granular) geography per asset+country pair
+    asset_country_pairs = assets_forecasts[
+        ["asset_id", "country_iso2"]
+    ].drop_duplicates()
+
+    asset_country_candidates = asset_country_pairs.merge(
+        geographies_to_countries_mapping, on="country_iso2", how="left"
+    ).merge(geography_sizes, on="scenario_geography", how="left")
+
+    # For each asset+country, find the minimum country count among candidate geographies
+    min_counts = asset_country_candidates.groupby(["asset_id", "country_iso2"])[
+        "geography_country_count"
+    ].transform("min")
+
+    is_min = asset_country_candidates["geography_country_count"].eq(min_counts)
+
+    # Detect ties: more than one candidate with the same minimum count for a given asset+country
+    tie_counts = (
+        asset_country_candidates[is_min]
+        .groupby(["asset_id", "country_iso2"], as_index=False)
+        .size()
+        .rename(columns={"size": "num_min_candidates"})
+    )
+
+    ambiguous_pairs = tie_counts.query("num_min_candidates > 1")
+    if not ambiguous_pairs.empty:
+        conflict_messages = []
+        for _, row in ambiguous_pairs.iterrows():
+            aid = row["asset_id"]
+            ctry = row["country_iso2"]
+            candidates = asset_country_candidates[
+                (asset_country_candidates["asset_id"] == aid)
+                & (asset_country_candidates["country_iso2"] == ctry)
+                & is_min
+            ][["scenario_geography", "geography_country_count"]]
+            candidates_list = candidates.apply(
+                lambda r: f"{r['scenario_geography']} (n={int(r['geography_country_count'])})",
+                axis=1,
+            ).tolist()
+            conflict_messages.append(
+                f"asset_id={aid}, country={ctry}: conflicting geographies {candidates_list}"
+            )
+        conflict_text = "\n".join(conflict_messages)
+        raise ValueError(
+            "Ambiguous scenario geography assignment detected. "
+            "Multiple geographies tie for most granular: \n" + conflict_text
+        )
+
+    # Select the unique most granular geography per asset+country
+    selected_geographies = (
+        asset_country_candidates[is_min]
+        .drop_duplicates(["asset_id", "country_iso2"])  # ensure one per pair
+        .loc[:, ["asset_id", "country_iso2", "scenario_geography"]]
+    )
+
+    # Merge the chosen geography back to all asset rows
+    assets_with_geography = assets_forecasts.merge(
+        selected_geographies, on=["asset_id", "country_iso2"], how="left"
+    )
+
+    # Fallback: Assign unassigned assets to a global geography (if defined with NaN country list)
+    unassigned_mask = assets_with_geography["scenario_geography"].isna()
 
     if unassigned_mask.sum() > 0:
-        # Look for a global geography (one with NaN/null country_iso2)
         global_geographies = geographies_to_countries_mapping[
             geographies_to_countries_mapping["country_iso2"].isna()
         ]["scenario_geography"].unique()
 
         if len(global_geographies) > 0:
-            # Use the first global geography found (typically "Global")
             global_geography = global_geographies[0]
             print(
                 f"Assigning {unassigned_mask.sum()} unassigned assets to global geography: {global_geography}"
             )
-
-            # Assign unassigned assets to the global geography
-            assets_forecasts_with_scenario_geographies.loc[
-                unassigned_mask, "scenario_geography"
-            ] = global_geography
+            assets_with_geography.loc[unassigned_mask, "scenario_geography"] = (
+                global_geography
+            )
 
     assert (
-        assets_forecasts_with_scenario_geographies["scenario_geography"].isna().sum()
-        == 0
+        assets_with_geography["scenario_geography"].isna().sum() == 0
     ), "Some assets are not assigned to a scenario geography"
 
-    return assets_forecasts_with_scenario_geographies
+    return assets_with_geography
 
 
 def allocate_assets_to_companies(
@@ -193,6 +298,8 @@ def allocate_assets_to_companies(
         merged_data["capacity"] * merged_data["ownership_percentage"]
     )
 
+    merged_data = merged_data.rename(columns={"capacity": "asset_activity"})
+
     return merged_data
 
 
@@ -219,66 +326,123 @@ def determine_lifetime_per_technology(
     scenarios_pathways: pd.DataFrame,
 ) -> pd.DataFrame:
 
-    # TODO: remove to replace by the real scenarios data
-
-    rng = np.random.RandomState(seed=42)
-
-    unique_combinations = scenarios_pathways[["sector", "technology"]].drop_duplicates()
-    unique_combinations["lifetime_years"] = rng.randint(
-        20, 40, size=len(unique_combinations)
+    unique_combinations = (
+        scenarios_pathways.loc[
+            scenarios_pathways["scenario_type"] == "target",
+            ["sector", "technology", "lifetime_years"],
+        ]
+        .dropna(subset=["lifetime_years"])
+        .groupby(["sector", "technology"])
+        .agg({"lifetime_years": lambda x: np.ceil(x.mean()).astype(int)})
+        .reset_index()
     )
 
     return unique_combinations
 
 
-def determine_assets_retirement_dates(
-    assets_forecasts: pd.DataFrame,
-    lifetime_per_technology: pd.DataFrame,
+def extend_allocated_assets_to_companies(
+    allocated_assets_to_companies: pd.DataFrame,
     scenarios_pathways: pd.DataFrame,
 ) -> pd.DataFrame:
 
+    group_cols = [
+        "company_id",
+        "asset_id",
+        "scenario_geography",
+        "sector",
+        "technology",
+    ]
     scenario_end_year = scenarios_pathways.year.max().astype(int)
-
-    # Get the maximum forecast year for each asset
-    last_forecast_year = assets_forecasts.year.round(0).max().astype(int)
-
-    # Merge with lifetime data
-    assets_with_lifetime = pd.merge(
-        assets_forecasts,
-        lifetime_per_technology,
-        on=["sector", "technology"],
-        how="left",
-    )
 
     # Get the last row for each asset (latest forecast year)
     last_forecast_rows = (
-        assets_with_lifetime.sort_values("year")
+        allocated_assets_to_companies.sort_values("year")
         .groupby(
-            ["company_id", "asset_id", "scenario_geography", "sector", "technology"],
+            group_cols,
             as_index=False,
         )
         .last()
     )
 
-    # Create extended years for each asset from last forecast year + 1 to scenario end year
-    extended_years = []
-    for year in range(last_forecast_year + 1, scenario_end_year + 1):
-        extended_year_data = last_forecast_rows.copy()
-        extended_year_data["year"] = year
-        # Increment asset age by the number of years past the last forecast
-        extended_year_data["asset_age"] = extended_year_data["asset_age"] + (
-            year - last_forecast_year
+    # Create extended years for each group from its own last forecast year + 1 to scenario end year
+    extended_rows = []
+    for _, row in last_forecast_rows.iterrows():
+        last_year = int(round(row["year"]))
+        if last_year >= scenario_end_year:
+            continue
+        years = np.arange(last_year + 1, scenario_end_year + 1, dtype=int)
+        ages = row["asset_age"] + (years - last_year)
+
+        base_data = {col: row[col] for col in group_cols}
+        base_df = pd.DataFrame(base_data, index=range(len(years)))
+        base_df["year"] = years
+        base_df["asset_age"] = ages
+        extended_rows.append(base_df)
+
+    if extended_rows:
+        extended_years = pd.concat(extended_rows, ignore_index=True)
+        # Combine original forecasts with extended years (other columns intentionally left as NaN)
+        extended_assets = pd.concat(
+            [allocated_assets_to_companies, extended_years], ignore_index=True
         )
-        extended_years.append(extended_year_data)
+    else:
+        extended_assets = allocated_assets_to_companies.copy()
 
-    # Combine original forecasts with extended years
-    extended_assets = pd.concat(
-        [assets_with_lifetime] + extended_years, ignore_index=True
-    )
+    # Sort to ensure proper ordering and forward fill only selected columns
+    extended_assets = extended_assets.sort_values(group_cols + ["year"])
+    extended_assets[
+        [
+            "company_name",
+            "asset_name",
+            "capacity_factor",
+            "emission_factor",
+            # "ownership_level",
+            "latitude",
+            "longitude",
+            "country_iso2",
+            "country_name",
+        ]
+    ] = extended_assets[
+        [
+            "company_name",
+            "asset_name",
+            "capacity_factor",
+            "emission_factor",
+            # "ownership_level",
+            "latitude",
+            "longitude",
+            "country_iso2",
+            "country_name",
+        ]
+    ].ffill()
 
+    return extended_assets
+
+
+def determine_assets_retirement_dates(
+    allocated_assets_to_companies: pd.DataFrame,
+    lifetime_per_technology: pd.DataFrame,
+) -> pd.DataFrame:
+    extended_assets = allocated_assets_to_companies.copy()
     # Sort by asset and year to ensure proper ordering
     extended_assets = extended_assets.sort_values(
         ["company_id", "asset_id", "scenario_geography", "technology", "year"]
+    )
+
+    # Get the maximum forecast year for each asset
+    last_forecast_year = (
+        allocated_assets_to_companies.dropna(subset=["asset_activity"])
+        .year.round(0)
+        .max()
+        .astype(int)
+    )
+
+    # Merge with lifetime data
+    extended_assets = pd.merge(
+        extended_assets,
+        lifetime_per_technology,
+        on=["sector", "technology"],
+        how="left",
     )
 
     # Find retirement dates: when asset_age exceeds lifetime_years for the first time
@@ -310,7 +474,6 @@ def determine_assets_retirement_dates(
                 "sector",
                 "technology",
                 "retirement_year",
-                "capacity",
             ]
         )
 
@@ -324,7 +487,6 @@ def determine_assets_retirement_dates(
             "sector",
             "technology",
             "retirement_year",
-            "capacity",
         ],
     ]
 
@@ -360,6 +522,7 @@ def interpolate_scenarios_annually(scenarios_pathways: pd.DataFrame) -> pd.DataF
         "fuel_price",
         "scenario_pathway",
         "scenario_capacity_factor",
+        "lifetime_years",
     ]
     existing_numeric_cols = [
         col for col in numeric_cols if col in scenarios_pathways.columns

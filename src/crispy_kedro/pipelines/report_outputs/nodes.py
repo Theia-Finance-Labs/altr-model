@@ -357,10 +357,13 @@ def plot_staggered_shock(
     output_dir: str = "data/08_reporting/companies_staggered_shock_plots",
     asset_after_col: str = "capacity_after_shock",
     asset_before_col: str = "capacity_before_shock",
-    include_before_sum: bool = True,
     include_synthetic: bool = True,
     min_points_for_asset: int = 1,
-    debug: bool = False,
+    max_individual_postshock_assets: int = 200,
+    max_individual_original_assets: int = 200,
+    annotate_asset_ages: bool = True,
+    max_residual_annotations: int = 30,
+    use_log_scale: bool = True,
 ):
     """
     For each unique (scenario_geography, company_id, technology) in late_sudden_trajectories, save:
@@ -374,10 +377,14 @@ def plot_staggered_shock(
     - Shows post-shock asset forecasts (asset-level late sudden)
     - Shows company total shock late sudden trajectory
     - Annotates assets with ages
-    - Shows bar plots of shock absorption/residual
+    - Shows bar plots of shock absorption/residuals
     - Can optionally include synthetic assets (is_synthetic==True) or drop them.
     - Expects asset_level_df to include: ['asset_id','company_id','scenario_geography','technology','year',
                                           'asset_age', asset_before_col, asset_after_col, 'is_synthetic', 'allocated_shock'].
+    - Performance guards: when there are many assets, individual per-asset lines and annotations are skipped using
+      the thresholds max_individual_postshock_assets and max_individual_original_assets to keep figure saving fast.
+    - Residual annotations are also capped via max_residual_annotations to avoid thousands of text artists.
+    - Axis scale can be toggled with `use_log_scale`.
     """
 
     # Clean up existing directory if it exists
@@ -440,36 +447,45 @@ def plot_staggered_shock(
         return pd.DataFrame()
 
     def _calculate_shock_residuals(late_sudden_traj, asset_level_data, years):
-        """Calculate shock residuals for bar plot visualization"""
-        residuals = []
+        """Calculate per-year level residuals for visualization.
 
-        for year in years:
-            # Company shock for this year
-            company_shock_data = late_sudden_traj[late_sudden_traj["year"] == year]
-            if company_shock_data.empty:
-                residuals.append(0.0)
-                continue
+        Residual is defined as: (sum of post-shock assets) - (company L&S level)
+        Positive => unabsorbed (assets above company);
+        Negative => over-absorbed (assets below company).
+        """
+        # Company series for requested years
+        comp_year = (
+            late_sudden_traj[["year", "company_trajectory_latesudden"]]
+            .copy()
+            .dropna(subset=["year"])
+        )
+        comp_year["year"] = comp_year["year"].astype(int)
 
-            # Get company trajectory value and previous year to calculate shock
-            company_val = company_shock_data["company_trajectory_latesudden"].iloc[0]
-            prev_year_data = late_sudden_traj[late_sudden_traj["year"] == year - 1]
-            if not prev_year_data.empty:
-                prev_val = prev_year_data["company_trajectory_latesudden"].iloc[0]
-                company_shock = company_val - prev_val
-            else:
-                company_shock = 0.0
+        # Aggregate post-shock asset totals per year
+        asset_year = (
+            (
+                asset_level_data.groupby("year", as_index=False)
+                .agg(total_after=(asset_after_col, "sum"))
+                .sort_values("year")
+            )
+            if not asset_level_data.empty
+            else pd.DataFrame({"year": [], "total_after": []})
+        )
+        if not asset_year.empty:
+            asset_year["year"] = asset_year["year"].astype(int)
 
-            # Sum of allocated shock to assets for this year
-            asset_year_data = asset_level_data[asset_level_data["year"] == year]
-            if "allocated_shock" in asset_year_data.columns:
-                allocated_shock = asset_year_data["allocated_shock"].sum()
-            else:
-                allocated_shock = 0.0
+        # Merge to align on the same year vector used for the plot
+        years_df = pd.DataFrame({"year": years.astype(int)})
+        merged = years_df.merge(comp_year, on="year", how="left").merge(
+            asset_year, on="year", how="left"
+        )
 
-            # Residual = company shock - allocated shock
-            residual = company_shock - allocated_shock
-            residuals.append(residual)
-
+        # Compute residuals (fill missing totals with 0 for safety)
+        comp_vals = (
+            merged["company_trajectory_latesudden"].fillna(0.0).to_numpy(dtype=float)
+        )
+        aset_vals = merged["total_after"].fillna(0.0).to_numpy(dtype=float)
+        residuals = (aset_vals - comp_vals).tolist()
         return residuals
 
     # add company_name if missing (best-effort)
@@ -555,6 +571,24 @@ def plot_staggered_shock(
             if not include_synthetic and "is_synthetic" in aset.columns:
                 aset = aset[~aset["is_synthetic"].fillna(False)].copy()
 
+            # Count assets for performance guards
+            num_post_assets = int(aset["asset_id"].nunique()) if not aset.empty else 0
+
+            # If heavy, enable path simplification and chunking
+            try:
+                import matplotlib as mpl
+
+                heavy_case = False
+                if num_post_assets > max_individual_postshock_assets:
+                    heavy_case = True
+                # We'll also check original forecasts later for heavy cases
+                if heavy_case:
+                    mpl.rcParams["path.simplify"] = True
+                    mpl.rcParams["path.simplify_threshold"] = 0.1
+                    mpl.rcParams["agg.path.chunksize"] = 10000
+            except Exception:
+                pass
+
             # Get extended original forecasts
             orig_forecasts = _extend_original_forecasts(
                 assets_forecasts,
@@ -568,6 +602,8 @@ def plot_staggered_shock(
             # Create the plot with subplots: main plot + bar plot
             fig = plt.figure(figsize=(14, 10))
             gs = gridspec.GridSpec(2, 1, height_ratios=[3, 1], hspace=0.3)
+            # Reserve space on the right for legends so we do not need bbox_inches='tight'
+            fig.subplots_adjust(right=0.78)
 
             # Main trajectory plot
             ax1 = fig.add_subplot(gs[0])
@@ -605,46 +641,51 @@ def plot_staggered_shock(
                 )
 
                 # Individual asset lines (post-shock) with age annotations
-                colors = plt.cm.tab10(np.linspace(0, 1, 10))
-                color_idx = 0
-                for aid, df_a in (
-                    aset[["asset_id", "year", "asset_age", asset_after_col]]
-                    .dropna(subset=["year"])
-                    .groupby("asset_id")
-                ):
-                    df_a = df_a.sort_values("year")
-                    if len(df_a) < min_points_for_asset:
-                        continue
+                if num_post_assets <= max_individual_postshock_assets:
+                    colors = plt.cm.tab10(np.linspace(0, 1, 10))
+                    color_idx = 0
+                    for aid, df_a in (
+                        aset[["asset_id", "year", "asset_age", asset_after_col]]
+                        .dropna(subset=["year"])
+                        .groupby("asset_id")
+                    ):
+                        df_a = df_a.sort_values("year")
+                        if len(df_a) < min_points_for_asset:
+                            continue
 
-                    color = colors[color_idx % len(colors)]
-                    ax1.plot(
-                        df_a["year"].to_numpy(dtype=int),
-                        df_a[asset_after_col].to_numpy(dtype=float),
-                        lw=1.5,
-                        alpha=0.7,
-                        label=f"Asset {aid} (post-shock)",
-                        color=color,
-                    )
-
-                    # Annotate age at first plotted year
-                    try:
-                        y0 = int(df_a["year"].iloc[0])
-                        a0 = float(df_a["asset_age"].iloc[0])
-                        v0 = float(df_a[asset_after_col].iloc[0])
-                        ax1.text(
-                            y0,
-                            v0,
-                            f"age≈{int(round(a0))}",
-                            fontsize=8,
-                            va="bottom",
-                            ha="left",
-                            alpha=0.8,
+                        color = colors[color_idx % len(colors)]
+                        ax1.plot(
+                            df_a["year"].to_numpy(dtype=int),
+                            df_a[asset_after_col].to_numpy(dtype=float),
+                            lw=1.5,
+                            alpha=0.7,
+                            label=f"Asset {aid} (post-shock)",
                             color=color,
-                            weight="bold",
                         )
-                    except Exception:
-                        pass
-                    color_idx += 1
+
+                        if annotate_asset_ages:
+                            # Annotate age at first plotted year
+                            try:
+                                y0 = int(df_a["year"].iloc[0])
+                                a0 = float(df_a["asset_age"].iloc[0])
+                                v0 = float(df_a[asset_after_col].iloc[0])
+                                ax1.text(
+                                    y0,
+                                    v0,
+                                    f"age≈{int(round(a0))}",
+                                    fontsize=8,
+                                    va="bottom",
+                                    ha="left",
+                                    alpha=0.8,
+                                    color=color,
+                                    weight="bold",
+                                )
+                            except Exception:
+                                pass
+                        color_idx += 1
+                else:
+                    # Too many assets to plot individually; keep only aggregated line
+                    pass
 
             # Original asset forecasts
             if not orig_forecasts.empty:
@@ -664,21 +705,28 @@ def plot_staggered_shock(
                     alpha=0.8,
                 )
 
-                # Individual original asset lines (lighter)
-                for aid, df_orig in orig_forecasts.groupby("asset_id"):
-                    df_orig = df_orig.sort_values("year")
-                    if len(df_orig) < min_points_for_asset:
-                        continue
-                    ax1.plot(
-                        df_orig["year"].to_numpy(dtype=int),
-                        df_orig["capacity"].to_numpy(dtype=float),
-                        lw=1.0,
-                        alpha=0.4,
-                        color="green",
-                    )
+                # Individual original asset lines (lighter) — only if not too many
+                n_orig_assets = int(orig_forecasts["asset_id"].nunique())
+                if n_orig_assets <= max_individual_original_assets:
+                    for aid, df_orig in orig_forecasts.groupby("asset_id"):
+                        df_orig = df_orig.sort_values("year")
+                        if len(df_orig) < min_points_for_asset:
+                            continue
+                        ax1.plot(
+                            df_orig["year"].to_numpy(dtype=int),
+                            df_orig["capacity"].to_numpy(dtype=float),
+                            lw=1.0,
+                            alpha=0.4,
+                            color="green",
+                        )
+                else:
+                    # Skip individual original asset lines for performance
+                    pass
 
             ax1.set_xlabel("Year")
-            ax1.set_ylabel("Production / Capacity")
+            ax1.set_ylabel(
+                "Production / Capacity" + (" (log scale)" if use_log_scale else "")
+            )
             title_name = comp_name if pd.notna(comp_name) else cid
             ax1.set_title(
                 f"{tech} • {geo} • {title_name}\nTrajectories Comparison | Alignment: {alignment_type}"
@@ -700,11 +748,155 @@ def plot_staggered_shock(
                     kept_labels.append(lab)
                 if asset_count > 0:
                     kept_labels.append(f"{asset_count} individual assets (post-shock)")
-                ax1.legend(
-                    kept, kept_labels, bbox_to_anchor=(1.05, 1), loc="upper left"
+                main_leg = ax1.legend(
+                    kept,
+                    kept_labels,
+                    bbox_to_anchor=(1.05, 1),
+                    loc="upper left",
+                    framealpha=0.9,
+                    fancybox=False,
+                    shadow=False,
                 )
             else:
-                ax1.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+                main_leg = ax1.legend(
+                    bbox_to_anchor=(1.05, 1),
+                    loc="upper left",
+                    framealpha=0.9,
+                    fancybox=False,
+                    shadow=False,
+                )
+
+            # Apply y-axis scaling (log or linear) with safe bounds and reasonable ticks
+            if use_log_scale:
+                try:
+                    candidates = [company_vals]
+                    if "aset_year" in locals() and not aset_year.empty:
+                        candidates.append(
+                            aset_year["total_after"].to_numpy(dtype=float)
+                        )
+                    if not aset.empty:
+                        candidates.append(aset[asset_after_col].to_numpy(dtype=float))
+                    if "orig_year" in locals():
+                        candidates.append(orig_year["total_orig"].to_numpy(dtype=float))
+                    if not orig_forecasts.empty:
+                        candidates.append(
+                            orig_forecasts["capacity"].to_numpy(dtype=float)
+                        )
+                    all_vals = (
+                        np.concatenate([c for c in candidates if c is not None])
+                        if candidates
+                        else np.array([])
+                    )
+                    positives = all_vals[all_vals > 0]
+                    bottom = (
+                        float(np.nanmin(positives)) * 0.8
+                        if positives.size > 0
+                        else 1e-6
+                    )
+                    bottom = max(bottom, 1e-12)
+                    top = (
+                        float(np.nanmax(positives)) * 1.2 if positives.size > 0 else 1e6
+                    )
+
+                    ax1.set_yscale("log")
+                    ax1.set_ylim(bottom=bottom, top=top)
+
+                    # Add detailed log scale graduations
+                    from matplotlib.ticker import LogLocator, LogFormatter
+
+                    major_locator = LogLocator(base=10, numticks=20)
+                    ax1.yaxis.set_major_locator(major_locator)
+
+                    minor_locator = LogLocator(
+                        base=10, subs=np.arange(2, 10) * 0.1, numticks=20
+                    )
+                    ax1.yaxis.set_minor_locator(minor_locator)
+
+                    major_formatter = LogFormatter(base=10, labelOnlyBase=False)
+                    ax1.yaxis.set_major_formatter(major_formatter)
+
+                    ax1.tick_params(axis="y", which="minor", length=3, width=0.5)
+                    ax1.tick_params(axis="y", which="major", length=6, width=1)
+
+                    ax1.grid(True, which="major", alpha=0.3)
+                    ax1.grid(True, which="minor", alpha=0.1)
+
+                    # If plot is heavy, disable minor ticks/grid to reduce draw time
+                    try:
+                        from matplotlib.ticker import NullLocator
+
+                        heavy = False
+                        try:
+                            n_orig_assets = (
+                                int(orig_forecasts["asset_id"].nunique())
+                                if not orig_forecasts.empty
+                                else 0
+                            )
+                            if (
+                                num_post_assets > max_individual_postshock_assets
+                                or n_orig_assets > max_individual_original_assets
+                            ):
+                                heavy = True
+                        except Exception:
+                            pass
+                        if heavy:
+                            ax1.yaxis.set_minor_locator(NullLocator())
+                            ax1.grid(False, which="minor")
+                    except Exception:
+                        pass
+
+                except Exception:
+                    ax1.set_yscale("log")
+                    try:
+                        from matplotlib.ticker import LogLocator
+
+                        ax1.yaxis.set_major_locator(LogLocator(base=10, numticks=15))
+                        ax1.yaxis.set_minor_locator(
+                            LogLocator(
+                                base=10, subs=np.arange(2, 10) * 0.1, numticks=15
+                            )
+                        )
+                        ax1.tick_params(axis="y", which="minor", length=3, width=0.5)
+                        ax1.grid(True, which="major", alpha=0.3)
+                        ax1.grid(True, which="minor", alpha=0.1)
+                    except Exception:
+                        pass
+            else:
+                # Linear scale with safe bounds and simple grid
+                try:
+                    candidates = [company_vals]
+                    if "aset_year" in locals() and not aset_year.empty:
+                        candidates.append(
+                            aset_year["total_after"].to_numpy(dtype=float)
+                        )
+                    if not aset.empty:
+                        candidates.append(aset[asset_after_col].to_numpy(dtype=float))
+                    if "orig_year" in locals():
+                        candidates.append(orig_year["total_orig"].to_numpy(dtype=float))
+                    if not orig_forecasts.empty:
+                        candidates.append(
+                            orig_forecasts["capacity"].to_numpy(dtype=float)
+                        )
+                    all_vals = (
+                        np.concatenate([c for c in candidates if c is not None])
+                        if candidates
+                        else np.array([])
+                    )
+                    finite_vals = all_vals[np.isfinite(all_vals)]
+                    if finite_vals.size > 0:
+                        vmin = float(np.nanmin(finite_vals))
+                        vmax = float(np.nanmax(finite_vals))
+                        if vmin == vmax:
+                            pad = 1.0 if vmax == 0 else abs(vmax) * 0.1
+                            vmin, vmax = vmin - pad, vmax + pad
+                        else:
+                            pad = (vmax - vmin) * 0.1
+                            vmin, vmax = vmin - pad, vmax + pad
+                        ax1.set_ylim(vmin, vmax)
+                    ax1.set_yscale("linear")
+                    ax1.grid(True, which="major", alpha=0.3)
+                except Exception:
+                    ax1.set_yscale("linear")
 
             # Shock absorption bar plot
             ax2 = fig.add_subplot(gs[1])
@@ -738,20 +930,31 @@ def plot_staggered_shock(
                 ax2.set_xlabel("Year")
                 ax2.set_ylabel("Shock Residual")
                 ax2.set_title("Shock Absorption Analysis")
-                ax2.legend()
+                ax2.legend(framealpha=0.9, fancybox=False, shadow=False)
 
-                # Add text annotations for non-zero residuals
-                for year, residual in zip(years, residuals):
-                    if abs(residual) > 1e-6:  # Only annotate significant residuals
-                        ax2.text(
-                            year,
-                            residual,
-                            f"{residual:.2e}",
-                            ha="center",
-                            va="bottom" if residual > 0 else "top",
-                            fontsize=8,
-                            alpha=0.8,
-                        )
+                # Add text annotations for a limited number of largest residuals by magnitude
+                try:
+                    # Pick indices of top-K absolute residuals
+                    abs_res = np.abs(np.array(residuals, dtype=float))
+                    if np.isfinite(abs_res).any():
+                        top_k = int(min(max_residual_annotations, len(abs_res)))
+                        top_idx = np.argpartition(abs_res, -top_k)[-top_k:]
+                        for idx in top_idx:
+                            r = residuals[idx]
+                            if not np.isfinite(r) or abs(r) <= 0:
+                                continue
+                            yr = int(years[idx])
+                            ax2.text(
+                                yr,
+                                r,
+                                f"{r:.2e}",
+                                ha="center",
+                                va="bottom" if r > 0 else "top",
+                                fontsize=8,
+                                alpha=0.8,
+                            )
+                except Exception:
+                    pass
             else:
                 ax2.text(
                     0.5,
@@ -765,15 +968,134 @@ def plot_staggered_shock(
                 )
                 ax2.set_xlim(years[0], years[-1])
 
-            # plt.tight_layout()
+            # Overlay late-sudden phases across both subplots and add a dedicated legend on the main subplot
+            phase_legend_elements = []
+            if (
+                "late_sudden_phase" in comp.columns
+                and not comp["late_sudden_phase"].isna().all()
+            ):
+                phase_colors = {
+                    "forecast": "#1f77b4",
+                    "bau": "#ff7f0e",
+                    "transition": "#2ca02c",
+                    "aligned": "#d62728",
+                    "aligned_compensation": "#9467bd",
+                    "retirement": "#7f7f7f",
+                    "phased_out": "#bcbd22",
+                }
+
+                years_series = comp["year"].astype(int).reset_index(drop=True)
+                phases_series = comp["late_sudden_phase"].reset_index(drop=True)
+
+                phase_spans = []
+                current_phase = None
+                phase_start = None
+                for year_val, phase_val in zip(years_series, phases_series):
+                    if phase_val != current_phase:
+                        if current_phase is not None and phase_start is not None:
+                            phase_spans.append(
+                                (current_phase, phase_start, int(year_val) - 1)
+                            )
+                        current_phase = phase_val
+                        phase_start = int(year_val) - 1
+                if current_phase is not None and phase_start is not None:
+                    last_year = int(years_series.iloc[-1])
+                    year_range = int(years_series.max() - years_series.min())
+                    extended_end = last_year + (year_range * 0.02)
+                    phase_spans.append((current_phase, phase_start, extended_end))
+
+                for phase_val, start_year, end_year in phase_spans:
+                    if pd.notna(phase_val) and phase_val != "":
+                        color = phase_colors.get(phase_val, "#333333")
+                        # Background spans on both axes
+                        for ax in (ax1, ax2):
+                            ax.axvspan(
+                                start_year, end_year, alpha=0.12, color=color, zorder=0
+                            )
+                        # Vertical delimiter line on main axis (skip very first)
+                        if start_year != int(years_series.iloc[0]):
+                            ax1.axvline(
+                                x=start_year,
+                                color=color,
+                                linestyle="--",
+                                alpha=0.8,
+                                linewidth=1.5,
+                                zorder=1,
+                            )
+                        # Legend element for phases
+                        phase_legend_elements.append(
+                            plt.Rectangle(
+                                (0, 0),
+                                1,
+                                1,
+                                facecolor=color,
+                                alpha=0.3,
+                                label=f"Phase: {str(phase_val).replace('_', ' ').title()}",
+                            )
+                        )
+
+                # De-duplicate phase legend entries and render a separate legend
+                if phase_legend_elements:
+                    seen_labels = set()
+                    unique_phase_elements = []
+                    for el in phase_legend_elements:
+                        lab = el.get_label()
+                        if lab not in seen_labels:
+                            unique_phase_elements.append(el)
+                            seen_labels.add(lab)
+                    # Limit phase legend items to avoid very large legends
+                    max_phase_legend = 12
+                    unique_phase_elements = unique_phase_elements[:max_phase_legend]
+                    phase_leg = ax1.legend(
+                        handles=unique_phase_elements,
+                        loc="upper left",
+                        bbox_to_anchor=(1.05, 0.3),
+                        fontsize=9,
+                        title="Late & Sudden Phases",
+                        title_fontsize=10,
+                        framealpha=0.9,
+                        fancybox=False,
+                        shadow=False,
+                    )
+                    # Keep main legend as well
+                    ax1.add_artist(main_leg)
+
+            # plt.tight_layout()  # avoid tight to keep savefig fast
             tech_clean = _clean(tech)
             geo_clean = _clean(geo)
             comp_clean = _clean(title_name)
             save_path = os.path.join(
                 subdir, f"{tech_clean}-{comp_clean}-{geo_clean}.png"
             )
-            plt.savefig(save_path, dpi=300, bbox_inches="tight")
-            plt.close()
+            # Time saving to identify hotspots if slow
+            try:
+                import time
+
+                # Adapt DPI based on potential plot complexity
+                dpi_use = 300
+                try:
+                    # If we exceeded per-asset thresholds (many assets), lower DPI a bit
+                    n_orig_assets = (
+                        int(orig_forecasts["asset_id"].nunique())
+                        if not orig_forecasts.empty
+                        else 0
+                    )
+                    if (
+                        num_post_assets > max_individual_postshock_assets
+                        or n_orig_assets > max_individual_original_assets
+                    ):
+                        dpi_use = 220
+                except Exception:
+                    pass
+                t0 = time.time()
+                plt.savefig(save_path, dpi=dpi_use, facecolor="white")
+                dt = time.time() - t0
+                if dt > 3.0:
+                    print(
+                        f"Warning: slow save ({dt:.2f}s) for {save_path} [dpi={dpi_use}]"
+                    )
+            finally:
+                plt.close()
             print(f"Saved plot: {save_path}")
 
     print(f"All plots saved under {output_dir}")

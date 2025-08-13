@@ -3,3 +3,6 @@
 #
 # Documentation for this file format can be found in "Parameters"
 # Link: https://docs.kedro.org/en/0.19.12/configuration/parameters.html
+
+
+apply_retirement: False
