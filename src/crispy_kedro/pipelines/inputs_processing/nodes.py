@@ -97,12 +97,18 @@ def filter_assets(
         :,
     ]
 
+    # Log how many unique assets were filtered out
+    initial_unique_assets = len(filtered_assets_forecasts["asset_id"].unique())
+
     # Filter out assets-technology combinations whose first known year is higher than scenario_start_year
+    # or whose capacity is 0 in the first year
     first_year_by_asset_tech = filtered_assets_forecasts.groupby(
         ["asset_id", "technology"]
-    )["production_year"].min()
+    ).agg({"production_year": "min", "capacity": "first"})
+
     valid_asset_tech_combinations = first_year_by_asset_tech[
-        first_year_by_asset_tech <= scenario_start_year
+        (first_year_by_asset_tech["production_year"] <= scenario_start_year)
+        & (first_year_by_asset_tech["capacity"] > 0)
     ].index
 
     filtered_assets_forecasts = (
@@ -110,8 +116,7 @@ def filter_assets(
         .loc[valid_asset_tech_combinations]
         .reset_index()
     )
-    # Log how many unique assets were filtered out
-    initial_unique_assets = len(assets_forecasts["asset_id"].unique())
+
     remaining_unique_assets = len(filtered_assets_forecasts["asset_id"].unique())
     removed_assets = initial_unique_assets - remaining_unique_assets
     removed_pct = 100 * removed_assets / initial_unique_assets

@@ -357,10 +357,8 @@ def plot_staggered_shock(
     output_dir: str = "data/08_reporting/companies_staggered_shock_plots",
     asset_after_col: str = "capacity_after_shock",
     asset_before_col: str = "capacity_before_shock",
-    include_before_sum: bool = True,
     include_synthetic: bool = True,
     min_points_for_asset: int = 1,
-    debug: bool = False,
 ):
     """
     For each unique (scenario_geography, company_id, technology) in late_sudden_trajectories, save:
@@ -678,7 +676,7 @@ def plot_staggered_shock(
                     )
 
             ax1.set_xlabel("Year")
-            ax1.set_ylabel("Production / Capacity")
+            ax1.set_ylabel("Production / Capacity (log scale)")
             title_name = comp_name if pd.notna(comp_name) else cid
             ax1.set_title(
                 f"{tech} • {geo} • {title_name}\nTrajectories Comparison | Alignment: {alignment_type}"
@@ -700,11 +698,78 @@ def plot_staggered_shock(
                     kept_labels.append(lab)
                 if asset_count > 0:
                     kept_labels.append(f"{asset_count} individual assets (post-shock)")
-                ax1.legend(
+                main_leg = ax1.legend(
                     kept, kept_labels, bbox_to_anchor=(1.05, 1), loc="upper left"
                 )
             else:
-                ax1.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+                main_leg = ax1.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+
+            # Apply log scale to the main plot y-axis with a safe lower bound and detailed graduations
+            try:
+                candidates = [company_vals]
+                if "aset_year" in locals() and not aset_year.empty:
+                    candidates.append(aset_year["total_after"].to_numpy(dtype=float))
+                if not aset.empty:
+                    candidates.append(aset[asset_after_col].to_numpy(dtype=float))
+                if "orig_year" in locals():
+                    candidates.append(orig_year["total_orig"].to_numpy(dtype=float))
+                if not orig_forecasts.empty:
+                    candidates.append(orig_forecasts["capacity"].to_numpy(dtype=float))
+                all_vals = (
+                    np.concatenate([c for c in candidates if c is not None])
+                    if candidates
+                    else np.array([])
+                )
+                positives = all_vals[all_vals > 0]
+                bottom = (
+                    float(np.nanmin(positives)) * 0.8 if positives.size > 0 else 1e-6
+                )
+                bottom = max(bottom, 1e-12)
+                top = float(np.nanmax(positives)) * 1.2 if positives.size > 0 else 1e6
+
+                ax1.set_yscale("log")
+                ax1.set_ylim(bottom=bottom, top=top)
+
+                # Add detailed log scale graduations
+                from matplotlib.ticker import LogLocator, LogFormatter
+
+                # Major ticks (powers of 10)
+                major_locator = LogLocator(base=10, numticks=20)
+                ax1.yaxis.set_major_locator(major_locator)
+
+                # Minor ticks (intermediate values like 2, 3, 4, 5, 6, 7, 8, 9)
+                minor_locator = LogLocator(
+                    base=10, subs=np.arange(2, 10) * 0.1, numticks=20
+                )
+                ax1.yaxis.set_minor_locator(minor_locator)
+
+                # Format major ticks
+                major_formatter = LogFormatter(base=10, labelOnlyBase=False)
+                ax1.yaxis.set_major_formatter(major_formatter)
+
+                # Show minor ticks
+                ax1.tick_params(axis="y", which="minor", length=3, width=0.5)
+                ax1.tick_params(axis="y", which="major", length=6, width=1)
+
+                # Add grid for both major and minor ticks
+                ax1.grid(True, which="major", alpha=0.3)
+                ax1.grid(True, which="minor", alpha=0.1)
+
+            except Exception:
+                ax1.set_yscale("log")
+                # Fallback to basic log scale with some graduations
+                try:
+                    from matplotlib.ticker import LogLocator
+
+                    ax1.yaxis.set_major_locator(LogLocator(base=10, numticks=15))
+                    ax1.yaxis.set_minor_locator(
+                        LogLocator(base=10, subs=np.arange(2, 10) * 0.1, numticks=15)
+                    )
+                    ax1.tick_params(axis="y", which="minor", length=3, width=0.5)
+                    ax1.grid(True, which="major", alpha=0.3)
+                    ax1.grid(True, which="minor", alpha=0.1)
+                except Exception:
+                    pass
 
             # Shock absorption bar plot
             ax2 = fig.add_subplot(gs[1])
@@ -764,6 +829,95 @@ def plot_staggered_shock(
                     alpha=0.6,
                 )
                 ax2.set_xlim(years[0], years[-1])
+
+            # Overlay late-sudden phases across both subplots and add a dedicated legend on the main subplot
+            phase_legend_elements = []
+            if (
+                "late_sudden_phase" in comp.columns
+                and not comp["late_sudden_phase"].isna().all()
+            ):
+                phase_colors = {
+                    "forecast": "#1f77b4",
+                    "bau": "#ff7f0e",
+                    "transition": "#2ca02c",
+                    "aligned": "#d62728",
+                    "aligned_compensation": "#9467bd",
+                    "retirement": "#7f7f7f",
+                    "phased_out": "#bcbd22",
+                }
+
+                years_series = comp["year"].astype(int).reset_index(drop=True)
+                phases_series = comp["late_sudden_phase"].reset_index(drop=True)
+
+                phase_spans = []
+                current_phase = None
+                phase_start = None
+                for year_val, phase_val in zip(years_series, phases_series):
+                    if phase_val != current_phase:
+                        if current_phase is not None and phase_start is not None:
+                            phase_spans.append(
+                                (current_phase, phase_start, int(year_val) - 1)
+                            )
+                        current_phase = phase_val
+                        phase_start = int(year_val) - 1
+                if current_phase is not None and phase_start is not None:
+                    last_year = int(years_series.iloc[-1])
+                    year_range = int(years_series.max() - years_series.min())
+                    extended_end = last_year + (year_range * 0.02)
+                    phase_spans.append((current_phase, phase_start, extended_end))
+
+                for phase_val, start_year, end_year in phase_spans:
+                    if pd.notna(phase_val) and phase_val != "":
+                        color = phase_colors.get(phase_val, "#333333")
+                        # Background spans on both axes
+                        for ax in (ax1, ax2):
+                            ax.axvspan(
+                                start_year, end_year, alpha=0.12, color=color, zorder=0
+                            )
+                        # Vertical delimiter line on main axis (skip very first)
+                        if start_year != int(years_series.iloc[0]):
+                            ax1.axvline(
+                                x=start_year,
+                                color=color,
+                                linestyle="--",
+                                alpha=0.8,
+                                linewidth=1.5,
+                                zorder=1,
+                            )
+                        # Legend element for phases
+                        phase_legend_elements.append(
+                            plt.Rectangle(
+                                (0, 0),
+                                1,
+                                1,
+                                facecolor=color,
+                                alpha=0.3,
+                                label=f"Phase: {str(phase_val).replace('_', ' ').title()}",
+                            )
+                        )
+
+                # De-duplicate phase legend entries and render a separate legend
+                if phase_legend_elements:
+                    seen_labels = set()
+                    unique_phase_elements = []
+                    for el in phase_legend_elements:
+                        lab = el.get_label()
+                        if lab not in seen_labels:
+                            unique_phase_elements.append(el)
+                            seen_labels.add(lab)
+                    phase_leg = ax1.legend(
+                        handles=unique_phase_elements,
+                        loc="upper left",
+                        bbox_to_anchor=(1.05, 0.3),
+                        fontsize=9,
+                        title="Late & Sudden Phases",
+                        title_fontsize=10,
+                        framealpha=0.9,
+                        fancybox=True,
+                        shadow=True,
+                    )
+                    # Keep main legend as well
+                    ax1.add_artist(main_leg)
 
             # plt.tight_layout()
             tech_clean = _clean(tech)

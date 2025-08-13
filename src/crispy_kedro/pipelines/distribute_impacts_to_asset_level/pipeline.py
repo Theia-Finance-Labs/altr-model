@@ -43,7 +43,6 @@ def create_pipeline(**kwargs) -> Pipeline:
                 inputs=dict(
                     late_sudden_trajectories="increasing_tech_late_sudden_trajectories",
                     allocated_assets_to_companies="extended_allocated_assets_to_companies",
-                    assets_retirement_dates="assets_retirement_dates",
                     shock_year="params:shock_year",
                 ),
                 outputs="increasing_tech_staggered_shock",
