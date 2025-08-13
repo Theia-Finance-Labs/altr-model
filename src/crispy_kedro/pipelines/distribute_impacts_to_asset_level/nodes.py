@@ -475,6 +475,94 @@ def stagger_decreasing_technologies(
 
 
 # =========================================================
+# ===== New: flag phased-out assets as retired (post-dec) ===
+# =========================================================
+
+
+def flag_phased_out_assets_as_retired(
+    dec_staggered: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Mark assets that phase out (capacity_after_shock becomes 0 and stays 0 thereafter)
+    as retired by setting late_sudden_phase == "retirement" at the first year of
+    permanent zero capacity. Only applies to real assets (is_synthetic == False).
+    """
+    if dec_staggered is None or dec_staggered.empty:
+        return dec_staggered
+
+    need = [
+        "company_id",
+        "scenario_geography",
+        "sector",
+        "technology",
+        "asset_id",
+        "year",
+        "capacity_after_shock",
+        "is_synthetic",
+        "late_sudden_phase",
+    ]
+    miss = [c for c in need if c not in dec_staggered.columns]
+    if miss:
+        raise ValueError(
+            f"dec_staggered missing columns for flagging phased-out assets: {miss}"
+        )
+
+    df = dec_staggered.copy()
+    df["year"] = _ensure_int_year(df["year"]).astype(int)
+    df["is_synthetic"] = df["is_synthetic"].fillna(False).astype(bool)
+    df["late_sudden_phase"] = df["late_sudden_phase"].fillna("").astype(str)
+    df["capacity_after_shock"] = df["capacity_after_shock"].astype(float)
+
+    # Work on real assets only
+    real = df[~df["is_synthetic"]]
+    if real.empty:
+        return df
+
+    key_cols = GROUP_COLS + ["asset_id"]
+
+    # Collect rows (by index) to set as retirement
+    to_mark_idx: List[int] = []
+
+    for _, g in real.groupby(key_cols, sort=False):
+        g_sorted = g.sort_values("year")
+        caps = g_sorted["capacity_after_shock"].to_numpy(dtype=float)
+        years = g_sorted["year"].to_numpy(dtype=int)
+
+        if not np.isfinite(caps).any():
+            continue
+        if np.nanmax(caps) <= 0.0:
+            # never positive; skip
+            continue
+
+        pos = caps > 0.0
+        # future_pos[i] = any(pos[j] for j>=i)
+        future_pos = np.maximum.accumulate(pos[::-1])[::-1]
+        # positions where no future positives and current is zero -> start of permanent zero suffix
+        start_perm_zero = (~future_pos) & (~pos)
+
+        if not start_perm_zero.any():
+            continue
+        i0 = int(np.argmax(start_perm_zero))  # first True
+        # ensure there was a positive before i0
+        if i0 == 0 or not pos[:i0].any():
+            continue
+
+        retire_year = years[i0]
+        # index of the row in the original df corresponding to (asset_id, retire_year)
+        row = g_sorted[g_sorted["year"] == retire_year]
+        if not row.empty:
+            idx = int(row.index[0])
+            # don't override existing explicit retirement
+            if df.at[idx, "late_sudden_phase"] != "retirement":
+                to_mark_idx.append(idx)
+
+    if to_mark_idx:
+        df.loc[to_mark_idx, "late_sudden_phase"] = "retirement"
+
+    return df
+
+
+# =========================================================
 # ============== INCREASING technologies node =============
 # =========================================================
 

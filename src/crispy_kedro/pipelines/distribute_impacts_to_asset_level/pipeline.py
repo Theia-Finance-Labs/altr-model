@@ -11,6 +11,7 @@ from .nodes import (
     stagger_increasing_technologies,
     concatenate_staggered_shock_results,
     compute_capex_indicators,
+    flag_phased_out_assets_as_retired,
 )
 
 
@@ -41,6 +42,13 @@ def create_pipeline(**kwargs) -> Pipeline:
                 outputs="decreasing_tech_staggered_shock",
             ),
             node(
+                flag_phased_out_assets_as_retired,
+                inputs=dict(
+                    dec_staggered="decreasing_tech_staggered_shock",
+                ),
+                outputs="decreasing_tech_staggered_shock_flagged",
+            ),
+            node(
                 stagger_increasing_technologies,
                 inputs=dict(
                     late_sudden_trajectories="increasing_tech_late_sudden_trajectories",
@@ -52,7 +60,7 @@ def create_pipeline(**kwargs) -> Pipeline:
             node(
                 concatenate_staggered_shock_results,
                 inputs=dict(
-                    dec_late_sudden_trajectories="decreasing_tech_staggered_shock",
+                    dec_late_sudden_trajectories="decreasing_tech_staggered_shock_flagged",
                     inc_late_sudden_trajectories="increasing_tech_staggered_shock",
                 ),
                 outputs="asset_level_staggered_shock",
