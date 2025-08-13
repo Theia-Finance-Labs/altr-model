@@ -129,7 +129,6 @@ def determine_companies_technologies_alignment(
 
 def late_sudden_misaligned_high_carbon_companies(
     misaligned_high_carbon_companies_trajectories: pd.DataFrame,
-    assets_retirement_dates: pd.DataFrame,
     shock_year: int,
     alignment_year: int,
 ) -> pd.DataFrame:
@@ -175,24 +174,6 @@ def late_sudden_misaligned_high_carbon_companies(
         ]:
             out[col] = out.get(col, pd.Series(dtype=dtype))
         return out
-
-    # -------------------- Normalize retirement table --------------------
-    retire_df = assets_retirement_dates.copy()
-
-    # Index retirement events by (company_id, sector, technology)
-    retire_key_cols = ["company_id", "scenario_geography", "sector", "technology"]
-    events_by_key = {}
-    if not retire_df.empty:
-        # Sort for deterministic application
-        retire_df = retire_df.sort_values(retire_key_cols + ["retirement_year"])
-        for key, sub in retire_df.groupby(retire_key_cols, sort=False):
-            # simple list of (year, capacity)
-            events_by_key[key] = list(
-                zip(
-                    sub["retirement_year"].tolist(),
-                    sub["capacity"].astype(float).tolist(),
-                )
-            )
 
     # -------------------- Work per company x geography x sector x technology --------------------
     group_cols = ["company_id", "scenario_geography", "sector", "technology"]
@@ -248,55 +229,7 @@ def late_sudden_misaligned_high_carbon_companies(
             ls[mask_p4] = target[mask_p4]
             phase[mask_p4] = "aligned"
 
-        # -------- Phase 4a: Apply ASSET RETIREMENT (permanent capacity reduction) --------
-        # For each event at y_r with capacity C: ls[y >= y_r] -= C (cumulative), clip >= 0.
-        # Only the retirement year gets "retirement" phase label.
-        key_ret = (
-            g["company_id"].iloc[0],
-            g["scenario_geography"].iloc[0],
-            g["sector"].iloc[0],
-            g["technology"].iloc[0],
-        )
-        events = events_by_key.get(key_ret, [])
-
-        if events:
-            retirement_years = set()  # Track which years have retirement events
-
-            # Sort events by year to apply them chronologically
-            events_sorted = sorted(events, key=lambda x: x[0])
-
-            for y_r, cap in events_sorted:
-                # Find the index for the retirement year
-                idx_retirement = np.where(years == y_r)[0]
-                if idx_retirement.size == 0:
-                    continue  # retirement year not in our data
-
-                idx_retirement = idx_retirement[0]
-
-                # Get the late sudden value at retirement year
-                ls_at_retirement = ls[idx_retirement]
-
-                if ls_at_retirement > 0:
-                    # Calculate the percentage decrease
-                    percentage_decrease = cap / ls_at_retirement
-                    # Cap the percentage to avoid negative values
-                    percentage_decrease = min(percentage_decrease, 1.0)
-
-                    # Apply this percentage decrease to all years >= y_r
-                    idx_after = np.where(years >= y_r)[0]
-                    if idx_after.size > 0:
-                        ls[idx_after] *= 1 - percentage_decrease
-
-                # Mark the retirement year
-                retirement_years.add(y_r)
-
-            # Mark only the specific retirement years as "retirement" phase
-            for y_r in retirement_years:
-                idx_exact = np.where(years == y_r)[0]
-                if idx_exact.size > 0:
-                    phase[idx_exact[0]] = "retirement"
-
-        # -------- Phase 4b: Compensation (uniform, non-positive; same logic, computed AFTER retirements) --------
+        # -------- Phase 5: Compensation (uniform, non-positive; same logic, computed AFTER retirements) --------
         pre_mask = years <= alignment_year
         post_mask = years > alignment_year
         pre_excess = float(np.nansum(ls[pre_mask] - target[pre_mask]))

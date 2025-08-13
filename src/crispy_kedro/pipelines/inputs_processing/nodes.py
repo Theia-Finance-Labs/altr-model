@@ -97,11 +97,43 @@ def filter_assets(
         :,
     ]
 
-    # Check if we have any assets after filtering
-    if filtered_assets_forecasts.empty:
-        raise ValueError(
-            "No assets remaining after filtering by year range and company ownership"
-        )
+    # Filter out assets-technology combinations whose first known year is higher than scenario_start_year
+    first_year_by_asset_tech = filtered_assets_forecasts.groupby(
+        ["asset_id", "technology"]
+    )["production_year"].min()
+    valid_asset_tech_combinations = first_year_by_asset_tech[
+        first_year_by_asset_tech <= scenario_start_year
+    ].index
+
+    filtered_assets_forecasts = (
+        filtered_assets_forecasts.set_index(["asset_id", "technology"])
+        .loc[valid_asset_tech_combinations]
+        .reset_index()
+    )
+    # Log how many unique assets were filtered out
+    initial_unique_assets = len(assets_forecasts["asset_id"].unique())
+    remaining_unique_assets = len(filtered_assets_forecasts["asset_id"].unique())
+    removed_assets = initial_unique_assets - remaining_unique_assets
+    removed_pct = 100 * removed_assets / initial_unique_assets
+
+    print(
+        f"Filtered out {removed_assets:,} unique assets "
+        f"({removed_pct:.1f}% of {initial_unique_assets:,} total)"
+    )
+
+    filtered_assets_forecasts = filtered_assets_forecasts.reset_index(drop=True)
+
+    # Update assertion to reflect that we may now have different first production years
+    # since we filtered out some asset-technology combinations
+    if not filtered_assets_forecasts.empty:
+        first_years = filtered_assets_forecasts.groupby(["asset_id", "technology"])[
+            "production_year"
+        ].min()
+        assert all(
+            first_years <= scenario_start_year
+        ), "All remaining assets-technology combinations should have first production_year <= scenario_start_year"
+    else:
+        raise ValueError("No assets remaining after filtering")
 
     filtered_assets_forecasts = filtered_assets_forecasts.rename(
         {"production_year": "year"}, axis=1
@@ -261,6 +293,8 @@ def allocate_assets_to_companies(
         merged_data["capacity"] * merged_data["ownership_percentage"]
     )
 
+    merged_data = merged_data.rename(columns={"capacity": "asset_activity"})
+
     return merged_data
 
 
@@ -301,54 +335,109 @@ def determine_lifetime_per_technology(
     return unique_combinations
 
 
-def determine_assets_retirement_dates(
-    assets_forecasts: pd.DataFrame,
-    lifetime_per_technology: pd.DataFrame,
+def extend_allocated_assets_to_companies(
+    allocated_assets_to_companies: pd.DataFrame,
     scenarios_pathways: pd.DataFrame,
 ) -> pd.DataFrame:
 
+    group_cols = [
+        "company_id",
+        "asset_id",
+        "scenario_geography",
+        "sector",
+        "technology",
+    ]
     scenario_end_year = scenarios_pathways.year.max().astype(int)
-
-    # Get the maximum forecast year for each asset
-    last_forecast_year = assets_forecasts.year.round(0).max().astype(int)
-
-    # Merge with lifetime data
-    assets_with_lifetime = pd.merge(
-        assets_forecasts,
-        lifetime_per_technology,
-        on=["sector", "technology"],
-        how="left",
-    )
 
     # Get the last row for each asset (latest forecast year)
     last_forecast_rows = (
-        assets_with_lifetime.sort_values("year")
+        allocated_assets_to_companies.sort_values("year")
         .groupby(
-            ["company_id", "asset_id", "scenario_geography", "sector", "technology"],
+            group_cols,
             as_index=False,
         )
         .last()
     )
 
-    # Create extended years for each asset from last forecast year + 1 to scenario end year
-    extended_years = []
-    for year in range(last_forecast_year + 1, scenario_end_year + 1):
-        extended_year_data = last_forecast_rows.copy()
-        extended_year_data["year"] = year
-        # Increment asset age by the number of years past the last forecast
-        extended_year_data["asset_age"] = extended_year_data["asset_age"] + (
-            year - last_forecast_year
+    # Create extended years for each group from its own last forecast year + 1 to scenario end year
+    extended_rows = []
+    for _, row in last_forecast_rows.iterrows():
+        last_year = int(round(row["year"]))
+        if last_year >= scenario_end_year:
+            continue
+        years = np.arange(last_year + 1, scenario_end_year + 1, dtype=int)
+        ages = row["asset_age"] + (years - last_year)
+
+        base_data = {col: row[col] for col in group_cols}
+        base_df = pd.DataFrame(base_data, index=range(len(years)))
+        base_df["year"] = years
+        base_df["asset_age"] = ages
+        extended_rows.append(base_df)
+
+    if extended_rows:
+        extended_years = pd.concat(extended_rows, ignore_index=True)
+        # Combine original forecasts with extended years (other columns intentionally left as NaN)
+        extended_assets = pd.concat(
+            [allocated_assets_to_companies, extended_years], ignore_index=True
         )
-        extended_years.append(extended_year_data)
+    else:
+        extended_assets = allocated_assets_to_companies.copy()
 
-    # Combine original forecasts with extended years
-    extended_assets = pd.concat(
-        [assets_with_lifetime] + extended_years, ignore_index=True
-    )
+    # Sort to ensure proper ordering and forward fill only selected columns
+    extended_assets = extended_assets.sort_values(group_cols + ["year"])
+    extended_assets[
+        [
+            "company_name",
+            "asset_name",
+            "capacity_factor",
+            "emission_factor",
+            # "ownership_level",
+            "latitude",
+            "longitude",
+            "country_iso2",
+            "country_name",
+        ]
+    ] = extended_assets[
+        [
+            "company_name",
+            "asset_name",
+            "capacity_factor",
+            "emission_factor",
+            # "ownership_level",
+            "latitude",
+            "longitude",
+            "country_iso2",
+            "country_name",
+        ]
+    ].ffill()
 
+    return extended_assets
+
+
+def determine_assets_retirement_dates(
+    allocated_assets_to_companies: pd.DataFrame,
+    lifetime_per_technology: pd.DataFrame,
+) -> pd.DataFrame:
+    extended_assets = allocated_assets_to_companies.copy()
     # Sort by asset and year to ensure proper ordering
     extended_assets = extended_assets.sort_values(
         ["company_id", "asset_id", "scenario_geography", "technology", "year"]
+    )
+
+    # Get the maximum forecast year for each asset
+    last_forecast_year = (
+        allocated_assets_to_companies.dropna(subset=["asset_activity"])
+        .year.round(0)
+        .max()
+        .astype(int)
+    )
+
+    # Merge with lifetime data
+    extended_assets = pd.merge(
+        extended_assets,
+        lifetime_per_technology,
+        on=["sector", "technology"],
+        how="left",
     )
 
     # Find retirement dates: when asset_age exceeds lifetime_years for the first time
@@ -380,7 +469,6 @@ def determine_assets_retirement_dates(
                 "sector",
                 "technology",
                 "retirement_year",
-                "capacity",
             ]
         )
 
@@ -394,7 +482,6 @@ def determine_assets_retirement_dates(
             "sector",
             "technology",
             "retirement_year",
-            "capacity",
         ],
     ]
 

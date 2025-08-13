@@ -15,6 +15,7 @@ from .nodes import (
     determine_lifetime_per_technology,
     determine_assets_retirement_dates,
     interpolate_scenarios_annually,
+    extend_allocated_assets_to_companies,
 )
 
 
@@ -36,13 +37,13 @@ def create_pipeline(**kwargs) -> Pipeline:
                     target_scenario="params:target_scenario",
                     baseline_scenario="params:baseline_scenario",
                 ),
-                outputs="scenarios_pathways_filtered",
-            ),
-            node(
-                func=interpolate_scenarios_annually,
-                inputs=dict(scenarios_pathways="scenarios_pathways_filtered"),
                 outputs="scenarios_pathways",
             ),
+            # node(
+            #     func=interpolate_scenarios_annually,
+            #     inputs=dict(scenarios_pathways="scenarios_pathways_filtered"),
+            #     outputs="scenarios_pathways",
+            # ),
             node(
                 func=filter_companies,
                 inputs=dict(
@@ -88,11 +89,18 @@ def create_pipeline(**kwargs) -> Pipeline:
                 outputs="lifetime_per_technology",
             ),
             node(
+                extend_allocated_assets_to_companies,
+                inputs=dict(
+                    allocated_assets_to_companies="allocated_assets_to_companies",
+                    scenarios_pathways="scenarios_pathways",
+                ),
+                outputs="extended_allocated_assets_to_companies",
+            ),
+            node(
                 determine_assets_retirement_dates,
                 inputs=dict(
-                    assets_forecasts="allocated_assets_to_companies",
+                    allocated_assets_to_companies="extended_allocated_assets_to_companies",
                     lifetime_per_technology="lifetime_per_technology",
-                    scenarios_pathways="scenarios_pathways",
                 ),
                 outputs="assets_retirement_dates",
             ),

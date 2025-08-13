@@ -10,9 +10,6 @@ from typing import Tuple, cast
 
 def aggregate_assets_to_company_level(assets_forecasts: pd.DataFrame) -> pd.DataFrame:
     """Aggregate asset-level data to company level by calculating total activity."""
-    assets_forecasts["asset_activity"] = (
-        assets_forecasts["capacity"] * assets_forecasts["capacity_factor"]
-    )
 
     companies_forecasts = (
         assets_forecasts.groupby(

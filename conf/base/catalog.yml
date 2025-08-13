@@ -55,7 +55,7 @@ downloaded_companies:
 
 allocated_assets_to_companies:
   type: pandas.CSVDataset
-  filepath: data/06_model_output/allocated_assets_to_companies.csv
+  filepath: data/07_model_output/allocated_assets_to_companies.csv
 
 # ================================================
 # ================== OUTPUTS =====================
