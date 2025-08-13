@@ -291,12 +291,13 @@ def split_late_sudden_trajectories_by_alignment_type(
     )
 
 
-def stagger_decreasing_from_company(
+def stagger_decreasing_technologies(
     late_sudden_trajectories: pd.DataFrame,
     allocated_assets_to_companies: pd.DataFrame,
     assets_retirement_dates: pd.DataFrame,
     shock_year: int,
     alignment_year: int,
+    apply_retirement: bool = True,
     g_k: float = 6.0,
     n_quantiles: int = 3,
 ) -> pd.DataFrame:
@@ -397,7 +398,8 @@ def stagger_decreasing_from_company(
             forced = pd.Series(0.0, index=before.index, dtype=float)
             phase = pd.Series(comp_phase, index=before.index, dtype=object)
             if (
-                alignment_type == "misaligned_high_carbon"
+                apply_retirement
+                and alignment_type == "misaligned_high_carbon"
                 and y > int(alignment_year)
                 and eff_ret
             ):
@@ -474,7 +476,7 @@ def stagger_decreasing_from_company(
 # =========================================================
 
 
-def stagger_increasing_from_company(
+def stagger_increasing_technologies(
     late_sudden_trajectories: pd.DataFrame,
     allocated_assets_to_companies: pd.DataFrame,
     shock_year: int,
@@ -659,3 +661,127 @@ def concatenate_staggered_shock_results(
     ).reset_index(drop=True)
 
     return assets_staggered_late_sudden
+
+
+def compute_capex_indicators(
+    assets_staggered_late_sudden: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Build capex indicators per asset based on assets_staggered_late_sudden.
+
+    Inputs (required columns):
+      - company_id, asset_id, year, capacity_after_shock, is_synthetic, late_sudden_phase
+
+    Rules:
+      - retired_max_cap: for decreasing technologies in misaligned_high_carbon that retire
+        (identified by any row with late_sudden_phase == "retirement"). Value = max(capacity_after_shock)
+        over the asset's horizon.
+      - roll_over_cap: for decreasing tech assets (late_sudden_phase != "") that do NOT retire and have
+        last known capacity_after_shock > 0. Value = last capacity_after_shock.
+      - new_buildout_cap: for newly created synthetic assets in increasing technologies
+        (is_synthetic == True). Value = max(capacity_after_shock).
+
+    Output columns:
+      - company_id, asset_id, capex_indicator, capex_capacity
+    """
+    need_cols = [
+        "company_id",
+        "asset_id",
+        "year",
+        "capacity_after_shock",
+        "is_synthetic",
+        "late_sudden_phase",
+    ]
+    missing = [c for c in need_cols if c not in assets_staggered_late_sudden.columns]
+    if missing:
+        raise ValueError(
+            f"assets_staggered_late_sudden missing required columns for capex indicators: {missing}"
+        )
+
+    df = assets_staggered_late_sudden.copy()
+    if df.empty:
+        return pd.DataFrame(
+            columns=["company_id", "asset_id", "capex_indicator", "capex_capacity"]
+        )
+
+    # normalize types
+    df["company_id"] = df["company_id"].astype(str)
+    df["asset_id"] = df["asset_id"].astype(str)
+    df["year"] = _ensure_int_year(df["year"]).astype(int)
+    df["capacity_after_shock"] = df["capacity_after_shock"].astype(float)
+    df["is_synthetic"] = df["is_synthetic"].fillna(False).astype(bool)
+    df["late_sudden_phase"] = df["late_sudden_phase"].fillna("").astype(str)
+
+    out_rows: List[Dict[str, object]] = []
+
+    # 1) Decreasing tech assets: identified by presence of any non-empty phase
+    dec_real = df[(~df["is_synthetic"]) & (df["late_sudden_phase"] != "")]
+
+    if not dec_real.empty:
+        g = dec_real.groupby(["company_id", "asset_id"], sort=False)
+
+        # retired_max_cap: any row marked as retirement
+        retired_flag = (
+            g["late_sudden_phase"]
+            .apply(lambda s: (s == "retirement").any())
+            .rename("is_retired")
+        )
+        max_cap = g["capacity_after_shock"].max().rename("max_cap")
+        last_row = g.apply(lambda x: x.sort_values("year").iloc[-1])
+        last_cap = last_row["capacity_after_shock"].rename("last_cap")
+
+        retired_assets = retired_flag[retired_flag].index.tolist()
+        for comp_id, asset_id in retired_assets:
+            out_rows.append(
+                {
+                    "company_id": comp_id,
+                    "asset_id": asset_id,
+                    "capex_indicator": "retired_max_cap",
+                    "capex_capacity": float(max_cap.loc[(comp_id, asset_id)]),
+                }
+            )
+
+        # roll_over_cap: dec, not retired, last cap > 0
+        not_retired = retired_flag[~retired_flag].index.tolist()
+        for comp_id, asset_id in not_retired:
+            cap_last = float(last_cap.loc[(comp_id, asset_id)])
+            if cap_last > 0.0:
+                out_rows.append(
+                    {
+                        "company_id": comp_id,
+                        "asset_id": asset_id,
+                        "capex_indicator": "roll_over_cap",
+                        "capex_capacity": cap_last,
+                    }
+                )
+
+    # 2) Increasing tech synthetic assets (new builds)
+    synth = df[df["is_synthetic"]]
+    if not synth.empty:
+        g_s = synth.groupby(["company_id", "asset_id"], sort=False)
+        max_s = g_s["capacity_after_shock"].max()
+        for (comp_id, asset_id), cap in max_s.items():
+            out_rows.append(
+                {
+                    "company_id": comp_id,
+                    "asset_id": asset_id,
+                    "capex_indicator": "new_buildout_cap",
+                    "capex_capacity": float(cap),
+                }
+            )
+
+    if not out_rows:
+        return pd.DataFrame(
+            columns=["company_id", "asset_id", "capex_indicator", "capex_capacity"]
+        )
+
+    out_df = pd.DataFrame(
+        out_rows,
+        columns=[
+            "company_id",
+            "asset_id",
+            "capex_indicator",
+            "capex_capacity",
+        ],
+    )
+    return out_df

@@ -4,5 +4,5 @@
 # Documentation for this file format can be found in "Parameters"
 # Link: https://docs.kedro.org/en/0.19.12/configuration/parameters.html
 
-shock_year: 2035
-alignment_year: 2045
+shock_year: 2033
+alignment_year: 2035

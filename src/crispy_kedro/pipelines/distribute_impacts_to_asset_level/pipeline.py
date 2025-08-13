@@ -7,9 +7,10 @@ from ctypes import alignment
 from kedro.pipeline import node, Pipeline, pipeline  # noqa
 from .nodes import (
     split_late_sudden_trajectories_by_alignment_type,
-    stagger_decreasing_from_company,
-    stagger_increasing_from_company,
+    stagger_decreasing_technologies,
+    stagger_increasing_technologies,
     concatenate_staggered_shock_results,
+    compute_capex_indicators,
 )
 
 
@@ -28,18 +29,19 @@ def create_pipeline(**kwargs) -> Pipeline:
                 name="split_assets_by_alignment",
             ),
             node(
-                stagger_decreasing_from_company,
+                stagger_decreasing_technologies,
                 inputs=dict(
                     late_sudden_trajectories="decreasing_tech_late_sudden_trajectories",
                     allocated_assets_to_companies="extended_allocated_assets_to_companies",
                     assets_retirement_dates="assets_retirement_dates",
                     shock_year="params:shock_year",
                     alignment_year="params:alignment_year",
+                    apply_retirement="params:apply_retirement",
                 ),
                 outputs="decreasing_tech_staggered_shock",
             ),
             node(
-                stagger_increasing_from_company,
+                stagger_increasing_technologies,
                 inputs=dict(
                     late_sudden_trajectories="increasing_tech_late_sudden_trajectories",
                     allocated_assets_to_companies="extended_allocated_assets_to_companies",
@@ -54,6 +56,13 @@ def create_pipeline(**kwargs) -> Pipeline:
                     inc_late_sudden_trajectories="increasing_tech_staggered_shock",
                 ),
                 outputs="asset_level_staggered_shock",
+            ),
+            node(
+                compute_capex_indicators,
+                inputs=dict(
+                    assets_staggered_late_sudden="asset_level_staggered_shock",
+                ),
+                outputs="asset_capex_indicators",
             ),
         ],
         tags="altrisk",
