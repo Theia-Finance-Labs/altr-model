@@ -6,6 +6,9 @@ generated using Kedro 0.19.12
 import pandas as pd
 import numpy as np
 from typing import Tuple, cast
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def aggregate_assets_to_company_level(assets_forecasts: pd.DataFrame) -> pd.DataFrame:
@@ -57,10 +60,88 @@ def calculate_tmsr(
     return scenarios_fair_share
 
 
+def harmonize_technology_names(df: pd.DataFrame, ccs_on: bool = False) -> pd.DataFrame:
+    """
+    Harmonize technology and sector names between scenarios and companies datasets.
+    Converts scenarios naming format to match companies naming format.
+    
+    Args:
+        df: DataFrame to harmonize
+        ccs_on: If True, use w/ CCS scenarios for Coal, Gas, Biomass. If False, use w/o CCS
+    """
+    
+    df = df.copy()
+    
+    # Technology mapping based on CCS parameter
+    if ccs_on:
+        # Use CCS scenarios where available
+        tech_mapping = {
+            'Solar - PV': 'SolarCap',  # Solar PV applies to SolarCap assets
+            # 'Solar - CSP': ignored (leave in data but don't map)
+            'Wind - Onshore': 'WindCap',  # All wind is onshore for now
+            # 'Wind - Offshore': ignored (leave in data)
+            'Coal - w/ CCS': 'CoalCap',  # With CCS when CCS_on=true
+            'Gas - w/ CCS': 'GasCap',    # With CCS when CCS_on=true
+            'Biomass - w/ CCS': 'BiomassCap',  # With CCS when CCS_on=true
+        }
+    else:
+        # Use non-CCS scenarios (default)
+        tech_mapping = {
+            'Solar - PV': 'SolarCap',  # Solar PV applies to SolarCap assets
+            # 'Solar - CSP': ignored (leave in data but don't map)
+            'Wind - Onshore': 'WindCap',  # All wind is onshore for now  
+            # 'Wind - Offshore': ignored (leave in data)
+            'Coal - w/o CCS': 'CoalCap',  # Without CCS when CCS_on=false
+            'Gas - w/o CCS': 'GasCap',    # Without CCS when CCS_on=false
+            'Biomass - w/o CCS': 'BiomassCap',  # Without CCS when CCS_on=false
+        }
+    
+    # Sector mapping: scenarios format → companies format
+    sector_mapping = {
+        'Gas&Oil': 'Oil&Gas',
+        'Renewables': 'Power',
+    }
+    
+    # Apply technology mapping
+    if 'technology' in df.columns:
+        original_techs = df['technology'].unique()
+        df['technology_mapped'] = df['technology'].map(tech_mapping)
+        
+        # Keep only rows that have valid mappings (filter out ignored technologies)
+        before_filter = len(df)
+        df = df[df['technology_mapped'].notna()].copy()
+        df['technology'] = df['technology_mapped']
+        df = df.drop(columns='technology_mapped')
+        after_filter = len(df)
+        
+        mapped_techs = df['technology'].unique()
+        logger.info(f"Technology harmonization (CCS_on={ccs_on}):")
+        logger.info(f"  - Original technologies: {sorted(original_techs)}")
+        logger.info(f"  - Mapped to: {sorted(mapped_techs)}")
+        logger.info(f"  - Filtered {before_filter - after_filter} rows with unmapped technologies")
+    
+    # Apply sector mapping
+    if 'sector' in df.columns:
+        df['sector'] = df['sector'].map(sector_mapping).fillna(df['sector'])
+        logger.info(f"Applied sector harmonization: Gas&Oil→Oil&Gas, Renewables→Power")
+    
+    return df
+
+
 def compute_scenarios_trajectories(
-    scenarios_pathways: pd.DataFrame, companies_forecasts: pd.DataFrame
+    scenarios_pathways: pd.DataFrame, companies_forecasts: pd.DataFrame, ccs_on: bool = False
 ) -> pd.DataFrame:
     """Compute scenario trajectories by merging pathways with company forecasts."""
+    
+    logger.info(f"Computing scenario trajectories with CCS_on={ccs_on}...")
+    
+    # Harmonize technology and sector names in scenarios data to match companies format
+    scenarios_harmonized = harmonize_technology_names(scenarios_pathways, ccs_on=ccs_on)
+    
+    logger.info(f"Harmonized scenarios shape: {scenarios_harmonized.shape}")
+    if "scenario_type" in scenarios_harmonized.columns:
+        scenario_types = scenarios_harmonized["scenario_type"].unique()
+        logger.info(f"Available scenario_type values: {scenario_types}")
     companies_activity_first_year = (
         companies_forecasts.sort_values("year")
         .groupby(
@@ -85,9 +166,11 @@ def compute_scenarios_trajectories(
         )
     )
 
-    scenarios_trajectories = scenarios_pathways.merge(
+    scenarios_trajectories = scenarios_harmonized.merge(
         companies_activity_first_year, on=["sector", "technology", "scenario_geography"]
     )
+    
+    logger.info(f"After merge with companies data: {scenarios_trajectories.shape} rows")
 
     # Apply TMSR/SMSP scenario targets
     scenarios_trajectories["scenario_activity"] = scenarios_trajectories[
@@ -170,6 +253,10 @@ def compute_scenarios_trajectories(
     pivoted_scenarios = pivot_scenarios_trajectories(
         cast(pd.DataFrame, scenarios_trajectories)
     )
+    
+    logger.info(f"Pivoted scenarios shape: {pivoted_scenarios.shape}")
+    activity_change_cols = [col for col in pivoted_scenarios.columns if "scenario_activity_change" in col]
+    logger.info(f"Activity change columns created: {activity_change_cols}")
 
     return pivoted_scenarios
 
@@ -181,6 +268,8 @@ def create_companies_trajectories(
     Compute asset trajectories by merging with pivoted scenarios trajectories.
     Uses clean year-based logic for baseline projection starting point.
     """
+    
+    logger.info(f"Creating companies trajectories from {scenarios_trajectories.shape[0]} scenario rows")
 
     # Merge with assets forecasts
     companies_trajectories = scenarios_trajectories.merge(
@@ -208,10 +297,43 @@ def create_companies_trajectories(
         group_cols
     )["company_activity"].transform("ffill")
 
+    # Debug: Check what columns are available
+    logger.info(f"Available columns in companies_trajectories: {list(companies_trajectories.columns)}")
+    
+    # Check for target scenario column with different possible names
+    target_col = None
+    possible_target_cols = [
+        "scenario_activity_change_target",
+        "scenario_activity_change_baseline",  # Check if baseline exists too
+    ]
+    
+    # Also look for any columns containing scenario_activity_change to see what's actually there
+    activity_change_cols = [col for col in companies_trajectories.columns if "scenario_activity_change" in col]
+    logger.info(f"Found activity change columns: {activity_change_cols}")
+    
+    # Try to find target column
+    for col_name in activity_change_cols:
+        if "target" in col_name.lower():
+            possible_target_cols.append(col_name)
+        elif col_name not in possible_target_cols:
+            possible_target_cols.append(col_name)
+    
+    for col in possible_target_cols:
+        if col in companies_trajectories.columns:
+            target_col = col
+            break
+    
+    if target_col is None:
+        # List all scenario_activity_change columns
+        activity_change_cols = [col for col in companies_trajectories.columns if "scenario_activity_change" in col]
+        raise ValueError(f"No suitable target activity change column found. Available activity change columns: {activity_change_cols}")
+    
+    logger.info(f"Using target activity change column: {target_col}")
+    
     # Compute initial cumsum of target changes
     companies_trajectories["_target_cumsum"] = companies_trajectories.groupby(
         group_cols
-    )["scenario_activity_change_target"].transform("cumsum")
+    )[target_col].transform("cumsum")
 
     # Determine where trajectory would drop to or below zero
     _target_traj_unconstrained = (

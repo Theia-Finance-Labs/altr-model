@@ -10,9 +10,7 @@ from .nodes import (
     build_scenario_surfaces,
     normalize_capacity_growth_to_new_assets,
     assemble_asset_panel,
-    build_tranche_ledger_per_asset,
-    retirement_replacement_split_per_asset,
-    compute_capex_and_decom,
+    compute_flow_based_capex,
     compute_ops_block,
     compute_fcff,
     write_asset_earnings_series,
@@ -74,36 +72,18 @@ def create_pipeline(**kwargs) -> Pipeline:
                 outputs="_temp_asset_panel_enriched",
                 name="assemble_asset_panel_node",
             ),
-            # Node 5: Build tranche ledger per asset
+            # Node 5: Compute flow-based CapEx using upstream capex_indicator/capex_capacity
             node(
-                func=build_tranche_ledger_per_asset,
-                inputs="_temp_asset_panel_enriched",
-                outputs="_temp_asset_tranche_ledger",
-                name="build_tranche_ledger_per_asset_node",
-            ),
-            # Node 6: Retirement/replacement split per asset
-            node(
-                func=retirement_replacement_split_per_asset,
+                func=compute_flow_based_capex,
                 inputs={
                     "asset_panel_enriched": "_temp_asset_panel_enriched",
-                    "asset_tranche_ledger": "_temp_asset_tranche_ledger",
-                },
-                outputs="_temp_asset_retire_replace",
-                name="retirement_replacement_split_per_asset_node",
-            ),
-            # Node 7: Compute CapEx and decommissioning (with switches)
-            node(
-                func=compute_capex_and_decom,
-                inputs={
-                    "asset_panel_enriched": "_temp_asset_panel_enriched",
-                    "asset_retire_replace": "_temp_asset_retire_replace",
                     "include_replacement_capex": "params:include_replacement_capex",
                     "include_decom_costs": "params:include_decom_costs",
                 },
                 outputs="_temp_asset_capex_block",
-                name="compute_capex_and_decom_node",
+                name="compute_flow_based_capex_node",
             ),
-            # Node 8: Compute operations block
+            # Node 6: Compute operations block
             node(
                 func=compute_ops_block,
                 inputs={
@@ -113,28 +93,28 @@ def create_pipeline(**kwargs) -> Pipeline:
                 outputs="_temp_asset_ops_block",
                 name="compute_ops_block_node",
             ),
-            # Node 9: Compute FCFF
+            # Node 7: Compute FCFF
             node(
                 func=compute_fcff,
                 inputs="_temp_asset_ops_block",
                 outputs="_temp_asset_cashflows",
                 name="compute_fcff_node",
             ),
-            # Node 10: Write final asset earnings series
+            # Node 8: Write final asset earnings series
             node(
                 func=write_asset_earnings_series,
                 inputs="_temp_asset_cashflows",
                 outputs="asset_earnings",
                 name="write_asset_earnings_series_node",
             ),
-            # Node 11: Aggregate to company-technology level
+            # Node 9: Aggregate to company-technology level
             node(
                 func=aggregate_to_company_technology_earnings,
                 inputs="_temp_asset_cashflows",
                 outputs="company_technology_earnings",
                 name="aggregate_to_company_technology_earnings_node",
             ),
-            # Node 12: Aggregate to company level
+            # Node 10: Aggregate to company level
             node(
                 func=aggregate_to_company_earnings,
                 inputs="company_technology_earnings",

@@ -88,6 +88,8 @@ def validate_and_standardize_inputs(
 
     # Clean asset data
     assets = asset_level_staggered_shock.copy()
+    logger.info(f"Initial assets shape: {assets.shape}")
+    logger.info(f"Initial assets sample: {assets.head(2).to_dict('records') if len(assets) > 0 else 'EMPTY'}")
 
     # Standardize string columns
     string_cols = [
@@ -96,6 +98,7 @@ def validate_and_standardize_inputs(
         "scenario_geography",
         "sector",
         "technology",
+        "capex_indicator",
     ]
     for col in string_cols:
         if col in assets.columns:
@@ -107,10 +110,17 @@ def validate_and_standardize_inputs(
         "asset_age",
         "capacity_before_shock",
         "capacity_after_shock",
+        "capex_capacity",
     ]
     for col in numeric_cols:
         if col in assets.columns:
+            before_conversion = len(assets)
             assets[col] = pd.to_numeric(assets[col], errors="coerce")
+            # Check for NaN values that might cause issues
+            nan_count = assets[col].isna().sum()
+            if nan_count > 0:
+                logger.warning(f"Column {col}: {nan_count}/{before_conversion} values became NaN after conversion")
+                logger.warning(f"Sample non-NaN values: {assets[col].dropna().head(3).tolist()}")
 
     # Clean scenarios data
     scenarios = downloaded_scenarios.copy()
@@ -169,11 +179,24 @@ def validate_and_standardize_inputs(
         assets_static["emission_factor"], errors="coerce"
     ).fillna(0.0)
 
-    # Check year continuity per asset
-    year_check = assets.groupby("asset_id")["year"].apply(
-        lambda x: x.sort_values().diff().dropna().unique()
-    )
+    # Check year continuity per asset (non-destructive check)
+    logger.info(f"Assets shape before year continuity check: {assets.shape}")
+    if len(assets) > 0:
+        # Remove any rows with NaN years to avoid issues
+        assets_before_filter = len(assets)
+        assets = assets.dropna(subset=['year'])
+        assets_after_filter = len(assets)
+        if assets_before_filter != assets_after_filter:
+            logger.warning(f"Dropped {assets_before_filter - assets_after_filter} rows with NaN years")
+        
+        year_check = assets.groupby("asset_id")["year"].apply(
+            lambda x: x.sort_values().diff().dropna().unique()
+        )
+        logger.info(f"Year continuity check completed for {len(year_check)} assets")
+    else:
+        logger.error("No assets to check for year continuity - assets DataFrame is empty!")
 
+    logger.info(f"Final assets shape before return: {assets.shape}")
     logger.info(f"Processed {len(assets)} asset-year rows")
     logger.info(f"Processed {len(scenarios)} scenario-year rows")
     logger.info(f"Processed {len(alignments)} alignment classifications")
@@ -277,6 +300,19 @@ def normalize_capacity_growth_to_new_assets(
 
     assets = assets_validated.copy()
     alignments = alignments_validated.copy()
+    
+    # Debug: Check input data
+    logger.info(f"Input assets shape: {assets.shape}")
+    logger.info(f"Assets columns: {list(assets.columns)}")
+    logger.info(f"Input alignments shape: {alignments.shape}")
+    logger.info(f"Alignments columns: {list(alignments.columns)}")
+    
+    if len(assets) == 0:
+        logger.error("No assets data provided - cannot proceed")
+        raise ValueError("Assets data is empty")
+    
+    if len(alignments) == 0:
+        logger.warning("No alignments data provided - will use defaults")
 
     # Join alignment flags to assets
     assets_with_alignment = assets.merge(
@@ -294,6 +330,8 @@ def normalize_capacity_growth_to_new_assets(
         on=["company_id", "scenario_geography", "sector", "technology"],
         how="left",
     )
+    
+    logger.info(f"After alignment merge: {assets_with_alignment.shape} rows")
 
     # Fill missing alignment flags (default to aligned=True, increasing=False)
     assets_with_alignment["aligned"] = assets_with_alignment["aligned"].fillna(True)
@@ -313,6 +351,12 @@ def normalize_capacity_growth_to_new_assets(
     groups = assets_with_alignment.groupby(
         ["company_id", "scenario_geography", "sector", "technology"]
     )
+    
+    logger.info(f"Number of groups to process: {len(groups)}")
+    
+    if len(groups) == 0:
+        logger.error("No groups found after groupby operation")
+        raise ValueError("No asset groups to process")
 
     for group_key, group_data in groups:
         company_id, geo, sector, tech = group_key
@@ -425,6 +469,13 @@ def normalize_capacity_growth_to_new_assets(
         assets_adjusted.append(group_data)
 
     # Combine all adjusted assets
+    logger.info(f"Number of asset groups processed: {len(assets_adjusted)}")
+    
+    if len(assets_adjusted) == 0:
+        logger.error("No asset groups were processed - this will cause concatenation to fail")
+        logger.info("This usually means all groups were skipped during processing")
+        raise ValueError("No asset groups were processed successfully")
+    
     assets_adjusted_df = pd.concat(assets_adjusted, ignore_index=True)
 
     # Create synthetic dataframes
@@ -515,203 +566,238 @@ def assemble_asset_panel(
     return panel_enriched
 
 
-def build_tranche_ledger_per_asset(asset_panel_enriched: pd.DataFrame) -> pd.DataFrame:
-    """
-    Node 5: Build tranche ledger for each asset to track retirements/replacements.
-    """
-
-    logger.info("Building tranche ledger per asset...")
-
-    panel = asset_panel_enriched.copy()
-    tranche_ledger = []
-
-    # Group by asset and create tranche schedules
-    for asset_id, asset_data in panel.groupby("asset_id"):
-        asset_data = asset_data.sort_values("year")
-
-        # Get asset info
-        first_row = asset_data.iloc[0]
-        t0 = first_row["year"]
-        mw_initial = first_row["capacity_after_shock_adj"]
-        asset_age = first_row["asset_age"]
-        lifetime_years = first_row["lifetime_years"]
-        aligned = first_row["aligned"]
-        is_synthetic = first_row.get("is_synthetic", False)
-
-        if mw_initial > 0:
-            # Calculate remaining life
-            if is_synthetic:
-                remaining_life = lifetime_years
-            else:
-                remaining_life = max(lifetime_years - asset_age, 0)
-
-            expiry_year = int(np.ceil(t0 + remaining_life))
-
-            tranche_ledger.append(
-                {
-                    "asset_id": asset_id,
-                    "tranche_id": f"{asset_id}_T0",
-                    "start_year": t0,
-                    "expiry_year": expiry_year,
-                    "mw": mw_initial,
-                    "eligible": aligned,
-                }
-            )
-
-    tranche_df = pd.DataFrame(tranche_ledger)
-    logger.info(f"Created tranche ledger with {len(tranche_df)} tranches")
-
-    return tranche_df
+# Tranche ledger functions removed - now using flow-based CapEx from upstream pipeline
 
 
-def retirement_replacement_split_per_asset(
+def validate_capacity_flow_identity(
     asset_panel_enriched: pd.DataFrame,
-    asset_tranche_ledger: pd.DataFrame,
 ) -> pd.DataFrame:
     """
-    Node 6: Calculate retirements and replacements per asset-year (vectorized).
-    Returns the same columns/logic as the original slow loop.
+    Validate the capacity flow identity: K_t = K_{t-1} - retired + replaced + new_build
+    
+    This function checks that the upstream pipeline correctly calculated capacity flows
+    and logs any discrepancies for debugging.
     """
-
-    logger.info("Computing retirement/replacement splits (vectorized)...")
-
-    # ---- Panel prep (one row per asset-year expected) ------------------------
-    panel = asset_panel_enriched.loc[
-        :, ["asset_id", "year", "capacity_after_shock_adj"]
-    ].copy()
-    # sort so 'previous' means previous year within an asset
-    panel = panel.sort_values(["asset_id", "year"], kind="mergesort").reset_index(
-        drop=True
+    
+    logger.info("Validating capacity flow identity...")
+    
+    data = asset_panel_enriched.copy()
+    
+    # Sort by asset and year
+    data = data.sort_values(["asset_id", "year"]).reset_index(drop=True)
+    
+    # Get capacity flows by indicator type per asset-year
+    flows_pivot = data.pivot_table(
+        index=["asset_id", "year"],
+        columns="capex_indicator", 
+        values="capex_capacity",
+        fill_value=0.0,
+        aggfunc="sum"
+    ).reset_index()
+    
+    # Ensure all flow columns exist
+    for col in ["new_buildout_cap", "roll_over_cap", "retired_max_cap"]:
+        if col not in flows_pivot.columns:
+            flows_pivot[col] = 0.0
+    
+    # Merge with capacity data
+    capacity_data = data[["asset_id", "year", "capacity_after_shock", "capacity_before_shock"]].drop_duplicates()
+    validation_data = flows_pivot.merge(capacity_data, on=["asset_id", "year"], how="left")
+    
+    # Calculate previous year capacity
+    validation_data = validation_data.sort_values(["asset_id", "year"])
+    validation_data["K_prev"] = validation_data.groupby("asset_id")["capacity_after_shock"].shift(1)
+    
+    # Apply flow identity: K_t = K_{t-1} - retired + replaced + new_build
+    validation_data["K_calculated"] = (
+        validation_data["K_prev"] 
+        - validation_data["retired_max_cap"]
+        + validation_data["roll_over_cap"] 
+        + validation_data["new_buildout_cap"]
     )
-
-    # K_prev: previous capacity in the *sorted* asset/year sequence; first year -> 0
-    panel["K_prev"] = (
-        panel.groupby("asset_id")["capacity_after_shock_adj"].shift(1).fillna(0)
-    )
-    panel["K_curr"] = panel["capacity_after_shock_adj"]
-
-    # ---- Tranche aggregates per (asset_id, year) ----------------------------
-    tr = asset_tranche_ledger.loc[
-        :, ["asset_id", "expiry_year", "eligible", "mw"]
-    ].copy()
-    # ensure boolean for pivot/unstack correctness
-    tr["eligible"] = tr["eligible"].astype(bool)
-
-    # Sum MW by eligibility in one pass, then unstack to columns
-    exp_agg = (
-        tr.groupby(["asset_id", "expiry_year", "eligible"])["mw"]
-        .sum()
-        .unstack(fill_value=0)
-        .rename(columns={True: "E_t_elig", False: "E_t_inelig"})
-        .reset_index()
-    )
-
-    # Join expiring tranches to panel on (asset_id, year)
-    panel = panel.merge(
-        exp_agg,
-        left_on=["asset_id", "year"],
-        right_on=["asset_id", "expiry_year"],
-        how="left",
-    ).drop(columns=["expiry_year"], errors="ignore")
-    panel[["E_t_elig", "E_t_inelig"]] = panel[["E_t_elig", "E_t_inelig"]].fillna(0.0)
-
-    # ---- Net changes ---------------------------------------------------------
-    # Match original behavior for NaNs: max(0, NaN) -> 0 and max(0, NaN) on the increase side -> 0
-    dec_raw = panel["K_prev"] - panel["K_curr"]
-    inc_raw = panel["K_curr"] - panel["K_prev"]
-
-    D_t = dec_raw.mask(dec_raw.isna(), 0).clip(lower=0)  # decrease
-    delta_K_plus = inc_raw.mask(inc_raw.isna(), 0).clip(lower=0)  # increase
-
-    # ---- Retirement allocation (same min/max chain as original) -------------
-    R_t_inelig = np.minimum(D_t, panel["E_t_inelig"])
-    D1 = D_t - R_t_inelig
-
-    R_t_elig = np.minimum(D1, panel["E_t_elig"])
-    D2 = D1 - R_t_elig
-
-    ER_t = D2
-    W_t = (panel["E_t_elig"] - R_t_elig).clip(lower=0)
-
-    # ---- Assemble result -----------------------------------------------------
-    out = pd.DataFrame(
-        {
-            "asset_id": panel["asset_id"].values,
-            "year": panel["year"].values,
-            "E_t_inelig": panel["E_t_inelig"].values,
-            "E_t_elig": panel["E_t_elig"].values,
-            "R_t_inelig": R_t_inelig.values,
-            "R_t_elig": R_t_elig.values,
-            "ER_t": ER_t.values,
-            "W_t": W_t.values,
-            "delta_K_plus": delta_K_plus.values,
-        }
-    )
-
-    logger.info(
-        f"Computed retirement/replacement for {len(out)} asset-year rows (vectorized)"
-    )
-    return out
+    
+    # Compare with actual capacity (skip first year per asset where K_prev is NaN)
+    validation_data = validation_data.dropna(subset=["K_prev"])
+    
+    if len(validation_data) > 0:
+        validation_data["capacity_diff"] = abs(
+            validation_data["capacity_after_shock"] - validation_data["K_calculated"]
+        )
+        
+        # Log validation results
+        total_rows = len(validation_data)
+        tolerance = 0.01  # MW tolerance
+        valid_rows = len(validation_data[validation_data["capacity_diff"] <= tolerance])
+        
+        logger.info(f"Flow identity validation: {valid_rows}/{total_rows} rows within tolerance ({tolerance} MW)")
+        
+        if valid_rows < total_rows:
+            problem_assets = validation_data[validation_data["capacity_diff"] > tolerance]
+            logger.warning(f"Flow identity violations found in {len(problem_assets)} asset-year combinations:")
+            for _, row in problem_assets.head(10).iterrows():  # Show first 10 violations
+                logger.warning(
+                    f"  Asset {row['asset_id']} Year {row['year']}: "
+                    f"Actual={row['capacity_after_shock']:.2f} MW, "
+                    f"Calculated={row['K_calculated']:.2f} MW, "
+                    f"Diff={row['capacity_diff']:.2f} MW"
+                )
+    
+    return data
 
 
-def compute_capex_and_decom(
+def compute_capacity_flows(asset_panel: pd.DataFrame) -> pd.DataFrame:
+    """
+    Compute capacity flows from capacity changes in the asset panel (vectorized).
+    
+    Creates flow indicators:
+    - new_buildout_cap: Net new capacity (growth above baseline)
+    - roll_over_cap: Capacity replacement (existing capacity renewed)
+    - retired_max_cap: Capacity retired (reduction from baseline)
+    """
+    
+    logger.info("Computing capacity flows from capacity changes...")
+    
+    data = asset_panel.copy()
+    data = data.sort_values(["asset_id", "year"]).reset_index(drop=True)
+    
+    # Calculate capacity changes vectorized
+    data["K_prev"] = data.groupby("asset_id")["capacity_after_shock"].shift(1)
+    data["capacity_change"] = data["capacity_after_shock"] - data["K_prev"].fillna(0)
+    
+    # Prepare base columns for flows
+    data["is_synthetic"] = data.get("is_synthetic", False).fillna(False)
+    
+    # Create flow records vectorized - this creates multiple rows per asset-year
+    flow_records = []
+    
+    # 1. New buildout flows (positive capacity changes)
+    new_buildout_mask = data["capacity_change"] > 0
+    if new_buildout_mask.any():
+        new_buildout_data = data[new_buildout_mask].copy()
+        new_buildout_data["capex_indicator"] = "new_buildout_cap"
+        new_buildout_data["capex_capacity"] = new_buildout_data["capacity_change"]
+        flow_records.append(new_buildout_data)
+    
+    # 2. Retirement flows (negative capacity changes)  
+    retirement_mask = data["capacity_change"] < 0
+    if retirement_mask.any():
+        retirement_data = data[retirement_mask].copy()
+        retirement_data["capex_indicator"] = "retired_max_cap"
+        retirement_data["capex_capacity"] = retirement_data["capacity_change"].abs()
+        flow_records.append(retirement_data)
+    
+    # 3. Replacement flows (5% of existing non-synthetic capacity annually)
+    replacement_mask = (~data["is_synthetic"]) & (data["capacity_after_shock"] > 0)
+    if replacement_mask.any():
+        replacement_data = data[replacement_mask].copy()
+        replacement_data["capex_indicator"] = "roll_over_cap"
+        replacement_data["capex_capacity"] = replacement_data["capacity_after_shock"] * 0.05
+        flow_records.append(replacement_data)
+    
+    # 4. No-flow records (assets with no flows need placeholder records)
+    no_flow_mask = (data["capacity_change"] == 0) & (~replacement_mask)
+    if no_flow_mask.any():
+        no_flow_data = data[no_flow_mask].copy()
+        no_flow_data["capex_indicator"] = "none"
+        no_flow_data["capex_capacity"] = 0.0
+        flow_records.append(no_flow_data)
+    
+    # Combine all flow records
+    if flow_records:
+        result = pd.concat(flow_records, ignore_index=True)
+    else:
+        # Fallback: no flows found, add empty columns
+        data["capex_indicator"] = "none"
+        data["capex_capacity"] = 0.0
+        result = data
+    
+    # Sort result by asset and year for consistency
+    result = result.sort_values(["asset_id", "year", "capex_indicator"]).reset_index(drop=True)
+    
+    logger.info(f"Computed capacity flows for {len(result)} asset-year-flow combinations")
+    
+    return result
+
+
+def compute_flow_based_capex(
     asset_panel_enriched: pd.DataFrame,
-    asset_retire_replace: pd.DataFrame,
     include_replacement_capex: bool = True,
     include_decom_costs: bool = True,
 ) -> pd.DataFrame:
     """
-    Node 7: Compute CapEx and decommissioning costs.
+    Node 5: Compute CapEx using flow-based approach.
+    
+    Computes capacity flows from capacity changes and then calculates:
+    - GrowthCapEx_t = κ_t * new_buildout_cap
+    - ReplaceCapEx_t = κ_t * roll_over_cap  
+    - DecomCost_t = δ_decom * retired_max_cap
     """
 
-    logger.info("Computing CapEx and decommissioning costs...")
+    logger.info("Computing flow-based CapEx...")
+    
+    # Compute capacity flows from the data
+    capex_data = compute_capacity_flows(asset_panel_enriched)
+    
+    # First validate the capacity flow identity
+    capex_data = validate_capacity_flow_identity(capex_data)
+    
+    # Ensure capex_capacity is numeric and fill NaNs
+    capex_data["capex_capacity"] = pd.to_numeric(capex_data["capex_capacity"], errors="coerce").fillna(0.0)
+    capex_data["capex_indicator"] = capex_data["capex_indicator"].fillna("none")
 
-    # Merge panel with retirement/replacement data
-    capex_data = asset_panel_enriched.merge(
-        asset_retire_replace, on=["asset_id", "year"], how="left"
+    # Map flow indicators to CapEx components
+    # Growth CapEx: new capacity builds
+    new_build_mask = capex_data["capex_indicator"] == "new_buildout_cap"
+    capex_data["growth_capex"] = np.where(
+        new_build_mask,
+        capex_data["capex_usd_per_mw"] * capex_data["capex_capacity"],
+        0.0
     )
 
-    # Fill NAs with 0
-    capex_cols = [
-        "E_t_inelig",
-        "E_t_elig",
-        "R_t_inelig",
-        "R_t_elig",
-        "ER_t",
-        "W_t",
-        "delta_K_plus",
-    ]
-    for col in capex_cols:
-        capex_data[col] = capex_data[col].fillna(0)
-
-    # Compute CapEx components
-    capex_data["growth_capex"] = (
-        capex_data["capex_usd_per_mw"] * capex_data["delta_K_plus"]
-    )
-
-    # Replacement CapEx (can be switched off)
+    # Replacement CapEx: rolled over capacity (can be switched off)
     if include_replacement_capex:
-        capex_data["replace_capex"] = capex_data["capex_usd_per_mw"] * capex_data["W_t"]
+        rollover_mask = capex_data["capex_indicator"] == "roll_over_cap"
+        capex_data["replace_capex"] = np.where(
+            rollover_mask,
+            capex_data["capex_usd_per_mw"] * capex_data["capex_capacity"],
+            0.0
+        )
     else:
         capex_data["replace_capex"] = 0.0
         logger.info("Replacement CapEx switched OFF - setting to zero")
 
-    # Decommissioning costs (can be switched off)
+    # Decommissioning costs: retired capacity (can be switched off)
     if include_decom_costs:
-        capex_data["decom_cost"] = capex_data["decom_usd_per_mw"] * (
-            capex_data["R_t_inelig"] + capex_data["R_t_elig"] + capex_data["ER_t"]
+        retired_mask = capex_data["capex_indicator"] == "retired_max_cap"
+        capex_data["decom_cost"] = np.where(
+            retired_mask,
+            capex_data["decom_usd_per_mw"] * capex_data["capex_capacity"],
+            0.0
         )
     else:
         capex_data["decom_cost"] = 0.0
         logger.info("Decommissioning costs switched OFF - setting to zero")
 
+    # Total CapEx
     capex_data["capex_total"] = (
         capex_data["growth_capex"]
         + capex_data["replace_capex"]
         + capex_data["decom_cost"]
     )
 
-    logger.info(f"Computed CapEx for {len(capex_data)} asset-year rows")
+    # Log summary by flow type
+    flow_summary = capex_data.groupby("capex_indicator").agg({
+        "capex_capacity": "sum",
+        "growth_capex": "sum", 
+        "replace_capex": "sum",
+        "decom_cost": "sum"
+    }).round(0)
+    
+    logger.info("CapEx summary by flow type:")
+    for idx, row in flow_summary.iterrows():
+        logger.info(f"  {idx}: {row['capex_capacity']:,.0f} MW -> Growth: ${row['growth_capex']:,.0f}, Replace: ${row['replace_capex']:,.0f}, Decom: ${row['decom_cost']:,.0f}")
+
+    logger.info(f"Computed flow-based CapEx for {len(capex_data)} asset-year rows")
 
     return capex_data
 
@@ -1058,6 +1144,9 @@ def write_asset_earnings_series(asset_cashflows: pd.DataFrame) -> pd.DataFrame:
         "increasing",
         "alignment_type",
         "emission_factor",
+        # Flow-based CapEx information
+        "capex_indicator",
+        "capex_capacity",
         # Prices/costs
         "power_price_excarbon_usd_per_mwh",
         "fuel_price_usd_per_mwh_fuel",
@@ -1072,7 +1161,7 @@ def write_asset_earnings_series(asset_cashflows: pd.DataFrame) -> pd.DataFrame:
         "fixed_cost",
         "carbon_cost_net",
         "EBITDA",
-        # CapEx & decom
+        # CapEx & decom (flow-based)
         "growth_capex",
         "replace_capex",
         "decom_cost",

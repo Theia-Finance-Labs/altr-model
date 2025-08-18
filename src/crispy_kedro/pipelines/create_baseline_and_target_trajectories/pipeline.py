@@ -30,6 +30,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                 inputs=dict(
                     scenarios_pathways="traj_scenario_tmsr",
                     companies_forecasts="companies_technology_forecasts",
+                    ccs_on="params:CCS_on",
                 ),
                 outputs="scenarios_trajectories",
             ),
