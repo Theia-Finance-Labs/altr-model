@@ -11,7 +11,7 @@ target_scenario: "AR6_WITCH 5.0_EN_NPi2020_500"
 max_forecast_horizon: 5
 
 # Technology scenario mapping control
-CCS_on: false  # If true, use w/ CCS scenarios for Coal, Gas, Biomass. If false, use w/o CCS
+ccs_on: true  # If true, use w/ CCS scenarios for Coal, Gas, Biomass. If false, use w/o CCS
 
 
 company_ids:

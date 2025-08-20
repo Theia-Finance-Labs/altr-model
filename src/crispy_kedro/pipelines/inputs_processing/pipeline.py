@@ -7,6 +7,7 @@ from kedro.pipeline import node, Pipeline, pipeline  # noqa
 from .nodes import (
     check_input_parameters,
     filter_scenarios,
+    apply_ccs_suffix,
     filter_assets,
     filter_companies,
     assign_scenario_geographies_to_assets,
@@ -53,10 +54,19 @@ def create_pipeline(**kwargs) -> Pipeline:
                 outputs="companies_ownership_tree",
             ),
             node(
-                func=filter_assets,
+                func=apply_ccs_suffix,
                 inputs=dict(
                     assets_forecasts="downloaded_assets",
                     companies_ownership_tree="companies_ownership_tree",
+                    ccs_on="params:ccs_on",
+                ),
+                outputs=["assets_forecasts_ccs", "companies_ownership_tree_ccs"],
+            ),
+            node(
+                func=filter_assets,
+                inputs=dict(
+                    assets_forecasts="assets_forecasts_ccs",
+                    companies_ownership_tree="companies_ownership_tree_ccs",
                     scenarios_pathways="scenarios_pathways",
                     max_forecast_horizon="params:max_forecast_horizon",
                 ),
@@ -74,7 +84,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                 func=allocate_assets_to_companies,
                 inputs=dict(
                     assets_forecasts="assets_forecasts_with_scenario_geographies",
-                    companies_ownership_tree="companies_ownership_tree",
+                    companies_ownership_tree="companies_ownership_tree_ccs",
                 ),
                 outputs="allocated_assets_to_companies",
             ),

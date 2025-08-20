@@ -198,6 +198,6 @@ report_methodology:
 
 # Quality control summary
 reporting_qc_summary:
-  type: pandas.ParquetDataset
-  filepath: data/09_reports/reporting_qc.parquet
+  type: pandas.CSVDataset
+  filepath: data/09_reports/reporting_qc.csv
 

@@ -28,6 +28,10 @@ def filter_scenarios(
         + scenarios_pathways["scenario"].astype(str).str.strip()
     )
 
+    scenarios_pathways.loc[
+        scenarios_pathways["scenario_geography"] == "Global", "country_iso2_list"
+    ] = np.nan
+
     assert (
         target_scenario
         in scenarios_pathways[
@@ -75,6 +79,38 @@ def filter_companies(
         filtered_companies_ownership_tree = companies_owners
 
     return filtered_companies_ownership_tree
+
+
+def apply_ccs_suffix(
+    assets_forecasts: pd.DataFrame,
+    companies_ownership_tree: pd.DataFrame,
+    ccs_on: bool,
+) -> pd.DataFrame:
+    ccs_technologies_mask_assets = assets_forecasts["technology"].isin(
+        ["BiomassCap", "CoalCap", "GasCap", "OilCap"]
+    )
+    ccs_technologies_mask_companies = companies_ownership_tree["technology"].isin(
+        ["BiomassCap", "CoalCap", "GasCap", "OilCap"]
+    )
+    if ccs_on:
+        assets_forecasts.loc[ccs_technologies_mask_assets, "technology"] = (
+            assets_forecasts.loc[ccs_technologies_mask_assets, "technology"]
+            + " - w/ CCS"
+        )
+        companies_ownership_tree.loc[ccs_technologies_mask_companies, "technology"] = (
+            companies_ownership_tree.loc[ccs_technologies_mask_companies, "technology"]
+            + " - w/ CCS"
+        )
+    else:
+        assets_forecasts.loc[ccs_technologies_mask_assets, "technology"] = (
+            assets_forecasts.loc[ccs_technologies_mask_assets, "technology"]
+            + " - w/o CCS"
+        )
+        companies_ownership_tree.loc[ccs_technologies_mask_companies, "technology"] = (
+            companies_ownership_tree.loc[ccs_technologies_mask_companies, "technology"]
+            + " - w/o CCS"
+        )
+    return assets_forecasts, companies_ownership_tree
 
 
 def filter_assets(
@@ -365,19 +401,37 @@ def extend_allocated_assets_to_companies(
     )
 
     # Create extended years for each group from its own last forecast year + 1 to scenario end year
-    extended_rows = []
-    for _, row in last_forecast_rows.iterrows():
-        last_year = int(round(row["year"]))
-        if last_year >= scenario_end_year:
-            continue
-        years = np.arange(last_year + 1, scenario_end_year + 1, dtype=int)
-        ages = row["asset_age"] + (years - last_year)
+    # Filter out rows where last year >= scenario end year
+    last_forecast_rows = last_forecast_rows[
+        last_forecast_rows["year"].round(0).astype(int) < scenario_end_year
+    ].copy()
 
-        base_data = {col: row[col] for col in group_cols}
-        base_df = pd.DataFrame(base_data, index=range(len(years)))
-        base_df["year"] = years
-        base_df["asset_age"] = ages
-        extended_rows.append(base_df)
+    if last_forecast_rows.empty:
+        extended_rows = []
+    else:
+        # Create a list of years for each row
+        last_forecast_rows["last_year"] = (
+            last_forecast_rows["year"].round(0).astype(int)
+        )
+        last_forecast_rows["years_to_extend"] = last_forecast_rows["last_year"].apply(
+            lambda x: list(range(x + 1, scenario_end_year + 1))
+        )
+
+        # Explode to create one row per extended year
+        extended_data = last_forecast_rows.explode("years_to_extend").copy()
+        extended_data = extended_data.dropna(subset=["years_to_extend"])
+
+        if not extended_data.empty:
+            # Calculate new year and asset_age
+            extended_data["year"] = extended_data["years_to_extend"].astype(int)
+            extended_data["asset_age"] = extended_data["asset_age"] + (
+                extended_data["year"] - extended_data["last_year"]
+            )
+
+            # Keep only the required columns
+            extended_rows = [extended_data[group_cols + ["year", "asset_age"]]]
+        else:
+            extended_rows = []
 
     if extended_rows:
         extended_years = pd.concat(extended_rows, ignore_index=True)
