@@ -14,9 +14,7 @@ from .nodes import (
     allocate_assets_to_companies,
     determine_increasing_or_decreasing_techs,
     determine_lifetime_per_technology,
-    determine_assets_retirement_dates,
     interpolate_scenarios_annually,
-    extend_allocated_assets_to_companies,
 )
 
 
@@ -97,22 +95,6 @@ def create_pipeline(**kwargs) -> Pipeline:
                 determine_lifetime_per_technology,
                 inputs=dict(scenarios_pathways="scenarios_pathways"),
                 outputs="lifetime_per_technology",
-            ),
-            node(
-                extend_allocated_assets_to_companies,
-                inputs=dict(
-                    allocated_assets_to_companies="allocated_assets_to_companies",
-                    scenarios_pathways="scenarios_pathways",
-                ),
-                outputs="extended_allocated_assets_to_companies",
-            ),
-            node(
-                determine_assets_retirement_dates,
-                inputs=dict(
-                    allocated_assets_to_companies="extended_allocated_assets_to_companies",
-                    lifetime_per_technology="lifetime_per_technology",
-                ),
-                outputs="assets_retirement_dates",
             ),
         ],
         tags=["altrisk", "trisk"],

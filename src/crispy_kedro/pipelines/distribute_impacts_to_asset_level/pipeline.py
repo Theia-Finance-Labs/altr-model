@@ -33,7 +33,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                 stagger_decreasing_technologies,
                 inputs=dict(
                     late_sudden_trajectories="decreasing_tech_late_sudden_trajectories",
-                    allocated_assets_to_companies="extended_allocated_assets_to_companies",
+                    allocated_assets_to_companies="extended_companies_forecasts",
                     assets_retirement_dates="assets_retirement_dates",
                     shock_year="params:shock_year",
                     alignment_year="params:alignment_year",
@@ -52,7 +52,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                 stagger_increasing_technologies,
                 inputs=dict(
                     late_sudden_trajectories="increasing_tech_late_sudden_trajectories",
-                    allocated_assets_to_companies="extended_allocated_assets_to_companies",
+                    allocated_assets_to_companies="extended_companies_forecasts",
                     shock_year="params:shock_year",
                 ),
                 outputs="increasing_tech_staggered_shock",
