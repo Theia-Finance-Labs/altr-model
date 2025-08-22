@@ -297,186 +297,399 @@ def stagger_decreasing_technologies(
     assets_retirement_dates: pd.DataFrame,
     shock_year: int,
     alignment_year: int,
-    apply_retirement: bool = True,
+    apply_retirement: bool,
+    apply_decreasing_staggered_shock: bool,
     g_k: float = 6.0,
     n_quantiles: int = 3,
 ) -> pd.DataFrame:
     """
     Decreasing techs:
 
-    - y < shock_year: follow forecast/BAU (no allocations).
-    - shock_year ≤ y ≤ alignment_year: allocate negative company deltas by g-weights
-      with caps, using *previous year's after* as the per-asset base/floor.
-    - y > alignment_year: enforce retirements (effective retirement =
-      max(retirement_year, alignment_year+1)) and keep allocating remaining
-      negative deltas by g-weights with caps, still chaining from last year's after.
+    - If apply_decreasing_staggered_shock is False: from shock_year onward, scale each asset
+      proportionally to its share at the shock year so that the sum across assets matches the
+      company late-sudden trajectory exactly. No age weighting; no negatives.
+    - If True: use staggered allocation with age-based g-weights and per-asset caps.
+
+    Retirement is not handled here; it can be applied later by a dedicated node.
     """
-    need_c = GROUP_COLS + ["year", "company_trajectory_latesudden"]
-    miss_c = [c for c in need_c if c not in late_sudden_trajectories.columns]
-    if miss_c:
-        raise ValueError(f"late_sudden_trajectories missing columns: {miss_c}")
-    need_a = GROUP_COLS + ["asset_id", "year", "asset_activity", "asset_age"]
-    miss_a = [c for c in need_a if c not in allocated_assets_to_companies.columns]
-    if miss_a:
-        raise ValueError(f"allocated_assets_to_companies missing columns: {miss_a}")
+    if not apply_decreasing_staggered_shock:
+        need_c = GROUP_COLS + ["year", "company_trajectory_latesudden"]
+        miss_c = [c for c in need_c if c not in late_sudden_trajectories.columns]
+        if miss_c:
+            raise ValueError(f"late_sudden_trajectories missing columns: {miss_c}")
+        need_a = GROUP_COLS + ["asset_id", "year", "asset_activity", "asset_age"]
+        miss_a = [c for c in need_a if c not in allocated_assets_to_companies.columns]
+        if miss_a:
+            raise ValueError(f"allocated_assets_to_companies missing columns: {miss_a}")
 
-    lsc = late_sudden_trajectories.copy()
-    lsc["year"] = _ensure_int_year(lsc["year"])
+        lsc = late_sudden_trajectories.copy()
+        lsc["year"] = _ensure_int_year(lsc["year"])
 
-    # Step 1–2: BAU fill up to shock year (you already had this)
-    assets = _bau_fill_assets_until_shock(
-        lsc=lsc, assets=allocated_assets_to_companies.copy(), shock_year=shock_year
-    )
-    assets["year"] = _ensure_int_year(assets["year"])
-    assets["asset_id"] = assets["asset_id"].astype(str)
+        # BAU fill to shock year and constant thereafter for missing values
+        assets = _bau_fill_assets_until_shock(
+            lsc=lsc, assets=allocated_assets_to_companies.copy(), shock_year=shock_year
+        )
+        assets["year"] = _ensure_int_year(assets["year"])
+        assets["asset_id"] = assets["asset_id"].astype(str)
 
-    comp_by_key = _index_company_by_year(lsc)
-    ret_map_by_key = _build_retirement_map(assets_retirement_dates)
-    out_parts: List[pd.DataFrame] = []
+        comp_by_key = _index_company_by_year(lsc)
+        out_parts: List[pd.DataFrame] = []
 
-    for key, comp_years in tqdm(
-        list(comp_by_key.items()), desc="Stagger dec", unit="grp"
-    ):
-        cid, geo, sector, tech = key
-        aset_g = assets[
-            (assets["company_id"] == cid)
-            & (assets["scenario_geography"] == geo)
-            & (assets["sector"] == sector)
-            & (assets["technology"] == tech)
-        ][["asset_id", "year", "asset_activity", "asset_age"]].copy()
-        if aset_g.empty:
-            continue
+        for key, comp_years in tqdm(
+            list(comp_by_key.items()), desc="Prop-scale dec", unit="grp"
+        ):
+            cid, geo, sector, tech = key
+            aset_g = assets[
+                (assets["company_id"] == cid)
+                & (assets["scenario_geography"] == geo)
+                & (assets["sector"] == sector)
+                & (assets["technology"] == tech)
+            ][["asset_id", "year", "asset_activity", "asset_age"]].copy()
+            if aset_g.empty:
+                continue
 
-        raw_ret = ret_map_by_key.get(key, {})
-        # effective retirement after alignment
-        eff_ret = {
-            aid: max(int(y_r), int(alignment_year) + 1) for aid, y_r in raw_ret.items()
-        }
-
-        years = sorted(map(int, comp_years.index.tolist()))
-        prev_company = None
-
-        # THIS is the key state: Plate_{y-1,a} (previous year's after-shock)
-        prev_after_by_asset: Dict[str, float] = {}
-
-        for i, y in enumerate(years):
-            C_y = float(comp_years.at[y, "company_trajectory_latesudden"])
-            comp_phase = str(comp_years.at[y, "late_sudden_phase"])
-            alignment_type = str(comp_years.at[y, "alignment_type"])
-
-            # Pull ages for g-weights from the forecast table for this year (fallback to prev+1)
-            sub = aset_g[aset_g["year"] == y].copy()
-            sub["asset_id"] = sub["asset_id"].astype(str)
-            ages_y = sub.set_index("asset_id")["asset_age"].astype(float)
-
-            # -------- Determine 'before' (the base we modify this year)
-            if y < int(shock_year):
-                # Before shock year: always use BAU-filled forecast values
-                before = sub.set_index("asset_id")["asset_activity"].astype(float)
-            elif i == 0:
-                # First year at/after shock: anchor on forecast/BAU
-                before = sub.set_index("asset_id")["asset_activity"].astype(float)
-            else:
-                # After first year at/after shock: chain from last year's after (modified values)
-                # include any new assets appearing with 0 base so they don't create oscillations
-                idx = sorted(set(prev_after_by_asset.keys()) | set(sub["asset_id"]))
-                before = pd.Series(
-                    {aid: prev_after_by_asset.get(aid, 0.0) for aid in idx}, dtype=float
+            # shock-year shares (use last <= shock if exact year missing)
+            sub_shock = aset_g[aset_g["year"] == int(shock_year)]
+            if sub_shock.empty:
+                sub_shock = (
+                    aset_g[aset_g["year"] <= int(shock_year)]
+                    .sort_values(["asset_id", "year"])
+                    .groupby("asset_id", sort=False)
+                    .tail(1)
                 )
-                # keep age alignment for all ids we track
-                if not ages_y.empty:
-                    ages_y = ages_y.reindex(before.index).ffill().bfill().fillna(0.0)
-                else:
-                    ages_y = pd.Series(0.0, index=before.index, dtype=float)
-
-            # -------- company delta (negative part from shock year onward)
-            if prev_company is None:
-                shock_neg = 0.0
-            else:
-                delta = C_y - prev_company
-                shock_neg = min(delta, 0.0) if y >= int(shock_year) else 0.0
-            prev_company = C_y
-
-            # -------- retirement only AFTER alignment_year and for misaligned_high_carbon companies
-            forced = pd.Series(0.0, index=before.index, dtype=float)
-            phase = pd.Series(comp_phase, index=before.index, dtype=object)
-            if (
-                apply_retirement
-                and alignment_type == "misaligned_high_carbon"
-                and y > int(alignment_year)
-                and eff_ret
-            ):
-                retire_now = [
-                    aid
-                    for aid, yr in eff_ret.items()
-                    if aid in before.index and y >= yr
-                ]
-                if retire_now:
-                    forced.loc[retire_now] = -before.loc[retire_now].astype(float)
-                for aid, yr in eff_ret.items():
-                    if aid in before.index and y == yr:
-                        phase.at[aid] = "retirement"
-
-            # -------- apply negative shock by g-weights with caps (Plate_{y-1,a})
-            extra = pd.Series(0.0, index=before.index, dtype=float)
-            remaining = shock_neg - float(forced.sum())  # ≤ 0 desired
-            if remaining < -1e-12:
-                # active = those not force-retired this year
-                active = before.index[forced >= 0.0]
-                if len(active) > 0:
-                    # Plate_{y-1,a} = 'before' (because we are chaining)
-                    floors = before.loc[active].clip(lower=0.0)
-                    g = _compute_g_weights(
-                        ages_y.loc[active],
-                        k=g_k,
-                        n_quantiles=n_quantiles,
-                        for_decreasing=True,
-                    )
-                    extra.loc[active] = _reduce_weighted_with_caps(
-                        floors=floors, g_weights=g, R=-remaining
-                    )
-
-            alloc = forced.add(extra, fill_value=0.0)
-            after = before.add(alloc, fill_value=0.0).clip(lower=0.0)
-
-            # update Plate_{y,a} for next year
-            prev_after_by_asset = {aid: float(after.at[aid]) for aid in after.index}
-
-            out_parts.append(
-                _emit_rows(
-                    key,
-                    year=y,
-                    before=before,
-                    alloc=alloc,
-                    ages=ages_y,
-                    synthetic_mask=pd.Series(False, index=before.index),
-                    late_sudden_phase=phase,
-                )
+            vals = (
+                sub_shock.set_index("asset_id")["asset_activity"]
+                .astype(float)
+                .clip(lower=0.0)
             )
+            S = float(vals.sum())
+            if S > 0.0:
+                w = (vals / S).astype(float)
+            else:
+                # no real capacity at shock -> keep zeros
+                w = pd.Series(0.0, index=vals.index, dtype=float)
 
-    if out_parts:
-        return pd.concat(out_parts, ignore_index=True)
-    return pd.DataFrame(
-        columns=[
-            "asset_id",
-            "company_id",
-            "scenario_geography",
-            "sector",
-            "technology",
-            "year",
-            "asset_age",
-            "capacity_before_shock",
-            "allocated_shock",
-            "capacity_after_shock",
-            "is_synthetic",
-            "late_sudden_phase",
-        ]
-    )
+            years = sorted(map(int, comp_years.index.tolist()))
+            prev_after_by_asset: Dict[str, float] = {}
+
+            for i, y in enumerate(years):
+                C_y = float(comp_years.at[y, "company_trajectory_latesudden"])
+                sub = aset_g[aset_g["year"] == y].copy()
+                sub["asset_id"] = sub["asset_id"].astype(str)
+                ages_y = sub.set_index("asset_id")["asset_age"].astype(float)
+
+                # Determine before baseline
+                if y < int(shock_year):
+                    before = sub.set_index("asset_id")["asset_activity"].astype(float)
+                    after = before.copy()
+                elif i == 0:
+                    # first year at/after shock: before is BAU/forecast, after is proportional to company
+                    before = sub.set_index("asset_id")["asset_activity"].astype(float)
+                    idx = sorted(set(before.index) | set(w.index))
+                    w_idx = w.reindex(idx).fillna(0.0)
+                    ages_y = ages_y.reindex(idx).ffill().bfill().fillna(0.0)
+                    after = pd.Series((w_idx * C_y).values, index=idx, dtype=float)
+                else:
+                    # chain: before is last year's after; after follows company shape with fixed shares
+                    idx = sorted(set(prev_after_by_asset.keys()) | set(w.index))
+                    before = pd.Series(
+                        {aid: prev_after_by_asset.get(aid, 0.0) for aid in idx},
+                        dtype=float,
+                    )
+                    w_idx = w.reindex(idx).fillna(0.0)
+                    if not ages_y.empty:
+                        ages_y = ages_y.reindex(idx).ffill().bfill().fillna(0.0)
+                    else:
+                        ages_y = pd.Series(0.0, index=idx, dtype=float)
+                    after = pd.Series((w_idx * C_y).values, index=idx, dtype=float)
+
+                after = after.clip(lower=0.0)
+                alloc = after.add(-before, fill_value=0.0)
+                prev_after_by_asset = {aid: float(after.at[aid]) for aid in after.index}
+
+                out_parts.append(
+                    _emit_rows(
+                        key,
+                        year=y,
+                        before=before,
+                        alloc=alloc,
+                        ages=ages_y,
+                        synthetic_mask=pd.Series(False, index=before.index),
+                        late_sudden_phase=pd.Series(
+                            "", index=before.index, dtype=object
+                        ),
+                    )
+                )
+
+        if out_parts:
+            return pd.concat(out_parts, ignore_index=True)
+        return pd.DataFrame(
+            columns=[
+                "asset_id",
+                "company_id",
+                "scenario_geography",
+                "sector",
+                "technology",
+                "year",
+                "asset_age",
+                "capacity_before_shock",
+                "allocated_shock",
+                "capacity_after_shock",
+                "is_synthetic",
+                "late_sudden_phase",
+            ]
+        )
+    else:
+        need_c = GROUP_COLS + ["year", "company_trajectory_latesudden"]
+        miss_c = [c for c in need_c if c not in late_sudden_trajectories.columns]
+        if miss_c:
+            raise ValueError(f"late_sudden_trajectories missing columns: {miss_c}")
+        need_a = GROUP_COLS + ["asset_id", "year", "asset_activity", "asset_age"]
+        miss_a = [c for c in need_a if c not in allocated_assets_to_companies.columns]
+        if miss_a:
+            raise ValueError(f"allocated_assets_to_companies missing columns: {miss_a}")
+
+        lsc = late_sudden_trajectories.copy()
+        lsc["year"] = _ensure_int_year(lsc["year"])
+
+        # Step 1–2: BAU fill up to shock year (you already had this)
+        assets = _bau_fill_assets_until_shock(
+            lsc=lsc, assets=allocated_assets_to_companies.copy(), shock_year=shock_year
+        )
+        assets["year"] = _ensure_int_year(assets["year"])
+        assets["asset_id"] = assets["asset_id"].astype(str)
+
+        comp_by_key = _index_company_by_year(lsc)
+        ret_map_by_key = _build_retirement_map(assets_retirement_dates)
+        out_parts: List[pd.DataFrame] = []
+
+        for key, comp_years in tqdm(
+            list(comp_by_key.items()), desc="Stagger dec", unit="grp"
+        ):
+            cid, geo, sector, tech = key
+            aset_g = assets[
+                (assets["company_id"] == cid)
+                & (assets["scenario_geography"] == geo)
+                & (assets["sector"] == sector)
+                & (assets["technology"] == tech)
+            ][["asset_id", "year", "asset_activity", "asset_age"]].copy()
+            if aset_g.empty:
+                continue
+
+            raw_ret = ret_map_by_key.get(key, {})
+            # effective retirement after alignment
+            eff_ret = {
+                aid: max(int(y_r), int(alignment_year) + 1)
+                for aid, y_r in raw_ret.items()
+            }
+
+            years = sorted(map(int, comp_years.index.tolist()))
+            prev_company = None
+
+            # THIS is the key state: Plate_{y-1,a} (previous year's after-shock)
+            prev_after_by_asset: Dict[str, float] = {}
+
+            for i, y in enumerate(years):
+                C_y = float(comp_years.at[y, "company_trajectory_latesudden"])
+                comp_phase = str(comp_years.at[y, "late_sudden_phase"])
+                alignment_type = str(comp_years.at[y, "alignment_type"])
+
+                # Pull ages for g-weights from the forecast table for this year (fallback to prev+1)
+                sub = aset_g[aset_g["year"] == y].copy()
+                sub["asset_id"] = sub["asset_id"].astype(str)
+                ages_y = sub.set_index("asset_id")["asset_age"].astype(float)
+
+                # -------- Determine 'before' (the base we modify this year)
+                if y < int(shock_year):
+                    # Before shock year: always use BAU-filled forecast values
+                    before = sub.set_index("asset_id")["asset_activity"].astype(float)
+                elif i == 0:
+                    # First year at/after shock: anchor on forecast/BAU
+                    before = sub.set_index("asset_id")["asset_activity"].astype(float)
+                else:
+                    # After first year at/after shock: chain from last year's after (modified values)
+                    # include any new assets appearing with 0 base so they don't create oscillations
+                    idx = sorted(set(prev_after_by_asset.keys()) | set(sub["asset_id"]))
+                    before = pd.Series(
+                        {aid: prev_after_by_asset.get(aid, 0.0) for aid in idx},
+                        dtype=float,
+                    )
+                    # keep age alignment for all ids we track
+                    if not ages_y.empty:
+                        ages_y = (
+                            ages_y.reindex(before.index).ffill().bfill().fillna(0.0)
+                        )
+                    else:
+                        ages_y = pd.Series(0.0, index=before.index, dtype=float)
+
+                # -------- company delta (negative part from shock year onward)
+                if prev_company is None:
+                    shock_neg = 0.0
+                else:
+                    delta = C_y - prev_company
+                    shock_neg = min(delta, 0.0) if y >= int(shock_year) else 0.0
+                prev_company = C_y
+
+                # -------- retirement only AFTER alignment_year and for misaligned_high_carbon companies
+                forced = pd.Series(0.0, index=before.index, dtype=float)
+                phase = pd.Series(comp_phase, index=before.index, dtype=object)
+                if (
+                    apply_retirement
+                    and alignment_type == "misaligned_high_carbon"
+                    and y > int(alignment_year)
+                    and eff_ret
+                ):
+                    retire_now = [
+                        aid
+                        for aid, yr in eff_ret.items()
+                        if aid in before.index and y >= yr
+                    ]
+                    if retire_now:
+                        forced.loc[retire_now] = -before.loc[retire_now].astype(float)
+                    for aid, yr in eff_ret.items():
+                        if aid in before.index and y == yr:
+                            phase.at[aid] = "retirement"
+
+                # -------- apply negative shock by g-weights with caps (Plate_{y-1,a})
+                extra = pd.Series(0.0, index=before.index, dtype=float)
+                remaining = shock_neg - float(forced.sum())  # ≤ 0 desired
+                if remaining < -1e-12:
+                    # active = those not force-retired this year
+                    active = before.index[forced >= 0.0]
+                    if len(active) > 0:
+                        # Plate_{y-1,a} = 'before' (because we are chaining)
+                        floors = before.loc[active].clip(lower=0.0)
+                        g = _compute_g_weights(
+                            ages_y.loc[active],
+                            k=g_k,
+                            n_quantiles=n_quantiles,
+                            for_decreasing=True,
+                        )
+                        extra.loc[active] = _reduce_weighted_with_caps(
+                            floors=floors, g_weights=g, R=-remaining
+                        )
+
+                alloc = forced.add(extra, fill_value=0.0)
+                after = before.add(alloc, fill_value=0.0).clip(lower=0.0)
+
+                # update Plate_{y,a} for next year
+                prev_after_by_asset = {aid: float(after.at[aid]) for aid in after.index}
+
+                out_parts.append(
+                    _emit_rows(
+                        key,
+                        year=y,
+                        before=before,
+                        alloc=alloc,
+                        ages=ages_y,
+                        synthetic_mask=pd.Series(False, index=before.index),
+                        late_sudden_phase=phase,
+                    )
+                )
+
+        if out_parts:
+            return pd.concat(out_parts, ignore_index=True)
+        return pd.DataFrame(
+            columns=[
+                "asset_id",
+                "company_id",
+                "scenario_geography",
+                "sector",
+                "technology",
+                "year",
+                "asset_age",
+                "capacity_before_shock",
+                "allocated_shock",
+                "capacity_after_shock",
+                "is_synthetic",
+                "late_sudden_phase",
+            ]
+        )
 
 
 # =========================================================
 # ===== New: flag phased-out assets as retired (post-dec) ===
 # =========================================================
+
+
+def enforce_retirements_after_alignment(
+    dec_df: pd.DataFrame,
+    assets_retirement_dates: pd.DataFrame,
+    alignment_year: int,
+    apply_retirement: bool,
+) -> pd.DataFrame:
+    """
+    Enforce retirements after the alignment year by zeroing capacity from the
+    effective retirement year onward for assets present in assets_retirement_dates.
+
+    - effective retirement year = max(retirement_year, alignment_year+1)
+    - Recomputes capacity_before_shock and allocated_shock to maintain chaining
+    - Leaves late_sudden_phase untouched (the flagging node may set it later)
+    """
+    if dec_df is None or dec_df.empty:
+        return dec_df
+    if not apply_retirement:
+        return dec_df
+    if assets_retirement_dates is None or assets_retirement_dates.empty:
+        return dec_df
+
+    need_cols = GROUP_COLS + ["asset_id", "retirement_year"]
+    miss = [c for c in need_cols if c not in assets_retirement_dates.columns]
+    if miss:
+        raise ValueError(f"assets_retirement_dates missing columns: {miss}")
+
+    # Build retirement map
+    ret_map = _build_retirement_map(assets_retirement_dates)
+
+    df = dec_df.copy()
+    df["year"] = _ensure_int_year(df["year"]).astype(int)
+    df["asset_id"] = df["asset_id"].astype(str)
+    df.sort_values(GROUP_COLS + ["asset_id", "year"], inplace=True)
+
+    def _apply_retire_group(g: pd.DataFrame) -> pd.DataFrame:
+        key = (
+            g.iloc[0]["company_id"],
+            g.iloc[0]["scenario_geography"],
+            g.iloc[0]["sector"],
+            g.iloc[0]["technology"],
+        )
+        rdict = ret_map.get(key, {})
+        # process each asset independently to preserve chaining
+        out_list: List[pd.DataFrame] = []
+        for aid, sub in g.groupby("asset_id", sort=False):
+            sub = sub.sort_values("year").copy()
+            if aid in rdict:
+                eff = max(int(rdict[aid]), int(alignment_year) + 1)
+                after = sub["capacity_after_shock"].astype(float).to_numpy()
+                before = sub["capacity_before_shock"].astype(float).to_numpy()
+                years = sub["year"].to_numpy(dtype=int)
+                # enforce zeros from eff onward
+                if (years >= eff).any():
+                    # recompute chain starting at first index where year >= eff
+                    start_idx = int(np.argmax(years >= eff))
+                    for idx in range(start_idx, len(years)):
+                        # before is previous after (or keep original for the first enforced year)
+                        if idx == 0:
+                            pass
+                        else:
+                            before[idx] = after[idx - 1]
+                        # set after to 0 from eff on
+                        after[idx] = 0.0
+                    # also ensure the immediate next year's before equals previous after
+                    for idx in range(1, len(years)):
+                        before[idx] = after[idx - 1]
+                # recompute allocated as after - before
+                alloc = after - before
+                sub["capacity_before_shock"] = before
+                sub["capacity_after_shock"] = after
+                sub["allocated_shock"] = alloc
+            out_list.append(sub)
+        return pd.concat(out_list, ignore_index=True)
+
+    result = df.groupby(GROUP_COLS, sort=False, group_keys=False).apply(
+        _apply_retire_group
+    )
+    return result
 
 
 def flag_phased_out_assets_as_retired(

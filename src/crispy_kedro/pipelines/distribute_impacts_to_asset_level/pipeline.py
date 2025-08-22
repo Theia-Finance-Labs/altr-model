@@ -12,6 +12,7 @@ from .nodes import (
     concatenate_staggered_shock_results,
     compute_capex_indicators,
     flag_phased_out_assets_as_retired,
+    enforce_retirements_after_alignment,
 )
 
 
@@ -38,13 +39,24 @@ def create_pipeline(**kwargs) -> Pipeline:
                     shock_year="params:shock_year",
                     alignment_year="params:alignment_year",
                     apply_retirement="params:apply_retirement",
+                    apply_decreasing_staggered_shock="params:apply_decreasing_staggered_shock",
                 ),
                 outputs="decreasing_tech_staggered_shock",
             ),
             node(
+                enforce_retirements_after_alignment,
+                inputs=dict(
+                    dec_df="decreasing_tech_staggered_shock",
+                    assets_retirement_dates="assets_retirement_dates",
+                    alignment_year="params:alignment_year",
+                    apply_retirement="params:apply_retirement",
+                ),
+                outputs="decreasing_tech_staggered_shock_retired",
+            ),
+            node(
                 flag_phased_out_assets_as_retired,
                 inputs=dict(
-                    dec_staggered="decreasing_tech_staggered_shock",
+                    dec_staggered="decreasing_tech_staggered_shock_retired",
                 ),
                 outputs="decreasing_tech_staggered_shock_flagged",
             ),

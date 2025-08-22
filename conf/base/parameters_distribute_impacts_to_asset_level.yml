@@ -6,4 +6,4 @@
 
 
 apply_retirement: False
-apply_staggered_shock: True
+apply_decreasing_staggered_shock: False
