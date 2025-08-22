@@ -374,6 +374,13 @@ def stagger_decreasing_technologies(
 
             for i, y in enumerate(years):
                 C_y = float(comp_years.at[y, "company_trajectory_latesudden"])
+                # Get the company phase for this year (like in staggered branch)
+                comp_phase = (
+                    str(comp_years.at[y, "late_sudden_phase"])
+                    if "late_sudden_phase" in comp_years.columns
+                    else ""
+                )
+
                 sub = aset_g[aset_g["year"] == y].copy()
                 sub["asset_id"] = sub["asset_id"].astype(str)
                 ages_y = sub.set_index("asset_id")["asset_age"].astype(float)
@@ -416,7 +423,7 @@ def stagger_decreasing_technologies(
                         ages=ages_y,
                         synthetic_mask=pd.Series(False, index=before.index),
                         late_sudden_phase=pd.Series(
-                            "", index=before.index, dtype=object
+                            comp_phase, index=before.index, dtype=object
                         ),
                     )
                 )
@@ -689,7 +696,7 @@ def enforce_retirements_after_alignment(
     result = df.groupby(GROUP_COLS, sort=False, group_keys=False).apply(
         _apply_retire_group
     )
-    return result
+    return result.reset_index(drop=True)
 
 
 def flag_phased_out_assets_as_retired(
@@ -721,6 +728,7 @@ def flag_phased_out_assets_as_retired(
         )
 
     df = dec_staggered.copy()
+
     df["year"] = _ensure_int_year(df["year"]).astype(int)
     df["is_synthetic"] = df["is_synthetic"].fillna(False).astype(bool)
     df["late_sudden_phase"] = df["late_sudden_phase"].fillna("").astype(str)
@@ -764,9 +772,11 @@ def flag_phased_out_assets_as_retired(
         # index of the row in the original df corresponding to (asset_id, retire_year)
         row = g_sorted[g_sorted["year"] == retire_year]
         if not row.empty:
-            idx = int(row.index[0])
+            # Get the first matching row's index from the original df
+            idx = row.index[0]
             # don't override existing explicit retirement
-            if df.at[idx, "late_sudden_phase"] != "retirement":
+            current_phase = df.at[idx, "late_sudden_phase"]
+            if current_phase != "retirement":
                 to_mark_idx.append(idx)
 
     if to_mark_idx:
