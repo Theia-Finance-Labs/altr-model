@@ -631,7 +631,7 @@ def enforce_retirements_after_alignment(
 
     - effective retirement year = max(retirement_year, alignment_year+1)
     - Recomputes capacity_before_shock and allocated_shock to maintain chaining
-    - Leaves late_sudden_phase untouched (the flagging node may set it later)
+    - Sets late_sudden_phase to "retirement" at the effective retirement year
     """
     if dec_df is None or dec_df.empty:
         return dec_df
@@ -682,6 +682,11 @@ def enforce_retirements_after_alignment(
                             before[idx] = after[idx - 1]
                         # set after to 0 from eff on
                         after[idx] = 0.0
+                        # set late_sudden_phase to "retirement" at the effective retirement year
+                        if years[idx] == eff:
+                            sub.iloc[idx, sub.columns.get_loc("late_sudden_phase")] = (
+                                "retirement"
+                            )
                     # also ensure the immediate next year's before equals previous after
                     for idx in range(1, len(years)):
                         before[idx] = after[idx - 1]
