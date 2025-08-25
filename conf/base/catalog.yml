@@ -66,31 +66,10 @@ companies_npvs:
   type: pandas.CSVDataset
   filepath: data/08_reporting/companies_npvs.csv
 
-assets_data:
-  type: pandas.CSVDataset
-  filepath: data/08_reporting/assets_data.csv
-
-scenarios_data:
-  type: pandas.CSVDataset
-  filepath: data/08_reporting/scenarios_data.csv
-
-financial_data:
-  type: pandas.CSVDataset
-  filepath: data/08_reporting/financial_data.csv
-
-# For compatibility with tests expecting "companies_npvs_excel"
-companies_npvs_excel:
-  type: pandas.CSVDataset
-  filepath: data/08_reporting/companies_npvs.csv
-
 # Combined late sudden trajectories and alignment classifications
 all_late_sudden_trajectories:
   type: pandas.CSVDataset
   filepath: data/08_reporting/all_late_sudden_trajectories.csv
-
-all_alignment_classifications:
-  type: pandas.CSVDataset
-  filepath: data/08_reporting/all_alignment_classifications.csv
 
 asset_level_staggered_shock:  
   type: pandas.CSVDataset

@@ -29,7 +29,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                     "asset_level_staggered_shock": "asset_level_staggered_shock",
                     "downloaded_scenarios": "scenarios_pathways",
                     "all_alignment_classifications": "all_alignment_classifications",
-                    "assets_data": "assets_data",
+                    "assets_data": "assets_forecasts_with_scenario_geographies",
                 },
                 outputs={
                     "assets_validated": "_temp_assets_validated",

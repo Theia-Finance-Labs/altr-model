@@ -24,12 +24,13 @@ def create_pipeline(**kwargs) -> Pipeline:
                     companies_trajectories="companies_trajectories",
                     increasing_or_decreasing_techs="increasing_or_decreasing_techs",
                 ),
-                outputs=[
-                    "misaligned_high_carbon_companies_trajectories",
-                    "misaligned_low_carbon_companies_trajectories",
-                    "aligned_high_carbon_companies_trajectories",
-                    "aligned_low_carbon_companies_trajectories",
-                ],
+                outputs=dict(
+                    all_alignment_classifications="all_alignment_classifications",
+                    misaligned_high_carbon_companies_trajectories="misaligned_high_carbon_companies_trajectories",
+                    misaligned_low_carbon_companies_trajectories="misaligned_low_carbon_companies_trajectories",
+                    aligned_high_carbon_companies_trajectories="aligned_high_carbon_companies_trajectories",
+                    aligned_low_carbon_companies_trajectories="aligned_low_carbon_companies_trajectories",
+                ),
             ),
             node(
                 late_sudden_misaligned_high_carbon_companies,
