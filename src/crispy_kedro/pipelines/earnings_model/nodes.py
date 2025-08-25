@@ -16,53 +16,39 @@ HOURS_PER_YEAR = 8760
 # Technology defaults
 TECHNOLOGY_DEFAULTS = {
     "Coal": {
-        "lifetime_years": 40,
-        "efficiency_decimal": 0.35,
         "decom_usd_per_mw": 50000,
     },
     "Gas": {
-        "lifetime_years": 30,
-        "efficiency_decimal": 0.45,
         "decom_usd_per_mw": 30000,
     },
     "GasCap": {
-        "lifetime_years": 30,
-        "efficiency_decimal": 0.45,
         "decom_usd_per_mw": 30000,
     },
     "Oil": {
-        "lifetime_years": 30,
-        "efficiency_decimal": 0.35,
         "decom_usd_per_mw": 40000,
     },
     "OilCap": {
-        "lifetime_years": 30,
-        "efficiency_decimal": 0.35,
         "decom_usd_per_mw": 40000,
     },
-    "Nuclear": {
-        "lifetime_years": 60,
-        "efficiency_decimal": 0.33,
+    "NuclearCap": {
         "decom_usd_per_mw": 500000,
     },
-    "Solar": {
-        "lifetime_years": 25,
-        "efficiency_decimal": 1.0,
+    "SolarCap - CSP": {
         "decom_usd_per_mw": 20000,
     },
-    "Wind": {
-        "lifetime_years": 25,
-        "efficiency_decimal": 1.0,
+    "SolarCap - PV": {
+        "decom_usd_per_mw": 20000,
+    },
+    "WindCap - Offshore": {
         "decom_usd_per_mw": 25000,
     },
-    "Hydro": {
-        "lifetime_years": 80,
-        "efficiency_decimal": 1.0,
+    "WindCap - Onshore": {
+        "decom_usd_per_mw": 25000,
+    },
+    "HydroCap": {
         "decom_usd_per_mw": 100000,
     },
-    "Geothermal": {
-        "lifetime_years": 30,
-        "efficiency_decimal": 1.0,
+    "GeothermalCap": {
         "decom_usd_per_mw": 75000,
     },
 }
@@ -73,6 +59,7 @@ def validate_and_standardize_inputs(
     downloaded_scenarios: pd.DataFrame,
     all_alignment_classifications: pd.DataFrame,
     assets_data: pd.DataFrame,
+    capex_indicators: pd.DataFrame,
 ) -> Dict[str, pd.DataFrame]:
     """
     Node 1: Validate and standardize all inputs.
@@ -100,11 +87,9 @@ def validate_and_standardize_inputs(
         "scenario_geography",
         "sector",
         "technology",
-        "capex_indicator",
     ]
     for col in string_cols:
-        if col in assets.columns:
-            assets[col] = assets[col].astype(str).str.strip()
+        assets[col] = assets[col].astype(str).str.strip()
 
     # Ensure numeric columns
     numeric_cols = [
@@ -112,21 +97,19 @@ def validate_and_standardize_inputs(
         "asset_age",
         "capacity_before_shock",
         "capacity_after_shock",
-        "capex_capacity",
     ]
     for col in numeric_cols:
-        if col in assets.columns:
-            before_conversion = len(assets)
-            assets[col] = pd.to_numeric(assets[col], errors="coerce")
-            # Check for NaN values that might cause issues
-            nan_count = assets[col].isna().sum()
-            if nan_count > 0:
-                logger.warning(
-                    f"Column {col}: {nan_count}/{before_conversion} values became NaN after conversion"
-                )
-                logger.warning(
-                    f"Sample non-NaN values: {assets[col].dropna().head(3).tolist()}"
-                )
+        before_conversion = len(assets)
+        assets[col] = pd.to_numeric(assets[col], errors="coerce")
+        # Check for NaN values that might cause issues
+        nan_count = assets[col].isna().sum()
+        if nan_count > 0:
+            logger.warning(
+                f"Column {col}: {nan_count}/{before_conversion} values became NaN after conversion"
+            )
+            logger.warning(
+                f"Sample non-NaN values: {assets[col].dropna().head(3).tolist()}"
+            )
 
     # Clean scenarios data
     scenarios = downloaded_scenarios.copy()
@@ -206,6 +189,18 @@ def validate_and_standardize_inputs(
             "No assets to check for year continuity - assets DataFrame is empty!"
         )
 
+    capex_indicators_validated = capex_indicators.loc[
+        :,
+        [
+            "company_id",
+            "asset_id",
+            "sector",
+            "technology",
+            "capex_indicator",
+            "capex_capacity",
+        ],
+    ]
+
     logger.info(f"Final assets shape before return: {assets.shape}")
     logger.info(f"Processed {len(assets)} asset-year rows")
     logger.info(f"Processed {len(scenarios)} scenario-year rows")
@@ -217,6 +212,7 @@ def validate_and_standardize_inputs(
         "scenarios_validated": scenarios,
         "alignments_validated": alignments,
         "assets_static_validated": assets_static,
+        "capex_indicators_validated": capex_indicators_validated,
     }
 
 
@@ -248,10 +244,18 @@ def build_scenario_surfaces(scenarios_validated: pd.DataFrame) -> pd.DataFrame:
     surfaces["power_price_excarbon_usd_per_mwh"] = scenarios["scenario_price"]
 
     # Fuel price - use scenario_price directly (assume already in appropriate units)
-    surfaces["fuel_price_usd_per_mwh_fuel"] = scenarios["scenario_price"]
+    surfaces["fuel_price_usd_per_mwh_fuel"] = scenarios["fuel_price"]
 
     # For non-fuel technologies, set fuel price to 0
-    non_fuel_techs = ["Solar", "Wind", "Hydro", "Nuclear", "Geothermal"]
+    non_fuel_techs = [
+        "SolarCap - CSP",
+        "SolarCap - PV",
+        "WindCap - Offshore",
+        "WindCap - Onshore",
+        "HydroCap",
+        "NuclearCap",
+        "GeothermalCap",
+    ]
     fuel_mask = ~surfaces["technology"].isin(non_fuel_techs)
     surfaces.loc[~fuel_mask, "fuel_price_usd_per_mwh_fuel"] = 0.0
 
@@ -274,16 +278,6 @@ def build_scenario_surfaces(scenarios_validated: pd.DataFrame) -> pd.DataFrame:
 
     # Lifetime
     surfaces["lifetime_years"] = scenarios["lifetime_years"]
-
-    # Fill missing values with technology defaults
-    for tech, defaults in TECHNOLOGY_DEFAULTS.items():
-        tech_mask = surfaces["technology"] == tech
-
-        for param, default_value in defaults.items():
-            if param in surfaces.columns:
-                surfaces.loc[tech_mask & surfaces[param].isna(), param] = default_value
-
-    # Note: emission_factor will come from assets_data.csv, not from scenario surfaces
 
     # Add decommissioning costs
     surfaces["decom_usd_per_mw"] = surfaces["technology"].map(

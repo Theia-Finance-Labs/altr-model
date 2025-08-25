@@ -8,8 +8,6 @@ from tqdm import tqdm
 # ==================== Common helpers =====================
 # =========================================================
 
-GROUP_COLS = ["company_id", "scenario_geography", "sector", "technology"]
-
 
 def _ensure_int_year(s: pd.Series) -> pd.Series:
     return s.fillna(0).astype(int)
@@ -52,6 +50,7 @@ def _compute_g_weights(
 def _index_company_by_year(
     df_company: pd.DataFrame,
 ) -> Dict[Tuple[str, str, str, str], pd.DataFrame]:
+    GROUP_COLS = ["company_id", "scenario_geography", "sector", "technology"]
     return {
         k: g.sort_values("year").set_index("year")
         for k, g in df_company.groupby(GROUP_COLS, sort=False)
@@ -67,7 +66,7 @@ def _build_retirement_map(
     """
     if assets_retirement_dates is None or assets_retirement_dates.empty:
         return {}
-
+    GROUP_COLS = ["company_id", "scenario_geography", "sector", "technology"]
     need_cols = GROUP_COLS + ["asset_id", "retirement_year"]
     miss = [c for c in need_cols if c not in assets_retirement_dates.columns]
     if miss:
@@ -91,6 +90,7 @@ def _emit_rows(
     ages: pd.Series,
     synthetic_mask: pd.Series = None,
     late_sudden_phase: pd.Series = None,
+    alignment_type: pd.Series = None,
 ) -> pd.DataFrame:
     after = before.add(alloc, fill_value=0.0)
     if synthetic_mask is None:
@@ -122,6 +122,10 @@ def _emit_rows(
             .fillna("")
             .astype(str)
             .values,
+            "alignment_type": alignment_type.reindex(before.index)
+            .fillna("")
+            .astype(str)
+            .values,
         }
     )
     # numeric hygiene
@@ -149,7 +153,7 @@ def _bau_fill_assets_until_shock(
     """
     if assets.empty:
         return assets.copy()
-
+    GROUP_COLS = ["company_id", "scenario_geography", "sector", "technology"]
     # Need baseline per (key, year)
     base_cols = GROUP_COLS + ["year", "company_trajectory_baseline"]
     missing = [c for c in base_cols if c not in lsc.columns]
@@ -312,6 +316,7 @@ def stagger_decreasing_technologies(
 
     Retirement is not handled here; it can be applied later by a dedicated node.
     """
+    GROUP_COLS = ["company_id", "scenario_geography", "sector", "technology"]
     if not apply_decreasing_staggered_shock:
         need_c = GROUP_COLS + ["year", "company_trajectory_latesudden"]
         miss_c = [c for c in need_c if c not in late_sudden_trajectories.columns]
@@ -444,6 +449,7 @@ def stagger_decreasing_technologies(
                 "capacity_after_shock",
                 "is_synthetic",
                 "late_sudden_phase",
+                "alignment_type",
             ]
         )
     else:
@@ -591,6 +597,9 @@ def stagger_decreasing_technologies(
                         ages=ages_y,
                         synthetic_mask=pd.Series(False, index=before.index),
                         late_sudden_phase=phase,
+                        alignment_type=pd.Series(
+                            alignment_type, index=before.index, dtype=object
+                        ),
                     )
                 )
 
@@ -610,13 +619,9 @@ def stagger_decreasing_technologies(
                 "capacity_after_shock",
                 "is_synthetic",
                 "late_sudden_phase",
+                "alignment_type",
             ]
         )
-
-
-# =========================================================
-# ===== New: flag phased-out assets as retired (post-dec) ===
-# =========================================================
 
 
 def enforce_retirements_after_alignment(
@@ -639,7 +644,7 @@ def enforce_retirements_after_alignment(
         return dec_df
     if assets_retirement_dates is None or assets_retirement_dates.empty:
         return dec_df
-
+    GROUP_COLS = ["company_id", "scenario_geography", "sector", "technology"]
     need_cols = GROUP_COLS + ["asset_id", "retirement_year"]
     miss = [c for c in need_cols if c not in assets_retirement_dates.columns]
     if miss:
@@ -712,6 +717,7 @@ def flag_phased_out_assets_as_retired(
     as retired by setting late_sudden_phase == "retirement" at the first year of
     permanent zero capacity. Only applies to real assets (is_synthetic == False).
     """
+    GROUP_COLS = ["company_id", "scenario_geography", "sector", "technology"]
     if dec_staggered is None or dec_staggered.empty:
         return dec_staggered
 
@@ -807,8 +813,14 @@ def stagger_increasing_technologies(
         (sum of BAU real assets at shock_year) to ONE synthetic asset.
       - No retirements.
     """
+    GROUP_COLS = ["company_id", "scenario_geography", "sector", "technology"]
     lsc = late_sudden_trajectories.copy()
-    need_c = GROUP_COLS + ["year", "company_trajectory_latesudden"]
+    need_c = GROUP_COLS + [
+        "year",
+        "company_trajectory_latesudden",
+        "late_sudden_phase",
+        "alignment_type",
+    ]
     miss_c = [c for c in need_c if c not in lsc.columns]
     if miss_c:
         raise ValueError(f"late_sudden_trajectories missing columns: {miss_c}")
@@ -830,7 +842,14 @@ def stagger_increasing_technologies(
 
     # Preindex company LS by key/year (vectorized join later)
     comp_by_key = {
-        k: g.sort_values("year")[["year", "company_trajectory_latesudden"]]
+        k: g.sort_values("year")[
+            [
+                "year",
+                "company_trajectory_latesudden",
+                "late_sudden_phase",
+                "alignment_type",
+            ]
+        ]
         for k, g in lsc.groupby(GROUP_COLS, sort=False)
     }
 
@@ -856,11 +875,19 @@ def stagger_increasing_technologies(
         # -------- Real assets: keep BAU for all years (vectorized)
         if not aset.empty:
             aset_key = aset.merge(
-                comp_years[["year"]], on="year", how="inner"  # align to LS years
+                comp_years[["year", "late_sudden_phase", "alignment_type"]],
+                on="year",
+                how="inner",  # align to LS years
             )
             if not aset_key.empty:
                 before = aset_key.set_index("asset_id")[
-                    ["year", "asset_activity", "asset_age"]
+                    [
+                        "year",
+                        "asset_activity",
+                        "asset_age",
+                        "late_sudden_phase",
+                        "alignment_type",
+                    ]
                 ]
                 # emit rows per year by simple rename (alloc = 0, after = before)
                 block = before.reset_index().rename(
@@ -873,7 +900,8 @@ def stagger_increasing_technologies(
                 block["sector"] = sector
                 block["technology"] = tech
                 block["is_synthetic"] = False
-                block["late_sudden_phase"] = ""
+                block["late_sudden_phase"] = block["late_sudden_phase"]
+                block["alignment_type"] = block["alignment_type"]
                 out_real.append(
                     block[
                         [
@@ -889,6 +917,7 @@ def stagger_increasing_technologies(
                             "capacity_after_shock",
                             "is_synthetic",
                             "late_sudden_phase",
+                            "alignment_type",
                         ]
                     ]
                 )
@@ -938,7 +967,8 @@ def stagger_increasing_technologies(
                     "allocated_shock": alloc,
                     "capacity_after_shock": synth_cap,
                     "is_synthetic": True,
-                    "late_sudden_phase": "",
+                    "late_sudden_phase": comp_years["late_sudden_phase"].values,
+                    "alignment_type": comp_years["alignment_type"].values,
                 }
             )
             out_synth.append(synth_df)
@@ -966,6 +996,7 @@ def stagger_increasing_technologies(
             "capacity_after_shock",
             "is_synthetic",
             "late_sudden_phase",
+            "alignment_type",
         ]
     )
 
@@ -1006,6 +1037,8 @@ def compute_capex_indicators(
     need_cols = [
         "company_id",
         "asset_id",
+        "sector",
+        "technology",
         "year",
         "capacity_after_shock",
         "is_synthetic",
@@ -1020,12 +1053,21 @@ def compute_capex_indicators(
     df = assets_staggered_late_sudden.copy()
     if df.empty:
         return pd.DataFrame(
-            columns=["company_id", "asset_id", "capex_indicator", "capex_capacity"]
+            columns=[
+                "company_id",
+                "asset_id",
+                "sector",
+                "technology",
+                "capex_indicator",
+                "capex_capacity",
+            ]
         )
 
     # normalize types
     df["company_id"] = df["company_id"].astype(str)
     df["asset_id"] = df["asset_id"].astype(str)
+    df["sector"] = df["sector"].astype(str)
+    df["technology"] = df["technology"].astype(str)
     df["year"] = _ensure_int_year(df["year"]).astype(int)
     df["capacity_after_shock"] = df["capacity_after_shock"].astype(float)
     df["is_synthetic"] = df["is_synthetic"].fillna(False).astype(bool)
@@ -1091,7 +1133,14 @@ def compute_capex_indicators(
 
     if not out_rows:
         return pd.DataFrame(
-            columns=["company_id", "asset_id", "capex_indicator", "capex_capacity"]
+            columns=[
+                "company_id",
+                "asset_id",
+                "sector",
+                "technology",
+                "capex_indicator",
+                "capex_capacity",
+            ]
         )
 
     out_df = pd.DataFrame(
@@ -1099,6 +1148,8 @@ def compute_capex_indicators(
         columns=[
             "company_id",
             "asset_id",
+            "sector",
+            "technology",
             "capex_indicator",
             "capex_capacity",
         ],
