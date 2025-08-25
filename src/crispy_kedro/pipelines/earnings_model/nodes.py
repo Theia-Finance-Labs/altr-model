@@ -235,6 +235,7 @@ def build_scenario_surfaces(scenarios_validated: pd.DataFrame) -> pd.DataFrame:
         "year",
         "scenario",
         "scenario_provider",
+        "scenario_type",
     ]
     surfaces = scenarios[surface_cols].copy()
 
@@ -328,7 +329,6 @@ def normalize_capacity_growth_to_new_assets(
                 "technology",
                 "aligned",
                 "increasing",
-                "alignment_type",
             ]
         ],
         on=["company_id", "scenario_geography", "sector", "technology"],
@@ -550,17 +550,28 @@ def assemble_asset_panel(
             synthetic_df = pd.DataFrame(synthetic_rows)
             panel = pd.concat([panel, synthetic_df], ignore_index=True)
 
+    target_scenario_surfaces = scenario_surfaces.loc[
+        scenario_surfaces["scenario_type"] == "target", :
+    ]
     # Join scenario surfaces
     panel_enriched = panel.merge(
-        scenario_surfaces,
+        target_scenario_surfaces,
         on=["scenario_geography", "sector", "technology", "year"],
         how="left",
     )
 
+    assets_static_validated_1_row = (
+        assets_static_validated.sort_values("year")
+        .groupby(["asset_id", "sector", "technology"])
+        .first()
+        .reset_index()
+    )
     # Join assets static data to get emission factors
     panel_enriched = panel_enriched.merge(
-        assets_static_validated[["asset_id", "emission_factor"]],
-        on="asset_id",
+        assets_static_validated_1_row.loc[
+            :, ["asset_id", "sector", "technology", "emission_factor"]
+        ],
+        on=["asset_id", "sector", "technology"],
         how="left",
     )
 
