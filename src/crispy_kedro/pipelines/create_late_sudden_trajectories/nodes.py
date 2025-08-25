@@ -40,7 +40,7 @@ def determine_companies_technologies_alignment(
     with_activity = companies_with_trend.dropna(subset=["company_activity"])
 
     # 4) Aggregate per companyxtech and grab sums + final-year values:
-    agg = (
+    all_alignment_classifications = (
         with_activity.sort_values("year")
         .groupby(
             ["company_id", "scenario_geography", "sector", "technology", "increasing"],
@@ -67,23 +67,29 @@ def determine_companies_technologies_alignment(
                 and row["end_forecast"] <= row["end_target"]
             )
 
-    agg.loc[:, "aligned"] = agg.apply(_is_aligned, axis=1)
+    all_alignment_classifications.loc[:, "aligned"] = (
+        all_alignment_classifications.apply(_is_aligned, axis=1)
+    )
 
     # ------------------------------------------------------------------
     # 4.  split into the four requested buckets
     # ------------------------------------------------------------------
-    misaligned_high_carbon = agg.loc[
-        (~agg["aligned"]) & (~agg["increasing"])
+    misaligned_high_carbon = all_alignment_classifications.loc[
+        (~all_alignment_classifications["aligned"])
+        & (~all_alignment_classifications["increasing"])
     ].reset_index(drop=True)
-    misaligned_low_carbon = agg.loc[(~agg["aligned"]) & agg["increasing"]].reset_index(
-        drop=True
-    )
-    aligned_high_carbon = agg.loc[agg["aligned"] & (~agg["increasing"])].reset_index(
-        drop=True
-    )
-    aligned_low_carbon = agg.loc[agg["aligned"] & agg["increasing"]].reset_index(
-        drop=True
-    )
+    misaligned_low_carbon = all_alignment_classifications.loc[
+        (~all_alignment_classifications["aligned"])
+        & all_alignment_classifications["increasing"]
+    ].reset_index(drop=True)
+    aligned_high_carbon = all_alignment_classifications.loc[
+        all_alignment_classifications["aligned"]
+        & (~all_alignment_classifications["increasing"])
+    ].reset_index(drop=True)
+    aligned_low_carbon = all_alignment_classifications.loc[
+        all_alignment_classifications["aligned"]
+        & all_alignment_classifications["increasing"]
+    ].reset_index(drop=True)
 
     # ------------------------------------------------------------------
     # 5. Filter companies_trajectories for each case
@@ -119,11 +125,12 @@ def determine_companies_technologies_alignment(
         aligned_low_carbon_pairs, on=key_cols_for_filter, how="inner"
     ).copy()
 
-    return (
-        misaligned_high_carbon_companies_trajectories,
-        misaligned_low_carbon_companies_trajectories,
-        aligned_high_carbon_companies_trajectories,
-        aligned_low_carbon_companies_trajectories,
+    return dict(
+        all_alignment_classifications=all_alignment_classifications,
+        misaligned_high_carbon_companies_trajectories=misaligned_high_carbon_companies_trajectories,
+        misaligned_low_carbon_companies_trajectories=misaligned_low_carbon_companies_trajectories,
+        aligned_high_carbon_companies_trajectories=aligned_high_carbon_companies_trajectories,
+        aligned_low_carbon_companies_trajectories=aligned_low_carbon_companies_trajectories,
     )
 
 
