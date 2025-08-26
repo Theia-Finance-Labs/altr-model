@@ -123,22 +123,22 @@ validation_summary:
 # Compliance-ready reporting tables
 report_company_summary:
   type: pandas.CSVDataset
-  filepath: data/08_reports/tables/compliance_ready/company_summary.csv
+  filepath: data/08_reporting/tables/compliance_ready/company_summary.csv
 
 report_technology_summary:
   type: pandas.CSVDataset
-  filepath: data/08_reports/tables/compliance_ready/technology_summary.csv
+  filepath: data/08_reporting/tables/compliance_ready/technology_summary.csv
 
 report_top_assets:
   type: pandas.CSVDataset
-  filepath: data/08_reports/tables/compliance_ready/top_assets.csv
+  filepath: data/08_reporting/tables/compliance_ready/top_assets.csv
 
 report_methodology:
   type: pandas.CSVDataset
-  filepath: data/08_reports/tables/compliance_ready/methodology_parameters.csv
+  filepath: data/08_reporting/tables/compliance_ready/methodology_parameters.csv
 
 # Quality control summary
 reporting_qc_summary:
   type: pandas.CSVDataset
-  filepath: data/08_reports/tables/compliance_ready/reporting_qc.csv
+  filepath: data/08_reporting/tables/compliance_ready/reporting_qc.csv
 
