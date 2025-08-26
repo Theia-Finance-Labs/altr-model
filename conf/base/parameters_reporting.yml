@@ -1,3 +1,5 @@
+plot_staggered_shock_use_log_scale: False
+
 # Reporting pipeline parameters
 reporting:
   basis: "real"            # must match earnings/DCF
