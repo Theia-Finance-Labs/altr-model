@@ -1,8 +1,0 @@
-# This is a boilerplate parameters config generated for pipeline 'report_outputs'
-# using Kedro 0.19.12.
-#
-# Documentation for this file format can be found in "Parameters"
-# Link: https://docs.kedro.org/en/0.19.12/configuration/parameters.html
-
-
-plot_staggered_shock_use_log_scale: False

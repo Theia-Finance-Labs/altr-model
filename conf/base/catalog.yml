@@ -67,13 +67,13 @@ companies_npvs:
   filepath: data/08_reporting/companies_npvs.csv
 
 # Combined late sudden trajectories and alignment classifications
-all_late_sudden_trajectories:
+companies_late_sudden_trajectories:
   type: pandas.CSVDataset
-  filepath: data/08_reporting/all_late_sudden_trajectories.csv
+  filepath: data/08_reporting/tables/companies_late_sudden_trajectories.csv
 
 asset_level_staggered_shock:  
   type: pandas.CSVDataset
-  filepath: data/08_reporting/asset_level_staggered_shock.csv
+  filepath: data/08_reporting/tables/asset_level_staggered_shock.csv
 
 
 # ================================================
@@ -115,68 +115,30 @@ company_npv:
 # ================ REPORTING PIPELINE OUTPUTS ===
 # ================================================
 
-# Validated inputs from reporting pipeline
-asset_earnings_validated:
-  type: MemoryDataset
-
-asset_npv_validated:
-  type: MemoryDataset
-
-company_npv_validated:
-  type: MemoryDataset
 
 validation_summary:
   type: pandas.CSVDataset
-  filepath: data/07_reporting/validation_summary.csv
-
-# Reporting views - pre-computed tidy tables
-view_asset_explain:
-  type: pandas.ParquetDataset
-  filepath: data/07_reporting/view_asset_explain.parquet
-
-view_asset_npv_decomp:
-  type: pandas.ParquetDataset
-  filepath: data/07_reporting/view_asset_npv_decomp.parquet
-
-view_company_tech:
-  type: pandas.ParquetDataset
-  filepath: data/07_reporting/view_company_tech.parquet
-
-view_deltas:
-  type: pandas.ParquetDataset
-  filepath: data/07_reporting/view_deltas.parquet
-
-# Plot output directories (string paths returned by plotting functions)
-earnings_inner_plots_dir:
-  type: MemoryDataset
-
-authority_pack_plots_dir:
-  type: MemoryDataset
-
-# TODO: remove after debugging
-scenarios_pathways:
-  type: pandas.CSVDataset
-  filepath: data/05_model_output/scenarios_pathways.csv
+  filepath: data/08_reporting/tables/validation_summary.csv
 
 # Compliance-ready reporting tables
 report_company_summary:
   type: pandas.CSVDataset
-  filepath: data/09_reports/company_summary.csv
+  filepath: data/08_reports/tables/compliance_ready/company_summary.csv
 
 report_technology_summary:
   type: pandas.CSVDataset
-  filepath: data/09_reports/technology_summary.csv
+  filepath: data/08_reports/tables/compliance_ready/technology_summary.csv
 
 report_top_assets:
   type: pandas.CSVDataset
-  filepath: data/09_reports/top_assets.csv
+  filepath: data/08_reports/tables/compliance_ready/top_assets.csv
 
 report_methodology:
   type: pandas.CSVDataset
-  filepath: data/09_reports/methodology_parameters.csv
+  filepath: data/08_reports/tables/compliance_ready/methodology_parameters.csv
 
 # Quality control summary
 reporting_qc_summary:
   type: pandas.CSVDataset
-  filepath: data/09_reports/reporting_qc.csv
+  filepath: data/08_reports/tables/compliance_ready/reporting_qc.csv
 
