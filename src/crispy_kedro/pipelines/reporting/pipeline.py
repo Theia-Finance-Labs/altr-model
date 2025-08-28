@@ -43,12 +43,12 @@ def create_pipeline(**kwargs) -> Pipeline:
             # Node 1: Validate inputs and check basis alignment
             node(
                 func=reporting_validate_inputs,
-                inputs={
-                    "asset_earnings": "asset_earnings",
-                    "asset_npv": "asset_npv",
-                    "company_npv": "company_npv",
-                    "reporting_params": "params:reporting",
-                },
+                inputs=dict(
+                    asset_earnings="asset_earnings",
+                    asset_npv="asset_npv",
+                    company_npv="company_npv",
+                    reporting_params="params:reporting",
+                ),
                 outputs={
                     "asset_earnings_validated": "asset_earnings_validated",
                     "asset_npv_validated": "asset_npv_validated",
@@ -60,12 +60,12 @@ def create_pipeline(**kwargs) -> Pipeline:
             # Node 2: Build reporting views
             node(
                 func=build_reporting_views,
-                inputs={
-                    "asset_earnings_validated": "asset_earnings_validated",
-                    "asset_npv_validated": "asset_npv_validated",
-                    "company_npv_validated": "company_npv_validated",
-                    "reporting_params": "params:reporting",
-                },
+                inputs=dict(
+                    asset_earnings_validated="asset_earnings_validated",
+                    asset_npv_validated="asset_npv_validated",
+                    company_npv_validated="company_npv_validated",
+                    reporting_params="params:reporting",
+                ),
                 outputs={
                     "view_asset_explain": "view_asset_explain",
                     "view_asset_npv_decomp": "view_asset_npv_decomp",
@@ -77,36 +77,36 @@ def create_pipeline(**kwargs) -> Pipeline:
             # Node 3: Plot earnings inner workings (engineering/explainability pack)
             node(
                 func=plot_earnings_inner_workings,
-                inputs={
-                    "view_asset_explain": "view_asset_explain",
-                    "view_asset_npv_decomp": "view_asset_npv_decomp",
-                    "reporting_params": "params:reporting",
-                },
+                inputs=dict(
+                    view_asset_explain="view_asset_explain",
+                    view_asset_npv_decomp="view_asset_npv_decomp",
+                    reporting_params="params:reporting",
+                ),
                 outputs="earnings_inner_plots_dir",
                 name="plot_earnings_inner_workings_node",
             ),
             # Node 4: Plot valuation authority pack (regulator-friendly visuals)
             node(
                 func=plot_valuation_authority_pack,
-                inputs={
-                    "asset_npv_validated": "asset_npv_validated",
-                    "company_npv_validated": "company_npv_validated",
-                    "view_company_tech": "view_company_tech",
-                    "view_deltas": "view_deltas",
-                    "reporting_params": "params:reporting",
-                },
+                inputs=dict(
+                    asset_npv_validated="asset_npv_validated",
+                    company_npv_validated="company_npv_validated",
+                    view_company_tech="view_company_tech",
+                    view_deltas="view_deltas",
+                    reporting_params="params:reporting",
+                ),
                 outputs="authority_pack_plots_dir",
                 name="plot_valuation_authority_pack_node",
             ),
             # Node 5: Export compliance-ready tables
             node(
                 func=export_reporting_tables,
-                inputs={
-                    "company_npv_validated": "company_npv_validated",
-                    "view_company_tech": "view_company_tech",
-                    "view_asset_npv_decomp": "view_asset_npv_decomp",
-                    "reporting_params": "params:reporting",
-                },
+                inputs=dict(
+                    company_npv_validated="company_npv_validated",
+                    view_company_tech="view_company_tech",
+                    view_asset_npv_decomp="view_asset_npv_decomp",
+                    reporting_params="params:reporting",
+                ),
                 outputs={
                     "report_company_summary": "report_company_summary",
                     "report_technology_summary": "report_technology_summary",
@@ -118,11 +118,11 @@ def create_pipeline(**kwargs) -> Pipeline:
             # Node 6: Quality control summary
             node(
                 func=reporting_qc_summary,
-                inputs={
-                    "view_asset_npv_decomp": "view_asset_npv_decomp",
-                    "view_asset_explain": "view_asset_explain",
-                    "reporting_params": "params:reporting",
-                },
+                inputs=dict(
+                    view_asset_npv_decomp="view_asset_npv_decomp",
+                    view_asset_explain="view_asset_explain",
+                    reporting_params="params:reporting",
+                ),
                 outputs="reporting_qc_summary",
                 name="reporting_qc_summary_node",
             ),
