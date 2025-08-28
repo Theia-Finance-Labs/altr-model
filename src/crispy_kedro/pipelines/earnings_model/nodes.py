@@ -286,6 +286,7 @@ def assemble_asset_panel(
     assets_adjusted: pd.DataFrame,
     scenario_surfaces: pd.DataFrame,
     assets_static_validated: pd.DataFrame,
+    shock_year: int,
 ) -> pd.DataFrame:
     """
     Node 4: Build full asset-year panel including synthetic assets.
@@ -296,12 +297,29 @@ def assemble_asset_panel(
     # Start with adjusted original assets
     panel = assets_adjusted.copy()
 
-    target_scenario_surfaces = scenario_surfaces.loc[
-        scenario_surfaces["scenario_type"] == "target", :
-    ]
+    mixed_scenario_surfaces = (
+        pd.concat(
+            [
+                scenario_surfaces.loc[
+                    (scenario_surfaces["year"] < shock_year)
+                    & (scenario_surfaces["scenario_type"] == "baseline"),
+                    :,
+                ],
+                scenario_surfaces.loc[
+                    (scenario_surfaces["year"] >= shock_year)
+                    & (scenario_surfaces["scenario_type"] == "target"),
+                    :,
+                ],
+            ],
+            axis=0,
+        )
+        .reset_index(drop=True)
+        .sort_values(["scenario_geography", "sector", "technology", "year"])
+    )
+
     # Join scenario surfaces
     panel_enriched = panel.merge(
-        target_scenario_surfaces,
+        mixed_scenario_surfaces,
         on=["scenario_geography", "sector", "technology", "year"],
         how="left",
     )

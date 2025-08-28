@@ -50,6 +50,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                     assets_adjusted="_temp_assets_validated",
                     scenario_surfaces="_temp_scenario_surfaces",
                     assets_static_validated="_temp_assets_static_validated",
+                    shock_year="params:shock_year",
                 ),
                 outputs="_temp_asset_panel_enriched",
             ),
