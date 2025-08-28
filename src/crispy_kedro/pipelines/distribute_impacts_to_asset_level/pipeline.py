@@ -10,7 +10,6 @@ from .nodes import (
     stagger_decreasing_technologies,
     stagger_increasing_technologies,
     concatenate_staggered_shock_results,
-    compute_capex_indicators,
     flag_phased_out_assets_as_retired,
     enforce_retirements_after_alignment,
 )

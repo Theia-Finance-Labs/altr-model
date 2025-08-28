@@ -69,11 +69,11 @@ companies_npvs:
 # Combined late sudden trajectories and alignment classifications
 companies_late_sudden_trajectories:
   type: pandas.CSVDataset
-  filepath: data/08_reporting/tables/companies_late_sudden_trajectories.csv
+  filepath: data/07_model_output/companies_late_sudden_trajectories.csv
 
 asset_level_staggered_shock:  
   type: pandas.CSVDataset
-  filepath: data/08_reporting/tables/asset_level_staggered_shock.csv
+  filepath: data/07_model_output/asset_level_staggered_shock.csv
 
 
 # ================================================
@@ -85,15 +85,15 @@ asset_earnings:
   type: pandas.CSVDataset
   filepath: data/07_model_output/asset_earnings.csv
 
-# Company-technology level aggregated earnings
-company_technology_earnings:
-  type: pandas.CSVDataset
-  filepath: data/07_model_output/company_technology_earnings.csv
+# # Company-technology level aggregated earnings
+# company_technology_earnings:
+#   type: pandas.CSVDataset
+#   filepath: data/07_model_output/company_technology_earnings.csv
 
-# Company level aggregated earnings
-company_earnings:
-  type: pandas.CSVDataset
-  filepath: data/07_model_output/company_earnings.csv
+# # Company level aggregated earnings
+# company_earnings:
+#   type: pandas.CSVDataset
+#   filepath: data/07_model_output/company_earnings.csv
 
 # ================================================
 # ================== VALUATION MODEL OUTPUTS ===

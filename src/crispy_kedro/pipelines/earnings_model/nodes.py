@@ -965,61 +965,48 @@ def write_asset_earnings_series(asset_cashflows: pd.DataFrame) -> pd.DataFrame:
         "year",
         "is_synthetic",
         # State
-        "capacity_after_shock",
-        "capacity_before_shock",
-        "capacity_factor",
-        "efficiency_decimal",
-        "lifetime_years",
-        "aligned",
-        "increasing",
+        "capacity_after_shock",  # used in reporting
+        "capacity_factor",  # used in reporting
+        # "capacity_before_shock",
+        # "efficiency_decimal",
+        # "lifetime_years",
+        # "aligned",
+        # "increasing",
         "alignment_type",
-        "emission_factor",
+        # "emission_factor",
         # Flow-based CapEx information
-        "capex_indicator",
-        "capex_capacity",
+        # "capex_indicator",
+        # "capex_capacity",
         # Prices/costs
-        "power_price_excarbon_usd_per_mwh",
-        "fuel_price_usd_per_mwh_fuel",
-        "carbon_price_usd_per_tco2",
-        "fom_usd_per_mw_yr",
-        "capex_usd_per_mw",
-        "decom_usd_per_mw",
+        # "power_price_excarbon_usd_per_mwh",
+        # "fuel_price_usd_per_mwh_fuel",
+        # "carbon_price_usd_per_tco2",
+        # "fom_usd_per_mw_yr",
+        # "capex_usd_per_mw",
+        # "decom_usd_per_mw",
         # Earnings series
-        "Q",
+        "Q",  # used in reporting
         "revenue",
         "var_cost",
         "fixed_cost",
         "carbon_cost_net",
         "EBITDA",
         # CapEx & decom (flow-based)
-        "growth_capex",
-        "replace_capex",
-        "decom_cost",
+        # "growth_capex",
+        # "replace_capex",
+        # "decom_cost",
         "capex_total",
         # Cash
         "FCFF",
     ]
 
-    # Fill missing columns with appropriate defaults
-    for col in output_columns:
-        if col not in asset_cashflows.columns:
-            if col in ["is_synthetic", "aligned", "increasing"]:
-                asset_cashflows[col] = False
-            elif col in [
-                "scenario_provider",
-                "scenario",
-                "scenario_type",
-                "alignment_type",
-            ]:
-                asset_cashflows[col] = "unknown"
-            else:
-                asset_cashflows[col] = 0.0
-
     # Select final columns
     final_output = asset_cashflows[output_columns].copy()
 
     # Sort by asset and year
-    final_output = final_output.sort_values(["asset_id", "year"]).reset_index(drop=True)
+    final_output = final_output.sort_values(
+        ["company_id", "asset_id", "technology", "year"]
+    ).reset_index(drop=True)
 
     logger.info(
         "Final earnings series: %s rows, %s columns",

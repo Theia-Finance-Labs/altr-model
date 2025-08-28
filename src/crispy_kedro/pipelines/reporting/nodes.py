@@ -1132,7 +1132,7 @@ def reporting_validate_inputs(
         "sector",
         "technology",
         "year",
-        "capacity_after_shock_adj",
+        "capacity_after_shock",
         "capacity_factor",
         "efficiency_decimal",
         "Q",
@@ -1490,7 +1490,7 @@ def plot_earnings_inner_workings(
         ax1_twin = ax1.twinx()
         ax1.plot(
             asset_data["year"],
-            asset_data["capacity_after_shock_adj"],
+            asset_data["capacity_after_shock"],
             "b-",
             linewidth=2,
             label="Capacity (MW)",
