@@ -1,9 +1,10 @@
+import logging
 import numpy as np
 import pandas as pd
 from typing import Dict, Tuple, List
 from tqdm import tqdm
 
-
+logger = logging.getLogger(__name__)
 # =========================================================
 # ==================== Common helpers =====================
 # =========================================================
@@ -234,7 +235,11 @@ def _bau_fill_assets_until_shock(
 
         return group
 
-    out = out.groupby(gcols, sort=False, group_keys=False).apply(_fill_one)
+    # Add progress bar for BAU fill operation
+    grouped = out.groupby(gcols, sort=False, group_keys=False)
+    out = grouped.apply(
+        _fill_one, progress_bar=tqdm(total=len(grouped), desc="BAU fill", unit="grp")
+    )
 
     # Clean up helper column
     out.drop(columns=["_company_baseline"], inplace=True)
@@ -465,14 +470,16 @@ def stagger_decreasing_technologies(
         lsc = late_sudden_trajectories.copy()
         lsc["year"] = _ensure_int_year(lsc["year"])
 
-        # Step 1–2: BAU fill up to shock year (you already had this)
+        # Step 1–2: BAU fill up to shock year
+        logger.info("BAU filling assets until shock year")
         assets = _bau_fill_assets_until_shock(
             lsc=lsc, assets=allocated_assets_to_companies.copy(), shock_year=shock_year
         )
-        assets["year"] = _ensure_int_year(assets["year"])
-        assets["asset_id"] = assets["asset_id"].astype(str)
-
+        # assets["year"] = _ensure_int_year(assets["year"])
+        # assets["asset_id"] = assets["asset_id"].astype(str)
+        logger.info("Indexing company by year")
         comp_by_key = _index_company_by_year(lsc)
+        logger.info("Building retirement map")
         ret_map_by_key = _build_retirement_map(assets_retirement_dates)
         out_parts: List[pd.DataFrame] = []
 

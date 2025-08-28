@@ -39,6 +39,8 @@ def create_pipeline(**kwargs) -> Pipeline:
                     alignment_year="params:alignment_year",
                     apply_retirement="params:apply_retirement",
                     apply_decreasing_staggered_shock="params:apply_decreasing_staggered_shock",
+                    g_k="params:staggered_shock.g_k",
+                    n_quantiles="params:staggered_shock.n_quantiles",
                 ),
                 outputs="decreasing_tech_staggered_shock",
             ),

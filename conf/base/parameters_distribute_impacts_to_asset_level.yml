@@ -7,3 +7,7 @@
 
 apply_retirement: False
 apply_decreasing_staggered_shock: True
+
+staggered_shock:
+  g_k: 6.0
+  n_quantiles: 3
