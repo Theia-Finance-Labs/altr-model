@@ -77,13 +77,6 @@ def create_pipeline(**kwargs) -> Pipeline:
                 ),
                 outputs="asset_level_staggered_shock",
             ),
-            node(
-                compute_capex_indicators,
-                inputs=dict(
-                    assets_staggered_late_sudden="asset_level_staggered_shock",
-                ),
-                outputs="asset_capex_indicators",
-            ),
         ],
         tags="altrisk",
     )
