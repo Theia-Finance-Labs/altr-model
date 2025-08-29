@@ -2,11 +2,6 @@
 market_passthrough: 0.5  # 50% carbon price passthrough to market prices
 
 # Cost element switches for earnings model
-include_replacement_capex: true  # Include CapEx for replacing retired eligible assets
-include_decom_costs: true        # Include decommissioning costs for retired assets
+include_replacement_capex: False  # Include CapEx for replacing retired eligible assets
+include_decom_costs: False        # Include decommissioning costs for retired assets
 
-# Tax and depreciation settings
-earnings:
-  include_corporate_tax: false
-  include_depreciation_tax_shield: false
-  # RFC: set both to true in future to use EBIT route with tax shield.

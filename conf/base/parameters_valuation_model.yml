@@ -19,7 +19,6 @@ dcf:
     method: "perpetuity"  # "none" | "perpetuity" | "fade_to_zero"
     g_real_default: 0.02  # 2% real terminal growth rate
     g_nominal_default: 0.04  # 4% nominal terminal growth rate (if basis="nominal")
-    cutover_year: 2050  # Year to apply terminal value (or max(year) from data)
     fade_years: 5  # Only used if method="fade_to_zero" 
     include_salvage: false
     

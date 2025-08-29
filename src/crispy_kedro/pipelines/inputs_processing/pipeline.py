@@ -48,6 +48,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                 inputs=dict(
                     companies_ownership_tree="downloaded_companies",
                     company_ids="params:company_ids",
+                    ownership_level="params:ownership_level",
                 ),
                 outputs="companies_ownership_tree",
             ),
@@ -83,6 +84,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                 inputs=dict(
                     assets_forecasts="assets_forecasts_with_scenario_geographies",
                     companies_ownership_tree="companies_ownership_tree_ccs",
+                    scenarios_pathways="scenarios_pathways",
                 ),
                 outputs="allocated_assets_to_companies",
             ),

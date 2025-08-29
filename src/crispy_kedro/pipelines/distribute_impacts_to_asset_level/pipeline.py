@@ -10,7 +10,6 @@ from .nodes import (
     stagger_decreasing_technologies,
     stagger_increasing_technologies,
     concatenate_staggered_shock_results,
-    compute_capex_indicators,
     flag_phased_out_assets_as_retired,
     enforce_retirements_after_alignment,
 )
@@ -40,6 +39,8 @@ def create_pipeline(**kwargs) -> Pipeline:
                     alignment_year="params:alignment_year",
                     apply_retirement="params:apply_retirement",
                     apply_decreasing_staggered_shock="params:apply_decreasing_staggered_shock",
+                    g_k="params:staggered_shock.g_k",
+                    n_quantiles="params:staggered_shock.n_quantiles",
                 ),
                 outputs="decreasing_tech_staggered_shock",
             ),
@@ -76,13 +77,6 @@ def create_pipeline(**kwargs) -> Pipeline:
                     inc_late_sudden_trajectories="increasing_tech_staggered_shock",
                 ),
                 outputs="asset_level_staggered_shock",
-            ),
-            node(
-                compute_capex_indicators,
-                inputs=dict(
-                    assets_staggered_late_sudden="asset_level_staggered_shock",
-                ),
-                outputs="asset_capex_indicators",
             ),
         ],
         tags="altrisk",
