@@ -62,13 +62,15 @@ def filter_scenarios(
 
 
 def filter_companies(
-    companies_ownership_tree: pd.DataFrame, company_ids: List[str]
+    companies_ownership_tree: pd.DataFrame,
+    company_ids: List[str],
+    ownership_level: int,
 ) -> pd.DataFrame:
 
     # TODO : remove with logic to handle multi-level ownerships,
     # and/or fix in the data when owner=parent ie 1 company id matches 2 owewrnships levels
     companies_owners = companies_ownership_tree[
-        companies_ownership_tree["ownership_level"] == 1
+        companies_ownership_tree["ownership_level"] == ownership_level
     ]
 
     if company_ids:
@@ -133,47 +135,14 @@ def filter_assets(
         :,
     ]
 
-    # Log how many unique assets were filtered out
-    initial_unique_assets = len(filtered_assets_forecasts["asset_id"].unique())
-
-    # Filter out assets-technology combinations whose first known year is higher than scenario_start_year
-    # or whose capacity is 0 in the first year
-    first_year_by_asset_tech = filtered_assets_forecasts.groupby(
-        ["asset_id", "technology"]
-    ).agg({"production_year": "min", "capacity": "first"})
-
-    valid_asset_tech_combinations = first_year_by_asset_tech[
-        (first_year_by_asset_tech["production_year"] <= scenario_start_year)
-        & (first_year_by_asset_tech["capacity"] > 0)
-    ].index
-
-    filtered_assets_forecasts = (
-        filtered_assets_forecasts.set_index(["asset_id", "technology"])
-        .loc[valid_asset_tech_combinations]
-        .reset_index()
-    )
-
-    remaining_unique_assets = len(filtered_assets_forecasts["asset_id"].unique())
-    removed_assets = initial_unique_assets - remaining_unique_assets
-    removed_pct = 100 * removed_assets / initial_unique_assets
-
+    # Log how many unique assets we have
+    unique_assets = len(filtered_assets_forecasts["asset_id"].unique())
     print(
-        f"Filtered out {removed_assets:,} unique assets "
-        f"({removed_pct:.1f}% of {initial_unique_assets:,} total)"
+        f"Found {unique_assets:,} unique assets after filtering by ownership and time range"
     )
 
-    filtered_assets_forecasts = filtered_assets_forecasts.reset_index(drop=True)
-
-    # Update assertion to reflect that we may now have different first production years
-    # since we filtered out some asset-technology combinations
-    if not filtered_assets_forecasts.empty:
-        first_years = filtered_assets_forecasts.groupby(["asset_id", "technology"])[
-            "production_year"
-        ].min()
-        assert all(
-            first_years <= scenario_start_year
-        ), "All remaining assets-technology combinations should have first production_year <= scenario_start_year"
-    else:
+    # Check that we have assets remaining
+    if filtered_assets_forecasts.empty:
         raise ValueError("No assets remaining after filtering")
 
     filtered_assets_forecasts = filtered_assets_forecasts.rename(
@@ -300,25 +269,33 @@ def assign_scenario_geographies_to_assets(
 def allocate_assets_to_companies(
     assets_forecasts: pd.DataFrame,
     companies_ownership_tree: pd.DataFrame,
+    scenarios_pathways: pd.DataFrame,
 ) -> pd.DataFrame:
     """
     Allocate asset capacities to companies based on ownership percentages.
+
+    For company-asset combinations that start after the scenario start year,
+    backfill their capacity with zeros back to the scenario start year.
 
     This function joins assets with company ownership data and calculates
     the owned asset capacity based on ownership percentages.
 
     Args:
-        assets_data: DataFrame with asset information and capacities
-        companies_ownership: DataFrame with company ownership information
+        assets_forecasts: DataFrame with asset information and capacities
+        companies_ownership_tree: DataFrame with company ownership information
+        scenarios_pathways: DataFrame with scenario data to determine start year
 
     Returns:
         DataFrame with allocated asset capacities to companies
     """
 
-    # Prepare assets data - rename production_year to year for joining
+    # Get scenario start year for backfilling
+    scenario_start_year = scenarios_pathways.year.min()
+
+    # Prepare assets data
     assets_prepared = assets_forecasts.copy()
 
-    # Prepare companies data - ensure we have the right column names
+    # Prepare companies data
     companies_prepared = companies_ownership_tree.copy()
 
     # Merge assets with ownership data on asset_id, sector, technology, and year
@@ -328,6 +305,48 @@ def allocate_assets_to_companies(
         on=["asset_id", "sector", "technology", "year"],
         how="inner",
     )
+
+    # Identify company-asset-technology combinations that need backfilling
+    company_asset_tech_first_years = merged_data.groupby(
+        ["company_id", "asset_id", "technology"]
+    )["year"].min()
+
+    combinations_needing_backfill = company_asset_tech_first_years[
+        company_asset_tech_first_years > scenario_start_year
+    ]
+
+    # Create backfill records for company-asset combinations that start after scenario start
+    backfill_records = []
+
+    for (
+        company_id,
+        asset_id,
+        technology,
+    ), first_year in combinations_needing_backfill.items():
+        # Get a template record for this company-asset-technology combination
+        template_record = (
+            merged_data[
+                (merged_data["company_id"] == company_id)
+                & (merged_data["asset_id"] == asset_id)
+                & (merged_data["technology"] == technology)
+            ]
+            .iloc[0]
+            .copy()
+        )
+
+        # Create records for missing years with zero capacity
+        for year in range(scenario_start_year, int(first_year)):
+            backfill_record = template_record.copy()
+            backfill_record["year"] = year
+            backfill_record["capacity"] = 0.0
+            backfill_records.append(backfill_record)
+
+    if backfill_records:
+        backfill_df = pd.DataFrame(backfill_records)
+        merged_data = pd.concat([merged_data, backfill_df], ignore_index=True)
+        print(
+            f"Backfilled {len(backfill_records)} company-asset-year records with zero capacity"
+        )
 
     # Calculate owned asset capacity (allocated capacity based on ownership percentage)
     merged_data["capacity"] = (

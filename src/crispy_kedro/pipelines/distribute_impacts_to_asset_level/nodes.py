@@ -302,43 +302,6 @@ def _index_assets_by_group(
     }
 
 
-def _emit_rows_fast(
-    key: Tuple[str, str, str, str],
-    years: np.ndarray,  # (T,)
-    asset_ids: np.ndarray,  # (A,)
-    ages_mat: np.ndarray,  # (T, A)
-    before_mat: np.ndarray,  # (T, A)
-    alloc_mat: np.ndarray,  # (T, A)
-    after_mat: np.ndarray,  # (T, A)
-    phase_mat: np.ndarray,  # (T, A) dtype=object
-    align_type_by_year: np.ndarray,  # (T,) dtype=object
-) -> pd.DataFrame:
-    T, A = after_mat.shape
-    asset_id_rep = np.tile(asset_ids.astype(str), T)
-    year_rep = np.repeat(years.astype(np.int32), A)
-
-    out = pd.DataFrame(
-        {
-            "asset_id": asset_id_rep,
-            "company_id": key[0],
-            "scenario_geography": key[1],
-            "sector": key[2],
-            "technology": key[3],
-            "year": year_rep,
-            "asset_age": ages_mat.reshape(-1).astype(np.float64),
-            "capacity_before_shock": before_mat.reshape(-1).astype(np.float64),
-            "allocated_shock": alloc_mat.reshape(-1).astype(np.float64),
-            "capacity_after_shock": np.maximum(after_mat.reshape(-1), 0.0).astype(
-                np.float64
-            ),
-            "is_synthetic": np.zeros(T * A, dtype=bool),
-            "late_sudden_phase": phase_mat.reshape(-1).astype(object),
-            "alignment_type": np.repeat(align_type_by_year, A).astype(object),
-        }
-    )
-    return out
-
-
 # =========================================================
 # ============== DECREASING technologies node =============
 # =========================================================

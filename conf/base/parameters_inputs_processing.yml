@@ -10,6 +10,8 @@ target_scenario: "AR6_WITCH 5.0_EN_NPi2020_500"
 # target_scenario: "AR6_WITCH 5.0_EN_INDCi2030_1000_NDCp"
 max_forecast_horizon: 5
 
+ownership_level: 1
+
 # Technology scenario mapping control
 ccs_on: False  # If true, use w/ CCS scenarios for Coal, Gas, Biomass. If false, use w/o CCS
 

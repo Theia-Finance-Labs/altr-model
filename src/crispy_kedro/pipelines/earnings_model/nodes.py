@@ -371,33 +371,42 @@ def validate_capacity_flow_identity(
         ["company_id", "asset_id", "technology", "year"]
     ).reset_index(drop=True)
 
+    # Check for and remove duplicates before pivoting
+    # Each (company_id, asset_id, technology, year, capex_indicator) combination should be unique
+    duplicate_check_cols = [
+        "company_id",
+        "asset_id",
+        "technology",
+        "year",
+        "capex_indicator",
+    ]
+
+    duplicates_count = data.duplicated(subset=duplicate_check_cols).sum()
+    if duplicates_count > 0:
+        logger.warning(
+            "Found %s duplicate capacity flow records. Removing duplicates...",
+            duplicates_count,
+        )
+        # Keep first occurrence of duplicates
+        data = data.drop_duplicates(subset=duplicate_check_cols, keep="first")
+        logger.info("After deduplication: %s rows remaining", len(data))
+
     # Get capacity flows by indicator type per asset-year
-    # Use pivot_table with aggfunc='list' to preserve all rows, then explode
+    # Use pivot_table with aggfunc='sum' to aggregate flows by type
     flows_pivot = data.pivot_table(
         index=["company_id", "asset_id", "technology", "year"],
         columns="capex_indicator",
         values="capex_capacity",
         fill_value=0.0,
-        aggfunc=list,  # Collect all values as lists
+        aggfunc="sum",  # Sum values for each flow type (should be identical after deduplication)
     ).reset_index()
-
-    # Explode the lists to create separate rows for each value
-    # Get all columns except the index columns (asset_id and year)
-    value_columns = [
-        col
-        for col in flows_pivot.columns
-        if col not in ["company_id", "asset_id", "technology", "year"]
-    ]
-    flows_pivot = flows_pivot.explode(value_columns)
-
-    assert flows_pivot.shape[0] == data.shape[0]
 
     # Ensure all flow columns exist
     for col in ["new_buildout_cap", "roll_over_cap", "retired_max_cap"]:
         if col not in flows_pivot.columns:
             flows_pivot[col] = 0.0
 
-    # Merge with capacity data
+    # Get unique asset-year combinations from original data
     capacity_data = data[
         [
             "company_id",
@@ -407,12 +416,11 @@ def validate_capacity_flow_identity(
             "capacity_after_shock",
             "capacity_before_shock",
         ]
-    ]
+    ].drop_duplicates()
+
     validation_data = flows_pivot.merge(
         capacity_data, on=["company_id", "asset_id", "technology", "year"], how="left"
     )
-
-    assert validation_data.shape[0] == data.shape[0]
 
     # Calculate previous year capacity
     validation_data = validation_data.sort_values(
