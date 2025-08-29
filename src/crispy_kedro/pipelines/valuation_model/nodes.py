@@ -16,7 +16,6 @@ def calculate_npv_per_asset(
     discount_rate_baseline: float = 0.07,
     discount_rate_shock: float = 0.08,
     terminal_growth_rate: float = 0.02,
-    terminal_cutover_year: int = 2050,
     terminal_method: str = "perpetuity",
 ) -> pd.DataFrame:
     """
@@ -91,12 +90,12 @@ def calculate_npv_per_asset(
         # Calculate terminal value
         terminal_value = 0.0
 
-        if terminal_method == "perpetuity" and len(asset_data) > 0:
+        if (terminal_method == "perpetuity") and (len(asset_data) > 0):
             # Use final year FCFF for terminal value calculation
             final_fcff = asset_data["FCFF"].iloc[-1]
             final_year = asset_data["year"].iloc[-1]
 
-            if final_fcff > 0 and final_year < terminal_cutover_year:
+            if final_fcff > 0:
                 # Terminal value = Final FCFF * (1 + g) / (r - g)
                 terminal_cf = final_fcff * (1 + terminal_growth_rate)
                 if discount_rate > terminal_growth_rate:
