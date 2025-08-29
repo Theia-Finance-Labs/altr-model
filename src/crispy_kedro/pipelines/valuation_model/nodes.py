@@ -242,10 +242,10 @@ def aggregate_to_company_npv(company_technology_npv: pd.DataFrame) -> pd.DataFra
         "base_year": "first",
         "terminal_method": "first",
         "terminal_growth_rate": "first",
-        # Boolean flags - any True means True for the company
-        "is_synthetic": "any",
-        "aligned": "any",
-        "increasing": "any",
+        # # Boolean flags - any True means True for the company
+        # "is_synthetic": "any",
+        # "aligned": "any",
+        # "increasing": "any",
     }
 
     company_npv = (

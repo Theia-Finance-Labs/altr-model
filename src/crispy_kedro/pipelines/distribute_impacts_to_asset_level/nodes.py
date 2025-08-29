@@ -21,16 +21,13 @@ RESULT_COLS = [
     "is_synthetic",
     "late_sudden_phase",
     "alignment_type",
+    "asset_baseline_trajectory",
 ]
 
 
 # =========================================================
 # ==================== Common helpers =====================
 # =========================================================
-
-
-def _ensure_int_year(s: pd.Series) -> pd.Series:
-    return s.fillna(0).astype(int)
 
 
 # ========= NEW: vectorized g-weights core (logistic-sum like your original) =========
@@ -106,12 +103,162 @@ def _build_retirement_map(
 
     ret_map: Dict[Tuple[str, str, str, str], Dict[str, int]] = {}
     tmp = assets_retirement_dates[need_cols].copy()
-    tmp["retirement_year"] = _ensure_int_year(tmp["retirement_year"])
 
     for key, sub in tmp.groupby(GROUP_COLS, sort=False):
         r = dict(zip(sub["asset_id"].astype(str), sub["retirement_year"].astype(int)))
         ret_map[key] = r
     return ret_map
+
+
+def compute_asset_baseline_trajectories(
+    companies_late_sudden_trajectories: pd.DataFrame,
+    allocated_assets_to_companies: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Compute asset-level baseline trajectories over the full time horizon.
+
+    This replaces the old _bau_fill_assets_until_shock logic but extends it
+    to compute BAU trajectories for the entire time horizon, not just until shock year.
+
+    The baseline trajectory represents the BAU (Business-as-Usual) path that assets
+    would follow based on company baseline trajectories, with proper scaling and
+    forward-filling for missing data.
+
+    Additionally, this function fills missing asset_activity values using the same
+    logic, ensuring that the staggered shock functions have complete data.
+
+    Parameters
+    ----------
+    companies_late_sudden_trajectories : pd.DataFrame
+        Company trajectories with columns including:
+        - company_id, scenario_geography, sector, technology, year
+        - company_trajectory_baseline
+        - late_sudden_phase, alignment_type
+    allocated_assets_to_companies : pd.DataFrame
+        Asset data with columns including:
+        - company_id, scenario_geography, sector, technology, asset_id, year
+        - asset_activity, asset_age
+
+    Returns
+    -------
+    pd.DataFrame
+        Asset data with added column 'asset_baseline_trajectory' representing
+        the full-horizon BAU trajectory for each asset, and filled asset_activity values.
+    """
+    if allocated_assets_to_companies.empty:
+        result = allocated_assets_to_companies.copy()
+        result["asset_baseline_trajectory"] = pd.Series(dtype=float)
+        return result
+
+    GROUP_COLS = ["company_id", "scenario_geography", "sector", "technology"]
+
+    # Need baseline per (key, year)
+    base_cols = GROUP_COLS + ["year", "company_trajectory_baseline"]
+    missing = [
+        c for c in base_cols if c not in companies_late_sudden_trajectories.columns
+    ]
+    if missing:
+        raise ValueError(
+            f"companies_late_sudden_trajectories missing columns for BAU fill: {missing}"
+        )
+
+    comp_base = (
+        companies_late_sudden_trajectories[base_cols]
+        .drop_duplicates(GROUP_COLS + ["year"])
+        .rename(columns={"company_trajectory_baseline": "_company_baseline"})
+    )
+
+    out = allocated_assets_to_companies.copy()
+    out = out.merge(comp_base, on=GROUP_COLS + ["year"], how="left")
+
+    # Group by key + asset
+    gcols = GROUP_COLS + ["asset_id"]
+    out.sort_values(gcols + ["year"], inplace=True)
+
+    def _compute_baseline_trajectory_and_fill_activity(
+        group: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """
+        Compute baseline trajectory for a single asset across all years and fill missing asset_activity.
+
+        This replicates the logic from the old _bau_fill_assets_until_shock function:
+        1. Use available asset_activity data as anchor points
+        2. Scale forward/backward using company baseline trajectory ratios
+        3. For post-shock years, fill with constant value from shock year
+        4. Forward-fill any remaining missing values
+        """
+        group = group.copy()
+
+        # Initialize with existing activity
+        activity = group["asset_activity"].copy()
+
+        # Find anchor points (years with valid asset_activity data)
+        valid_mask = ~activity.isna()
+        if not valid_mask.any():
+            # No valid data - use zeros
+            group["asset_baseline_trajectory"] = 0.0
+            group["asset_activity"] = group["asset_activity"].fillna(0.0)
+            return group
+
+        # Get company baseline values
+        company_baseline = group["_company_baseline"].copy()
+
+        # Fill missing values using baseline scaling where possible
+        for idx in group.index[~valid_mask]:
+            current_year = group.at[idx, "year"]
+            current_baseline = group.at[idx, "_company_baseline"]
+
+            if pd.isna(current_baseline) or current_baseline == 0:
+                continue
+
+            # Find nearest valid asset value (prefer earlier years, then later)
+            valid_indices = group.index[valid_mask]
+            if len(valid_indices) == 0:
+                continue
+
+            # Find closest year with valid data
+            valid_years = group.loc[valid_indices, "year"]
+            year_diffs = abs(valid_years - current_year)
+            closest_idx = valid_indices[year_diffs.argmin()]
+
+            anchor_value = group.at[closest_idx, "asset_activity"]
+            anchor_baseline = group.at[closest_idx, "_company_baseline"]
+
+            if pd.notna(anchor_baseline) and anchor_baseline != 0:
+                # Scale using baseline ratio
+                ratio = current_baseline / anchor_baseline
+                activity.at[idx] = anchor_value * ratio
+            else:
+                # Fallback to flat carry
+                activity.at[idx] = anchor_value
+
+        # Apply post-shock constant filling logic (like old _bau_fill_assets_until_shock)
+        # This ensures years after forecast period get constant values
+        activity_filled = activity.copy()
+
+        # Forward fill and then backward fill to handle any remaining gaps
+        activity_filled = activity_filled.ffill()
+
+        # If there are still NaN values at the beginning, backward fill
+        activity_filled = activity_filled.bfill()
+
+        # Fill any remaining NaN with 0
+        activity_filled = activity_filled.fillna(0.0)
+
+        # Set both baseline trajectory and filled asset_activity
+        group["asset_baseline_trajectory"] = activity_filled
+        group["asset_activity"] = activity_filled
+
+        return group
+
+    # Add progress bar for baseline computation
+    grouped = out.groupby(gcols, sort=False, group_keys=False)
+    tqdm.pandas(desc="Computing asset baselines and filling activity", unit="asset")
+    out = grouped.progress_apply(_compute_baseline_trajectory_and_fill_activity)
+
+    # Clean up helper column
+    out.drop(columns=["_company_baseline"], inplace=True)
+    return out
 
 
 def _bau_fill_assets_until_shock(
@@ -140,7 +287,6 @@ def _bau_fill_assets_until_shock(
     )
 
     out = assets.copy()
-    out["year"] = _ensure_int_year(out["year"])
     out = out.merge(comp_base, on=GROUP_COLS + ["year"], how="left")
 
     # Group by key + asset
@@ -294,10 +440,14 @@ def _index_assets_by_group(
     miss = [c for c in need if c not in assets.columns]
     if miss:
         raise ValueError(f"assets missing columns: {miss}")
+
+    # Include baseline trajectory if available
+    cols_to_keep = ["asset_id", "year", "asset_activity", "asset_age"]
+    if "asset_baseline_trajectory" in assets.columns:
+        cols_to_keep.append("asset_baseline_trajectory")
+
     return {
-        key: g.sort_values(["year", "asset_id"]).loc[
-            :, ["asset_id", "year", "asset_activity", "asset_age"]
-        ]
+        key: g.sort_values(["year", "asset_id"]).loc[:, cols_to_keep]
         for key, g in assets.groupby(GROUP_COLS, sort=False)
     }
 
@@ -379,6 +529,14 @@ def _stagger_decreasing_fast(
             .fillna(0.0)
         )
 
+        # Extract baseline trajectory if available
+        baseline_mat = None
+        if "asset_baseline_trajectory" in aset.columns:
+            baseline_pvt = aset.pivot(
+                index="year", columns="asset_id", values="asset_baseline_trajectory"
+            ).reindex(index=years, columns=asset_ids, fill_value=0.0)
+            baseline_mat = baseline_pvt.to_numpy(dtype=np.float64)  # (T, A)
+
         base_activity = act_pvt.to_numpy(dtype=np.float64)  # (T, A)
         ages_mat = age_pvt.to_numpy(dtype=np.float64)  # (T, A)
 
@@ -453,25 +611,29 @@ def _stagger_decreasing_fast(
 
         # Simple, uniform output frame
         T, A = after_mat.shape
-        out_parts.append(
-            pd.DataFrame(
-                {
-                    "asset_id": np.tile(asset_ids.astype(str), T),
-                    "company_id": key[0],
-                    "scenario_geography": key[1],
-                    "sector": key[2],
-                    "technology": key[3],
-                    "year": np.repeat(years.astype(int), A),
-                    "asset_age": ages_mat.ravel(),
-                    "capacity_before_shock": before_mat.ravel(),
-                    "allocated_shock": alloc_mat.ravel(),
-                    "capacity_after_shock": np.maximum(after_mat, 0.0).ravel(),
-                    "is_synthetic": False,
-                    "late_sudden_phase": phase_mat.ravel(),
-                    "alignment_type": np.repeat(align_type_by_year, A),
-                }
-            )
-        )
+        output_dict = {
+            "asset_id": np.tile(asset_ids.astype(str), T),
+            "company_id": key[0],
+            "scenario_geography": key[1],
+            "sector": key[2],
+            "technology": key[3],
+            "year": np.repeat(years.astype(int), A),
+            "asset_age": ages_mat.ravel(),
+            "capacity_before_shock": before_mat.ravel(),
+            "allocated_shock": alloc_mat.ravel(),
+            "capacity_after_shock": np.maximum(after_mat, 0.0).ravel(),
+            "is_synthetic": False,
+            "late_sudden_phase": phase_mat.ravel(),
+            "alignment_type": np.repeat(align_type_by_year, A),
+        }
+
+        # Add baseline trajectory if available
+        if baseline_mat is not None:
+            output_dict["asset_baseline_trajectory"] = baseline_mat.ravel()
+        else:
+            output_dict["asset_baseline_trajectory"] = np.nan
+
+        out_parts.append(pd.DataFrame(output_dict))
 
     if not out_parts:
         return pd.DataFrame(columns=RESULT_COLS)
@@ -549,6 +711,14 @@ def _prop_scale_decreasing_fast(
             .reindex(index=years, columns=asset_ids)
             .fillna(0.0)
         )
+
+        # Extract baseline trajectory if available
+        baseline_mat = None
+        if "asset_baseline_trajectory" in aset.columns:
+            baseline_pvt = aset.pivot(
+                index="year", columns="asset_id", values="asset_baseline_trajectory"
+            ).reindex(index=years, columns=asset_ids, fill_value=0.0)
+            baseline_mat = baseline_pvt.to_numpy(dtype=np.float64)  # (T, A)
 
         base_activity = act_pvt.to_numpy(dtype=np.float64)  # (T, A)
         ages_mat = age_pvt.to_numpy(dtype=np.float64)  # (T, A)
@@ -632,25 +802,29 @@ def _prop_scale_decreasing_fast(
         alloc_mat = after_mat - before_mat
 
         # Emit
-        out_parts.append(
-            pd.DataFrame(
-                {
-                    "asset_id": np.tile(asset_ids.astype(str), T),
-                    "company_id": key[0],
-                    "scenario_geography": key[1],
-                    "sector": key[2],
-                    "technology": key[3],
-                    "year": np.repeat(years.astype(int), A),
-                    "asset_age": ages_mat.ravel(),
-                    "capacity_before_shock": before_mat.ravel(),
-                    "allocated_shock": alloc_mat.ravel(),
-                    "capacity_after_shock": np.maximum(after_mat, 0.0).ravel(),
-                    "is_synthetic": False,
-                    "late_sudden_phase": phase_mat.ravel(),
-                    "alignment_type": np.repeat(align_type_by_year, A),
-                }
-            )
-        )
+        output_dict = {
+            "asset_id": np.tile(asset_ids.astype(str), T),
+            "company_id": key[0],
+            "scenario_geography": key[1],
+            "sector": key[2],
+            "technology": key[3],
+            "year": np.repeat(years.astype(int), A),
+            "asset_age": ages_mat.ravel(),
+            "capacity_before_shock": before_mat.ravel(),
+            "allocated_shock": alloc_mat.ravel(),
+            "capacity_after_shock": np.maximum(after_mat, 0.0).ravel(),
+            "is_synthetic": False,
+            "late_sudden_phase": phase_mat.ravel(),
+            "alignment_type": np.repeat(align_type_by_year, A),
+        }
+
+        # Add baseline trajectory if available
+        if baseline_mat is not None:
+            output_dict["asset_baseline_trajectory"] = baseline_mat.ravel()
+        else:
+            output_dict["asset_baseline_trajectory"] = np.nan
+
+        out_parts.append(pd.DataFrame(output_dict))
 
     if not out_parts:
         return pd.DataFrame(columns=RESULT_COLS)
@@ -659,7 +833,7 @@ def _prop_scale_decreasing_fast(
 
 def stagger_decreasing_technologies(
     late_sudden_trajectories: pd.DataFrame,
-    allocated_assets_to_companies: pd.DataFrame,
+    assets_with_baseline_trajectory: pd.DataFrame,
     assets_retirement_dates: pd.DataFrame,
     shock_year: int,
     alignment_year: int,
@@ -689,18 +863,14 @@ def stagger_decreasing_technologies(
             raise ValueError(f"late_sudden_trajectories missing columns: {miss_c}")
 
         lsc = late_sudden_trajectories.copy()
-        lsc["year"] = _ensure_int_year(lsc["year"])
         # (Optional but useful) if these columns are absent, we’ll emit empty strings
         if "late_sudden_phase" not in lsc.columns:
             lsc["late_sudden_phase"] = ""
         if "alignment_type" not in lsc.columns:
             lsc["alignment_type"] = ""
 
-        # BAU fill to shock year and constant thereafter for missing values
-        assets = _bau_fill_assets_until_shock(
-            lsc=lsc, assets=allocated_assets_to_companies.copy(), shock_year=shock_year
-        )
-        assets["year"] = _ensure_int_year(assets["year"])
+        # Use pre-computed BAU trajectory instead of calling _bau_fill_assets_until_shock
+        assets = assets_with_baseline_trajectory.copy()
         assets["asset_id"] = assets["asset_id"].astype(str)
 
         return _prop_scale_decreasing_fast(
@@ -725,18 +895,16 @@ def stagger_decreasing_technologies(
         if miss_c:
             raise ValueError(f"late_sudden_trajectories missing columns: {miss_c}")
         need_a = GROUP_COLS + ["asset_id", "year", "asset_activity", "asset_age"]
-        miss_a = [c for c in need_a if c not in allocated_assets_to_companies.columns]
+        miss_a = [c for c in need_a if c not in assets_with_baseline_trajectory.columns]
         if miss_a:
-            raise ValueError(f"allocated_assets_to_companies missing columns: {miss_a}")
+            raise ValueError(
+                f"assets_with_baseline_trajectory missing columns: {miss_a}"
+            )
 
         lsc = late_sudden_trajectories.copy()
-        lsc["year"] = _ensure_int_year(lsc["year"])
 
-        logger.info("BAU filling assets until shock year")
-        assets = _bau_fill_assets_until_shock(
-            lsc=lsc, assets=allocated_assets_to_companies.copy(), shock_year=shock_year
-        )
-        assets["year"] = _ensure_int_year(assets["year"])
+        logger.info("Using pre-computed asset baseline trajectories")
+        assets = assets_with_baseline_trajectory.copy()
         assets["asset_id"] = assets["asset_id"].astype(str)
 
         return _stagger_decreasing_fast(
@@ -777,7 +945,6 @@ def enforce_retirements_after_alignment(
     ret_map = _build_retirement_map(assets_retirement_dates)
 
     df = dec_df.copy()
-    df["year"] = _ensure_int_year(df["year"]).astype(int)
     df["asset_id"] = df["asset_id"].astype(str)
     df.sort_values(GROUP_COLS + ["asset_id", "year"], inplace=True)
 
@@ -861,7 +1028,6 @@ def flag_phased_out_assets_as_retired(
 
     df = dec_staggered.copy()
 
-    df["year"] = _ensure_int_year(df["year"]).astype(int)
     df["is_synthetic"] = df["is_synthetic"].fillna(False).astype(bool)
     df["late_sudden_phase"] = df["late_sudden_phase"].fillna("").astype(str)
     df["capacity_after_shock"] = df["capacity_after_shock"].astype(float)
@@ -924,7 +1090,7 @@ def flag_phased_out_assets_as_retired(
 
 def stagger_increasing_technologies(
     late_sudden_trajectories: pd.DataFrame,
-    allocated_assets_to_companies: pd.DataFrame,
+    assets_with_baseline_trajectory: pd.DataFrame,
     shock_year: int,
 ) -> pd.DataFrame:
     """
@@ -935,13 +1101,9 @@ def stagger_increasing_technologies(
     GROUP_COLS = ["company_id", "scenario_geography", "sector", "technology"]
 
     lsc = late_sudden_trajectories.copy()
-    lsc["year"] = _ensure_int_year(lsc["year"])
 
-    # BAU fill to guarantee real assets have shock-year values available
-    assets_bau = _bau_fill_assets_until_shock(
-        lsc=lsc, assets=allocated_assets_to_companies.copy(), shock_year=shock_year
-    )
-    assets_bau["year"] = _ensure_int_year(assets_bau["year"])
+    # Use pre-computed BAU trajectory instead of calling _bau_fill_assets_until_shock
+    assets_bau = assets_with_baseline_trajectory.copy()
     assets_bau["asset_id"] = assets_bau["asset_id"].astype(str)
 
     comp_by_key = {
@@ -964,12 +1126,17 @@ def stagger_increasing_technologies(
         if years.size == 0:
             continue
 
+        # Select asset columns, including baseline trajectory if available
+        cols_to_select = ["asset_id", "year", "asset_activity", "asset_age"]
+        if "asset_baseline_trajectory" in assets_bau.columns:
+            cols_to_select.append("asset_baseline_trajectory")
+
         aset = assets_bau[
             (assets_bau["company_id"] == cid)
             & (assets_bau["scenario_geography"] == geo)
             & (assets_bau["sector"] == sector)
             & (assets_bau["technology"] == tech)
-        ][["asset_id", "year", "asset_activity", "asset_age"]].copy()
+        ][cols_to_select].copy()
 
         # ---------- Real assets: BAU passthrough ----------
         if not aset.empty:
@@ -985,6 +1152,14 @@ def stagger_increasing_technologies(
                 .fillna(0.0)
             )
 
+            # Extract baseline trajectory if available
+            baseline_mat = None
+            if "asset_baseline_trajectory" in aset.columns:
+                baseline_pvt = aset.pivot(
+                    index="year", columns="asset_id", values="asset_baseline_trajectory"
+                ).reindex(index=years, columns=asset_ids, fill_value=0.0)
+                baseline_mat = baseline_pvt.to_numpy(dtype=np.float64)  # (T, A)
+
             base_activity = act_pvt.to_numpy(dtype=np.float64)  # (T, A)
             ages_mat = age_pvt.to_numpy(dtype=np.float64)  # (T, A)
 
@@ -993,29 +1168,33 @@ def stagger_increasing_technologies(
             alloc_mat = np.zeros_like(before_mat)
 
             T, A = after_mat.shape
-            parts.append(
-                pd.DataFrame(
-                    {
-                        "asset_id": np.tile(asset_ids.astype(str), T),
-                        "company_id": cid,
-                        "scenario_geography": geo,
-                        "sector": sector,
-                        "technology": tech,
-                        "year": np.repeat(years.astype(int), A),
-                        "asset_age": ages_mat.ravel(),
-                        "capacity_before_shock": before_mat.ravel(),
-                        "allocated_shock": alloc_mat.ravel(),
-                        "capacity_after_shock": np.maximum(after_mat, 0.0).ravel(),
-                        "is_synthetic": False,
-                        "late_sudden_phase": np.repeat(
-                            comp_years["late_sudden_phase"].to_numpy(dtype=object), A
-                        ),
-                        "alignment_type": np.repeat(
-                            comp_years["alignment_type"].to_numpy(dtype=object), A
-                        ),
-                    }
-                )
-            )
+            output_dict = {
+                "asset_id": np.tile(asset_ids.astype(str), T),
+                "company_id": cid,
+                "scenario_geography": geo,
+                "sector": sector,
+                "technology": tech,
+                "year": np.repeat(years.astype(int), A),
+                "asset_age": ages_mat.ravel(),
+                "capacity_before_shock": before_mat.ravel(),
+                "allocated_shock": alloc_mat.ravel(),
+                "capacity_after_shock": np.maximum(after_mat, 0.0).ravel(),
+                "is_synthetic": False,
+                "late_sudden_phase": np.repeat(
+                    comp_years["late_sudden_phase"].to_numpy(dtype=object), A
+                ),
+                "alignment_type": np.repeat(
+                    comp_years["alignment_type"].to_numpy(dtype=object), A
+                ),
+            }
+
+            # Add baseline trajectory if available
+            if baseline_mat is not None:
+                output_dict["asset_baseline_trajectory"] = baseline_mat.ravel()
+            else:
+                output_dict["asset_baseline_trajectory"] = np.nan
+
+            parts.append(pd.DataFrame(output_dict))
 
         # ---------- Synthetic: one asset gets the excess ----------
         synth_id = f"NEW_{cid}_{sector}_{tech}_{geo}"
@@ -1043,25 +1222,26 @@ def stagger_increasing_technologies(
         else:
             synth_age = np.zeros_like(synth_cap, dtype=float)
 
-        parts.append(
-            pd.DataFrame(
-                {
-                    "asset_id": synth_id,
-                    "company_id": cid,
-                    "scenario_geography": geo,
-                    "sector": sector,
-                    "technology": tech,
-                    "year": years.astype(int),
-                    "asset_age": synth_age,
-                    "capacity_before_shock": synth_before,
-                    "allocated_shock": alloc,
-                    "capacity_after_shock": synth_cap,
-                    "is_synthetic": True,
-                    "late_sudden_phase": comp_years["late_sudden_phase"].values,
-                    "alignment_type": comp_years["alignment_type"].values,
-                }
-            )
-        )
+        synth_output_dict = {
+            "asset_id": synth_id,
+            "company_id": cid,
+            "scenario_geography": geo,
+            "sector": sector,
+            "technology": tech,
+            "year": years.astype(int),
+            "asset_age": synth_age,
+            "capacity_before_shock": synth_before,
+            "allocated_shock": alloc,
+            "capacity_after_shock": synth_cap,
+            "is_synthetic": True,
+            "late_sudden_phase": comp_years["late_sudden_phase"].values,
+            "alignment_type": comp_years["alignment_type"].values,
+        }
+
+        # For synthetic assets, baseline trajectory is 0 (no historical baseline)
+        synth_output_dict["asset_baseline_trajectory"] = np.zeros_like(synth_cap)
+
+        parts.append(pd.DataFrame(synth_output_dict))
 
     if not parts:
         return pd.DataFrame(columns=RESULT_COLS)
@@ -1072,9 +1252,41 @@ def concatenate_staggered_shock_results(
     dec_late_sudden_trajectories: pd.DataFrame,
     inc_late_sudden_trajectories: pd.DataFrame,
 ) -> pd.DataFrame:
+    """
+    Concatenate staggered shock results from decreasing and increasing technologies.
 
-    assets_staggered_late_sudden = pd.concat(
-        [dec_late_sudden_trajectories, inc_late_sudden_trajectories], ignore_index=True
-    ).reset_index(drop=True)
+    The baseline trajectories are now included directly in the individual
+    technology results, so no additional merging is needed.
+
+    Parameters
+    ----------
+    dec_late_sudden_trajectories : pd.DataFrame
+        Results from decreasing technologies staggering (includes asset_baseline_trajectory)
+    inc_late_sudden_trajectories : pd.DataFrame
+        Results from increasing technologies staggering (includes asset_baseline_trajectory)
+
+    Returns
+    -------
+    pd.DataFrame
+        Combined results with asset_baseline_trajectory column included
+    """
+    # Simple concatenation - baseline trajectories are already included in both inputs
+    assets_staggered_late_sudden = (
+        pd.concat(
+            [dec_late_sudden_trajectories, inc_late_sudden_trajectories],
+            ignore_index=True,
+        )
+        .reset_index(drop=True)
+        .sort_values(
+            by=[
+                "company_id",
+                "scenario_geography",
+                "sector",
+                "asset_id",
+                "technology",
+                "year",
+            ]
+        )
+    )
 
     return assets_staggered_late_sudden

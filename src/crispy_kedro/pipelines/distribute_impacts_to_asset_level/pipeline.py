@@ -6,6 +6,7 @@ generated using Kedro 0.19.12
 from ctypes import alignment
 from kedro.pipeline import node, Pipeline, pipeline  # noqa
 from .nodes import (
+    compute_asset_baseline_trajectories,
     split_late_sudden_trajectories_by_alignment_type,
     stagger_decreasing_technologies,
     stagger_increasing_technologies,
@@ -18,6 +19,15 @@ from .nodes import (
 def create_pipeline(**kwargs) -> Pipeline:
     return Pipeline(
         [
+            node(
+                compute_asset_baseline_trajectories,
+                inputs=dict(
+                    companies_late_sudden_trajectories="companies_late_sudden_trajectories",
+                    allocated_assets_to_companies="extended_companies_forecasts",
+                ),
+                outputs="assets_with_baseline_trajectory",
+                name="compute_asset_baselines",
+            ),
             node(
                 split_late_sudden_trajectories_by_alignment_type,
                 inputs=dict(
@@ -33,7 +43,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                 stagger_decreasing_technologies,
                 inputs=dict(
                     late_sudden_trajectories="decreasing_tech_late_sudden_trajectories",
-                    allocated_assets_to_companies="extended_companies_forecasts",
+                    assets_with_baseline_trajectory="assets_with_baseline_trajectory",
                     assets_retirement_dates="assets_retirement_dates",
                     shock_year="params:shock_year",
                     alignment_year="params:alignment_year",
@@ -65,7 +75,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                 stagger_increasing_technologies,
                 inputs=dict(
                     late_sudden_trajectories="increasing_tech_late_sudden_trajectories",
-                    allocated_assets_to_companies="extended_companies_forecasts",
+                    assets_with_baseline_trajectory="assets_with_baseline_trajectory",
                     shock_year="params:shock_year",
                 ),
                 outputs="increasing_tech_staggered_shock",
