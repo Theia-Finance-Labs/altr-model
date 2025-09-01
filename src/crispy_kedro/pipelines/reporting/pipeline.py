@@ -32,8 +32,7 @@ def create_pipeline(**kwargs) -> Pipeline:
             node(
                 plot_staggered_shock,
                 inputs=dict(
-                    late_sudden_trajectories="companies_late_sudden_trajectories",
-                    assets_forecasts="companies_forecasts",
+                    late_sudden_trajectories="companies_late_sudden_trajectories_corrected",
                     asset_level_df="asset_level_staggered_shock",
                     use_log_scale="params:plot_staggered_shock_use_log_scale",
                 ),

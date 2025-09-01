@@ -12,7 +12,6 @@ from .nodes import (
     stagger_increasing_technologies,
     concatenate_staggered_shock_results,
     flag_phased_out_assets_as_retired,
-    enforce_retirements_after_alignment,
 )
 
 
@@ -52,22 +51,15 @@ def create_pipeline(**kwargs) -> Pipeline:
                     g_k="params:staggered_shock.g_k",
                     n_quantiles="params:staggered_shock.n_quantiles",
                 ),
-                outputs="decreasing_tech_staggered_shock",
-            ),
-            node(
-                enforce_retirements_after_alignment,
-                inputs=dict(
-                    dec_df="decreasing_tech_staggered_shock",
-                    assets_retirement_dates="assets_retirement_dates",
-                    alignment_year="params:alignment_year",
-                    apply_retirement="params:apply_retirement",
-                ),
-                outputs="decreasing_tech_staggered_shock_retired",
+                outputs=[
+                    "decreasing_tech_staggered_shock",
+                    "decreasing_tech_late_sudden_trajectories_corrected",
+                ],
             ),
             node(
                 flag_phased_out_assets_as_retired,
                 inputs=dict(
-                    dec_staggered="decreasing_tech_staggered_shock_retired",
+                    dec_staggered="decreasing_tech_staggered_shock",
                 ),
                 outputs="decreasing_tech_staggered_shock_flagged",
             ),
@@ -85,8 +77,14 @@ def create_pipeline(**kwargs) -> Pipeline:
                 inputs=dict(
                     dec_late_sudden_trajectories="decreasing_tech_staggered_shock_flagged",
                     inc_late_sudden_trajectories="increasing_tech_staggered_shock",
+                    increasing_tech_late_sudden_trajectories="increasing_tech_late_sudden_trajectories",
+                    decreasing_tech_late_sudden_trajectories_corrected="decreasing_tech_late_sudden_trajectories_corrected",
+                    original_companies_late_sudden_trajectories="companies_late_sudden_trajectories",
                 ),
-                outputs="asset_level_staggered_shock",
+                outputs=[
+                    "asset_level_staggered_shock",
+                    "companies_late_sudden_trajectories_corrected",
+                ],
             ),
         ],
         tags="altrisk",

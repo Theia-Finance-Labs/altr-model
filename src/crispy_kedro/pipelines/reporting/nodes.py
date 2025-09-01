@@ -355,7 +355,6 @@ def plot_late_sudden_trajectories(
 
 def plot_staggered_shock(
     late_sudden_trajectories: pd.DataFrame,
-    assets_forecasts: pd.DataFrame,
     asset_level_df: pd.DataFrame,
     output_dir: str = "data/08_reporting/companies_staggered_shock_plots",
     asset_after_col: str = "capacity_after_shock",
@@ -363,29 +362,30 @@ def plot_staggered_shock(
     include_synthetic: bool = True,
     min_points_for_asset: int = 1,
     max_individual_postshock_assets: int = 200,
-    max_individual_original_assets: int = 200,
     annotate_asset_ages: bool = True,
     max_residual_annotations: int = 30,
     use_log_scale: bool = True,
 ):
     """
     For each unique (scenario_geography, company_id, technology) in late_sudden_trajectories, save:
-      1) Company L&S trajectory vs. original asset forecasts vs. post-shock asset forecasts
+      1) Company L&S trajectory (original and adjusted) vs. post-shock asset forecasts
       2) Asset ages and shock absorption visualization
 
     Notes
     -----
     - Uses 'scenario_geography' at all times (geo-aware).
-    - Shows original asset forecasts extended to the end of the time period
+    - Shows company late sudden trajectory original and adjusted
     - Shows post-shock asset forecasts (asset-level late sudden)
-    - Shows company total shock late sudden trajectory
+    - Shows sum of assets after shock allocation
     - Annotates assets with ages
-    - Shows bar plots of shock absorption/residuals
+    - Shows bar plots of shock absorption/residuals based on adjusted trajectory
     - Can optionally include synthetic assets (is_synthetic==True) or drop them.
+    - Expects late_sudden_trajectories to include: ['company_id','scenario_geography','technology','year',
+                                          'company_trajectory_latesudden_original', 'company_trajectory_latesudden_adjusted'].
     - Expects asset_level_df to include: ['asset_id','company_id','scenario_geography','technology','year',
                                           'asset_age', asset_before_col, asset_after_col, 'is_synthetic', 'allocated_shock'].
     - Performance guards: when there are many assets, individual per-asset lines and annotations are skipped using
-      the thresholds max_individual_postshock_assets and max_individual_original_assets to keep figure saving fast.
+      the threshold max_individual_postshock_assets to keep figure saving fast.
     - Residual annotations are also capped via max_residual_annotations to avoid thousands of text artists.
     - Axis scale can be toggled with `use_log_scale`.
     """
@@ -407,60 +407,17 @@ def plot_staggered_shock(
         cleaned = re.sub(r"\s+", "_", cleaned)
         return cleaned[:120]
 
-    def _extend_original_forecasts(assets_forecasts, cid, geo, sector, tech, max_year):
-        """Extend original asset forecasts to the end of the time period"""
-        original_assets = assets_forecasts[
-            (assets_forecasts["company_id"] == cid)
-            & (assets_forecasts["scenario_geography"] == geo)
-            & (assets_forecasts["sector"] == sector)
-            & (assets_forecasts["technology"] == tech)
-        ].copy()
-
-        if original_assets.empty:
-            return pd.DataFrame()
-
-        # For each asset, extend asset_activity to max_year
-        extended_list = []
-        for asset_id, asset_data in original_assets.groupby("asset_id"):
-            asset_data = asset_data.sort_values("year")
-            last_capacity = asset_data["asset_activity"].iloc[-1]
-            last_year = int(asset_data["year"].max())
-            last_age = (
-                asset_data["asset_age"].iloc[-1]
-                if "asset_age" in asset_data.columns
-                else 0
-            )
-
-            # Create extended years
-            if last_year < max_year:
-                extended_years = range(last_year + 1, int(max_year) + 1)
-                for i, year in enumerate(extended_years):
-                    extended_row = asset_data.iloc[-1].copy()
-                    extended_row["year"] = year
-                    extended_row["asset_activity"] = (
-                        last_capacity  # Keep constant asset_activity
-                    )
-                    if "asset_age" in extended_row:
-                        extended_row["asset_age"] = last_age + i + 1
-                    extended_list.append(extended_row)
-
-            # Add original data
-            extended_list.extend([row for _, row in asset_data.iterrows()])
-
-        if extended_list:
-            return pd.DataFrame(extended_list).sort_values(["asset_id", "year"])
-        return pd.DataFrame()
-
     def _calculate_shock_residuals(late_sudden_traj, asset_level_data, years):
         """Calculate per-year level residuals for visualization.
 
-        Residual is defined as: (sum of post-shock assets) - (company L&S level)
+        Residual is defined as: (sum of post-shock assets) - (company L&S adjusted level)
         Positive => unabsorbed (assets above company);
         Negative => over-absorbed (assets below company).
+        Values below 1 in absolute value are set to 0 to filter out noise.
         """
-        # Company series for requested years
+        # Company series for requested years - use adjusted trajectory
         comp_year = (
-            late_sudden_traj[["year", "company_trajectory_latesudden"]]
+            late_sudden_traj[["year", "company_trajectory_latesudden_adjusted"]]
             .copy()
             .dropna(subset=["year"])
         )
@@ -487,20 +444,35 @@ def plot_staggered_shock(
 
         # Compute residuals (fill missing totals with 0 for safety)
         comp_vals = (
-            merged["company_trajectory_latesudden"].fillna(0.0).to_numpy(dtype=float)
+            merged["company_trajectory_latesudden_adjusted"]
+            .fillna(0.0)
+            .to_numpy(dtype=float)
         )
         aset_vals = merged["total_after"].fillna(0.0).to_numpy(dtype=float)
         residuals = (aset_vals - comp_vals).tolist()
+
+        # Filter out noise: set values below 1 in absolute value to 0
+        residuals = [r if abs(r) >= 1.0 else 0.0 for r in residuals]
+
         return residuals
 
     # add company_name if missing (best-effort)
     traj = late_sudden_trajectories.copy()
     if "company_name" not in traj.columns:
-        traj = traj.merge(
-            assets_forecasts[["company_id", "company_name"]].drop_duplicates(),
-            on="company_id",
-            how="left",
-        )
+        # Try to get company_name from asset_level_df if available
+        if "company_name" in asset_level_df.columns:
+            company_names = asset_level_df[
+                ["company_id", "company_name"]
+            ].drop_duplicates()
+            traj = traj.merge(company_names, on="company_id", how="left")
+
+        # Fill any remaining missing company names with company_id
+        if "company_name" not in traj.columns:
+            traj["company_name"] = traj["company_id"].astype(str)
+        else:
+            traj["company_name"] = traj["company_name"].fillna(
+                traj["company_id"].astype(str)
+            )
 
     # guarantee required cols exist
     needed_traj = {
@@ -508,7 +480,8 @@ def plot_staggered_shock(
         "company_id",
         "technology",
         "year",
-        "company_trajectory_latesudden",
+        "company_trajectory_latesudden_original",
+        "company_trajectory_latesudden_adjusted",
     }
     missing_t = needed_traj - set(traj.columns)
     if missing_t:
@@ -548,7 +521,30 @@ def plot_staggered_shock(
             geo = row["scenario_geography"]
             cid = row["company_id"]
             tech = row["technology"]
-            comp_name = row.get("company_name", np.nan)
+
+            # Get company name from asset_level_df if available, otherwise from combos
+            comp_name = None
+            if "company_name" in asset_level_df.columns:
+                # Get company name from asset data for this specific company
+                company_names = (
+                    asset_level_df[
+                        (asset_level_df["company_id"] == cid)
+                        & (asset_level_df["scenario_geography"] == geo)
+                        & (asset_level_df["technology"] == tech)
+                    ]["company_name"]
+                    .dropna()
+                    .unique()
+                )
+                if len(company_names) > 0:
+                    comp_name = company_names[0]  # Take the first unique name
+
+            # Fallback to combos if not found in asset data
+            if comp_name is None:
+                comp_name = row.get("company_name", np.nan)
+
+            # Final fallback to company_id if still no name
+            if pd.isna(comp_name) or str(comp_name).strip() == "":
+                comp_name = cid
 
             # company-level
             comp = (
@@ -564,7 +560,12 @@ def plot_staggered_shock(
                 continue
 
             years = comp["year"].to_numpy(dtype=int)
-            company_vals = comp["company_trajectory_latesudden"].to_numpy(dtype=float)
+            company_vals_original = comp[
+                "company_trajectory_latesudden_original"
+            ].to_numpy(dtype=float)
+            company_vals_adjusted = comp[
+                "company_trajectory_latesudden_adjusted"
+            ].to_numpy(dtype=float)
             max_year = max(years)
 
             # asset-level (filter geo-aware, optionally drop synthetic)
@@ -586,23 +587,12 @@ def plot_staggered_shock(
                 heavy_case = False
                 if num_post_assets > max_individual_postshock_assets:
                     heavy_case = True
-                # We'll also check original forecasts later for heavy cases
                 if heavy_case:
                     mpl.rcParams["path.simplify"] = True
                     mpl.rcParams["path.simplify_threshold"] = 0.1
                     mpl.rcParams["agg.path.chunksize"] = 10000
             except Exception:
                 pass
-
-            # Get extended original forecasts
-            orig_forecasts = _extend_original_forecasts(
-                assets_forecasts,
-                cid,
-                geo,
-                tech,
-                tech,
-                max_year,
-            )
 
             # Create the plot with subplots: main plot + bar plot
             fig = plt.figure(figsize=(14, 10))
@@ -613,14 +603,24 @@ def plot_staggered_shock(
             # Main trajectory plot
             ax1 = fig.add_subplot(gs[0])
 
-            # Company L&S trajectory
+            # Company L&S trajectories (original and adjusted)
             ax1.plot(
                 years,
-                company_vals,
+                company_vals_original,
                 lw=3.0,
-                label="Company L&S Trajectory",
+                label="Company L&S Trajectory (Original)",
                 color="red",
                 alpha=0.8,
+                linestyle="-",
+            )
+            ax1.plot(
+                years,
+                company_vals_adjusted,
+                lw=3.0,
+                label="Company L&S Trajectory (Adjusted)",
+                color="darkred",
+                alpha=0.8,
+                linestyle="--",
             )
 
             if not aset.empty:
@@ -692,47 +692,11 @@ def plot_staggered_shock(
                     # Too many assets to plot individually; keep only aggregated line
                     pass
 
-            # Original asset forecasts
-            if not orig_forecasts.empty:
-                orig_year = (
-                    orig_forecasts.groupby("year", as_index=False)
-                    .agg(total_orig=("asset_activity", "sum"))
-                    .sort_values("year")
-                )
-
-                ax1.plot(
-                    orig_year["year"].to_numpy(dtype=int),
-                    orig_year["total_orig"].to_numpy(dtype=float),
-                    lw=2.0,
-                    linestyle=":",
-                    label="Sum of assets (original forecasts)",
-                    color="green",
-                    alpha=0.8,
-                )
-
-                # Individual original asset lines (lighter) — only if not too many
-                n_orig_assets = int(orig_forecasts["asset_id"].nunique())
-                if n_orig_assets <= max_individual_original_assets:
-                    for aid, df_orig in orig_forecasts.groupby("asset_id"):
-                        df_orig = df_orig.sort_values("year")
-                        if len(df_orig) < min_points_for_asset:
-                            continue
-                        ax1.plot(
-                            df_orig["year"].to_numpy(dtype=int),
-                            df_orig["asset_activity"].to_numpy(dtype=float),
-                            lw=1.0,
-                            alpha=0.4,
-                            color="green",
-                        )
-                else:
-                    # Skip individual original asset lines for performance
-                    pass
-
             ax1.set_xlabel("Year")
             ax1.set_ylabel(
                 "Production / Activity" + (" (log scale)" if use_log_scale else "")
             )
-            title_name = comp_name if pd.notna(comp_name) else cid
+            title_name = comp_name
             ax1.set_title(
                 f"{tech} • {geo} • {title_name}\nTrajectories Comparison | Alignment: {alignment_type}"
             )
@@ -774,19 +738,13 @@ def plot_staggered_shock(
             # Apply y-axis scaling (log or linear) with safe bounds and reasonable ticks
             if use_log_scale:
                 try:
-                    candidates = [company_vals]
+                    candidates = [company_vals_original, company_vals_adjusted]
                     if "aset_year" in locals() and not aset_year.empty:
                         candidates.append(
                             aset_year["total_after"].to_numpy(dtype=float)
                         )
                     if not aset.empty:
                         candidates.append(aset[asset_after_col].to_numpy(dtype=float))
-                    if "orig_year" in locals():
-                        candidates.append(orig_year["total_orig"].to_numpy(dtype=float))
-                    if not orig_forecasts.empty:
-                        candidates.append(
-                            orig_forecasts["asset_activity"].to_numpy(dtype=float)
-                        )
                     all_vals = (
                         np.concatenate([c for c in candidates if c is not None])
                         if candidates
@@ -831,19 +789,8 @@ def plot_staggered_shock(
                         from matplotlib.ticker import NullLocator
 
                         heavy = False
-                        try:
-                            n_orig_assets = (
-                                int(orig_forecasts["asset_id"].nunique())
-                                if not orig_forecasts.empty
-                                else 0
-                            )
-                            if (
-                                num_post_assets > max_individual_postshock_assets
-                                or n_orig_assets > max_individual_original_assets
-                            ):
-                                heavy = True
-                        except Exception:
-                            pass
+                        if num_post_assets > max_individual_postshock_assets:
+                            heavy = True
                         if heavy:
                             ax1.yaxis.set_minor_locator(NullLocator())
                             ax1.grid(False, which="minor")
@@ -869,19 +816,13 @@ def plot_staggered_shock(
             else:
                 # Linear scale with safe bounds and simple grid
                 try:
-                    candidates = [company_vals]
+                    candidates = [company_vals_original, company_vals_adjusted]
                     if "aset_year" in locals() and not aset_year.empty:
                         candidates.append(
                             aset_year["total_after"].to_numpy(dtype=float)
                         )
                     if not aset.empty:
                         candidates.append(aset[asset_after_col].to_numpy(dtype=float))
-                    if "orig_year" in locals():
-                        candidates.append(orig_year["total_orig"].to_numpy(dtype=float))
-                    if not orig_forecasts.empty:
-                        candidates.append(
-                            orig_forecasts["asset_activity"].to_numpy(dtype=float)
-                        )
                     all_vals = (
                         np.concatenate([c for c in candidates if c is not None])
                         if candidates
@@ -990,7 +931,28 @@ def plot_staggered_shock(
                 }
 
                 years_series = comp["year"].astype(int).reset_index(drop=True)
-                phases_series = comp["late_sudden_phase"].reset_index(drop=True)
+                phases_series = comp["late_sudden_phase"].reset_index(drop=True).copy()
+
+                # Override company phases with asset-level retirement information
+                # This captures actual asset retirements that may occur within broader company phases
+                if not aset.empty and "late_sudden_phase" in aset.columns:
+                    # Check for asset retirements by year
+                    asset_phases_by_year = (
+                        aset.groupby("year")["late_sudden_phase"].apply(list).to_dict()
+                    )
+
+                    for i, year_val in enumerate(years_series):
+                        if year_val in asset_phases_by_year:
+                            asset_phases_this_year = asset_phases_by_year[year_val]
+                            # If any asset is retiring this year, override the company phase
+                            # This ensures retirement events are visually highlighted even if they occur
+                            # within a broader phase like "aligned_compensation"
+                            if any(
+                                phase == "retirement"
+                                for phase in asset_phases_this_year
+                                if pd.notna(phase)
+                            ):
+                                phases_series.iloc[i] = "retirement"
 
                 phase_spans = []
                 current_phase = None
@@ -1080,15 +1042,7 @@ def plot_staggered_shock(
                 dpi_use = 300
                 try:
                     # If we exceeded per-asset thresholds (many assets), lower DPI a bit
-                    n_orig_assets = (
-                        int(orig_forecasts["asset_id"].nunique())
-                        if not orig_forecasts.empty
-                        else 0
-                    )
-                    if (
-                        num_post_assets > max_individual_postshock_assets
-                        or n_orig_assets > max_individual_original_assets
-                    ):
+                    if num_post_assets > max_individual_postshock_assets:
                         dpi_use = 220
                 except Exception:
                     pass
