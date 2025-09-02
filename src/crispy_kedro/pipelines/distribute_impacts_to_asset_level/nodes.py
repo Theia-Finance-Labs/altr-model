@@ -127,120 +127,178 @@ def flag_phased_out_assets_as_retired(
 
 
 def concatenate_staggered_shock_results(
-    dec_late_sudden_trajectories: pd.DataFrame,
-    inc_late_sudden_trajectories: pd.DataFrame,
-    increasing_tech_late_sudden_trajectories: pd.DataFrame,
-    decreasing_tech_late_sudden_trajectories_corrected: pd.DataFrame,
-    original_companies_late_sudden_trajectories: pd.DataFrame,
-) -> pd.DataFrame:
+    dec_late_sudden_trajectories: pd.DataFrame,  # asset-level (decreasing)
+    inc_late_sudden_trajectories: pd.DataFrame,  # asset-level (increasing)
+    increasing_tech_late_sudden_trajectories: pd.DataFrame,  # company-level (increasing) [optional, used for names if present]
+    decreasing_tech_late_sudden_trajectories_corrected: pd.DataFrame,  # company-level corrections (decreasing)
+    original_companies_late_sudden_trajectories: pd.DataFrame,  # full original companies df
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Concatenate staggered shock results from decreasing and increasing technologies.
-
-    The baseline trajectories are now included directly in the individual
-    technology results, so no additional merging is needed.
-
-    Parameters
-    ----------
-    dec_late_sudden_trajectories : pd.DataFrame
-        Results from decreasing technologies staggering (includes asset_baseline_trajectory)
-    inc_late_sudden_trajectories : pd.DataFrame
-        Results from increasing technologies staggering (includes asset_baseline_trajectory)
-
-    Returns
-    -------
-    pd.DataFrame
-        Combined results with asset_baseline_trajectory column included
+    Returns:
+      assets_staggered_late_sudden: concatenated asset-level outputs (dec + inc), with company_name filled.
+      companies_late_sudden_trajectories: original companies df + dec corrections applied,
+                                           with *_original/*_adjusted present and backfilled.
     """
-    # Simple concatenation - baseline trajectories are already included in both inputs
+    KEY = ["company_id", "scenario_geography", "sector", "technology", "year"]
+
+    # ---------- Build a reliable company_name map ----------
+    name_sources = []
+
+    # 1) original companies (preferred)
+    if "company_name" in original_companies_late_sudden_trajectories.columns:
+        name_sources.append(
+            original_companies_late_sudden_trajectories[["company_id", "company_name"]]
+            .dropna(subset=["company_id"])
+            .drop_duplicates()
+        )
+
+    # 2) asset-level frames may carry names
+    for df in (dec_late_sudden_trajectories, inc_late_sudden_trajectories):
+        if df is not None and not df.empty and "company_name" in df.columns:
+            name_sources.append(
+                df[["company_id", "company_name"]]
+                .dropna(subset=["company_id"])
+                .drop_duplicates()
+            )
+
+    name_map = (
+        pd.concat(name_sources, ignore_index=True).drop_duplicates()
+        if name_sources
+        else pd.DataFrame(columns=["company_id", "company_name"])
+    )
+
+    # ---------- 1) Assets: simple concat + ensure company_name ----------
     assets_staggered_late_sudden = (
         pd.concat(
-            [dec_late_sudden_trajectories, inc_late_sudden_trajectories],
-            ignore_index=True,
-        )
-        .reset_index(drop=True)
-        .sort_values(
-            by=[
-                "company_id",
-                "scenario_geography",
-                "sector",
-                "asset_id",
-                "technology",
-                "year",
-            ]
-        )
-    )
-
-    # Ensure company_name is present in both dataframes before concatenation
-    increasing_traj = increasing_tech_late_sudden_trajectories.copy()
-    decreasing_traj_corrected = (
-        decreasing_tech_late_sudden_trajectories_corrected.copy()
-    )
-
-    # Try to get company_name from the original companies late sudden trajectories first
-    company_names_source = None
-    if (
-        "company_name" in original_companies_late_sudden_trajectories.columns
-        and not original_companies_late_sudden_trajectories.empty
-    ):
-        company_names_source = original_companies_late_sudden_trajectories[
-            ["company_id", "company_name"]
-        ].drop_duplicates()
-    elif "company_name" in increasing_traj.columns and not increasing_traj.empty:
-        company_names_source = increasing_traj[
-            ["company_id", "company_name"]
-        ].drop_duplicates()
-    elif "company_name" in dec_late_sudden_trajectories.columns:
-        company_names_source = dec_late_sudden_trajectories[
-            ["company_id", "company_name"]
-        ].drop_duplicates()
-    elif "company_name" in inc_late_sudden_trajectories.columns:
-        company_names_source = inc_late_sudden_trajectories[
-            ["company_id", "company_name"]
-        ].drop_duplicates()
-
-    # Merge company_name into both dataframes if we found a source
-    if company_names_source is not None:
-        if (
-            "company_name" not in decreasing_traj_corrected.columns
-            and not decreasing_traj_corrected.empty
-        ):
-            decreasing_traj_corrected = decreasing_traj_corrected.merge(
-                company_names_source, on="company_id", how="left"
-            )
-        if "company_name" not in increasing_traj.columns and not increasing_traj.empty:
-            increasing_traj = increasing_traj.merge(
-                company_names_source, on="company_id", how="left"
-            )
-
-    # Fill any remaining missing company_name with company_id as fallback
-    for df in [increasing_traj, decreasing_traj_corrected]:
-        if not df.empty:
-            if "company_name" not in df.columns:
-                df["company_name"] = df["company_id"].astype(str)
-            else:
-                df["company_name"] = df["company_name"].fillna(
-                    df["company_id"].astype(str)
-                )
-
-    companies_late_sudden_trajectories = (
-        pd.concat(
             [
-                increasing_traj,
-                decreasing_traj_corrected,
+                df
+                for df in [dec_late_sudden_trajectories, inc_late_sudden_trajectories]
+                if df is not None and not df.empty
             ],
             ignore_index=True,
         )
-        .reset_index(drop=True)
-        .sort_values(
-            by=[
-                "company_id",
-                "scenario_geography",
-                "sector",
-                "technology",
-                "year",
-            ]
+        if (
+            dec_late_sudden_trajectories is not None
+            and not dec_late_sudden_trajectories.empty
         )
+        or (
+            inc_late_sudden_trajectories is not None
+            and not inc_late_sudden_trajectories.empty
+        )
+        else pd.DataFrame(columns=RESULT_COLS)
     )
+
+    if not assets_staggered_late_sudden.empty:
+        if "company_name" not in assets_staggered_late_sudden.columns:
+            assets_staggered_late_sudden = assets_staggered_late_sudden.merge(
+                name_map, on="company_id", how="left"
+            )
+        # final fallback
+        if "company_name" in assets_staggered_late_sudden.columns:
+            assets_staggered_late_sudden["company_name"] = assets_staggered_late_sudden[
+                "company_name"
+            ].fillna(assets_staggered_late_sudden["company_id"].astype(str))
+
+    # ---------- 2) Companies: start from ORIGINAL, then overlay dec corrections ----------
+    base_cols = list(original_companies_late_sudden_trajectories.columns)
+
+    companies = original_companies_late_sudden_trajectories.copy()
+
+    # Make sure company_name exists and is filled
+    if "company_name" not in companies.columns:
+        companies = companies.merge(name_map, on="company_id", how="left")
+    companies["company_name"] = companies["company_name"].fillna(
+        companies["company_id"].astype(str)
+    )
+
+    # Ensure *_original/*_adjusted exist; initialize from original L&S
+    if "company_trajectory_latesudden" in companies.columns:
+        companies["company_trajectory_latesudden_original"] = companies.get(
+            "company_trajectory_latesudden_original",
+            companies["company_trajectory_latesudden"],
+        )
+        companies["company_trajectory_latesudden_adjusted"] = companies.get(
+            "company_trajectory_latesudden_adjusted",
+            companies["company_trajectory_latesudden"],
+        )
+    else:
+        # If your original lacks the unified L&S column (unlikely), create safe empties
+        companies["company_trajectory_latesudden_original"] = np.nan
+        companies["company_trajectory_latesudden_adjusted"] = np.nan
+
+    # Overlay decreasing corrections when provided
+    corr = decreasing_tech_late_sudden_trajectories_corrected
+    if corr is not None and not corr.empty:
+        # Keep only the columns we actually use to avoid accidental drops
+        keep = KEY + [
+            "company_trajectory_latesudden_original",
+            "company_trajectory_latesudden_adjusted",
+            "late_sudden_phase",
+            "alignment_type",
+        ]
+        corr_use = corr[[c for c in keep if c in corr.columns]].copy()
+
+        merged = companies.merge(
+            corr_use,
+            on=KEY,
+            how="left",
+            suffixes=("", "_corr"),
+        )
+
+        # Coalesce *_original / *_adjusted from corrections into companies
+        for col in [
+            "company_trajectory_latesudden_original",
+            "company_trajectory_latesudden_adjusted",
+        ]:
+            col_corr = f"{col}_corr"
+            if col_corr in merged.columns:
+                # If correction missing, keep what we already had (initialized to original L&S)
+                merged[col] = merged[col_corr].where(
+                    merged[col_corr].notna(), merged[col]
+                )
+
+        # Optional: prefer dec-corrections phase/alignment when present & non-null
+        for col in ["late_sudden_phase", "alignment_type"]:
+            col_corr = f"{col}_corr"
+            if col_corr in merged.columns:
+                merged[col] = merged[col_corr].where(
+                    merged[col_corr].notna(), merged[col]
+                )
+
+        # Drop helper columns
+        to_drop = [c for c in merged.columns if c.endswith("_corr")]
+        companies_late_sudden_trajectories = merged.drop(columns=to_drop)
+
+    else:
+        # No corrections → both *_original/*_adjusted equal original L&S (already set)
+        companies_late_sudden_trajectories = companies
+
+    # Keep column order stable: original columns first, then the two new ones (if not already present there)
+    front = [c for c in base_cols if c in companies_late_sudden_trajectories.columns]
+    tail = [
+        c
+        for c in [
+            "company_trajectory_latesudden_original",
+            "company_trajectory_latesudden_adjusted",
+        ]
+        if c not in front
+    ]
+    companies_late_sudden_trajectories = companies_late_sudden_trajectories[
+        front + tail
+    ]
+
+    # Final tidy sort to match your plotting expectations
+    sort_cols = [
+        c
+        for c in ["company_id", "scenario_geography", "sector", "technology", "year"]
+        if c in companies_late_sudden_trajectories.columns
+    ]
+    if sort_cols:
+        companies_late_sudden_trajectories = (
+            companies_late_sudden_trajectories.sort_values(sort_cols).reset_index(
+                drop=True
+            )
+        )
 
     return assets_staggered_late_sudden, companies_late_sudden_trajectories
 
@@ -1187,15 +1245,17 @@ def stagger_increasing_technologies(
     shock_year: int,
 ) -> pd.DataFrame:
     """
-    Increasing techs (simple uniform emit):
+    Increasing techs:
       - Real assets: BAU passthrough (alloc=0, before=after=BAU).
-      - Synthetic: one asset takes max(0, company - S_shock) from shock_year onward.
+      - Synthetic: for each year t >= shock_year, take max(0, company[t] - sum_real[t]).
+        This guarantees sum(real + synthetic) matches the company L&S each year
+        even when real BAU grows after the shock.
     """
     GROUP_COLS = ["company_id", "scenario_geography", "sector", "technology"]
 
     lsc = late_sudden_trajectories.copy()
 
-    # Use pre-computed BAU trajectory instead of calling _bau_fill_assets_until_shock
+    # Use pre-computed BAU trajectory (already full-horizon)
     assets_bau = assets_with_baseline_trajectory.copy()
     assets_bau["asset_id"] = assets_bau["asset_id"].astype(str)
 
@@ -1206,6 +1266,8 @@ def stagger_increasing_technologies(
                 "company_trajectory_latesudden",
                 "late_sudden_phase",
                 "alignment_type",
+                # keep company_name if present
+                *(["company_name"] if "company_name" in g.columns else []),
             ]
         ]
         for k, g in lsc.groupby(GROUP_COLS, sort=False)
@@ -1219,9 +1281,32 @@ def stagger_increasing_technologies(
         if years.size == 0:
             continue
 
-        # Select asset columns, including baseline trajectory if available
+        # --- Robust company_name lookup (works even if no real assets exist) ---
+        company_name = cid  # fallback to id
+        # 1) from company frame
+        if "company_name" in comp_years.columns:
+            nm = comp_years["company_name"].dropna().unique()
+            if nm.size:
+                company_name = nm[0]
+        # 2) else from assets (if they carry names)
+        if company_name == cid and "company_name" in assets_bau.columns:
+            nm2 = (
+                assets_bau[
+                    (assets_bau["company_id"] == cid)
+                    & (assets_bau["scenario_geography"] == geo)
+                    & (assets_bau["sector"] == sector)
+                    & (assets_bau["technology"] == tech)
+                ]["company_name"]
+                .dropna()
+                .unique()
+            )
+            if nm2.size:
+                company_name = nm2[0]
+
+        # Select asset columns, include baseline if present
         cols_to_select = ["asset_id", "year", "asset_activity", "asset_age"]
-        if "asset_baseline_trajectory" in assets_bau.columns:
+        has_baseline = "asset_baseline_trajectory" in assets_bau.columns
+        if has_baseline:
             cols_to_select.append("asset_baseline_trajectory")
 
         aset = assets_bau[
@@ -1231,7 +1316,12 @@ def stagger_increasing_technologies(
             & (assets_bau["technology"] == tech)
         ][cols_to_select].copy()
 
+        C = comp_years["company_trajectory_latesudden"].to_numpy(dtype=float)
+        T = years.shape[0]
+
         # ---------- Real assets: BAU passthrough ----------
+        real_parts = None
+        sum_real_by_year = np.zeros(T, dtype=np.float64)
         if not aset.empty:
             asset_ids = aset["asset_id"].astype(str).unique()
             A = asset_ids.shape[0]
@@ -1245,30 +1335,23 @@ def stagger_increasing_technologies(
                 .fillna(0.0)
             )
 
-            # Extract baseline trajectory if available
             baseline_mat = None
-            if "asset_baseline_trajectory" in aset.columns:
+            if has_baseline:
                 baseline_pvt = aset.pivot(
                     index="year", columns="asset_id", values="asset_baseline_trajectory"
                 ).reindex(index=years, columns=asset_ids, fill_value=0.0)
-                baseline_mat = baseline_pvt.to_numpy(dtype=np.float64)  # (T, A)
+                baseline_mat = baseline_pvt.to_numpy(dtype=np.float64)
 
             base_activity = act_pvt.to_numpy(dtype=np.float64)  # (T, A)
             ages_mat = age_pvt.to_numpy(dtype=np.float64)  # (T, A)
 
-            before_mat = base_activity
-            after_mat = base_activity
+            before_mat = base_activity.copy()
+            after_mat = base_activity.copy()  # BAU passthrough
             alloc_mat = np.zeros_like(before_mat)
 
-            # Extract company name from comp_years if available, otherwise use company_id
-            company_name = cid  # fallback to company_id
-            if "company_name" in comp_years.columns:
-                unique_names = comp_years["company_name"].dropna().unique()
-                if len(unique_names) > 0:
-                    company_name = unique_names[0]
+            sum_real_by_year = after_mat.sum(axis=1)
 
-            T, A = after_mat.shape
-            output_dict = {
+            out = {
                 "asset_id": np.tile(asset_ids.astype(str), T),
                 "company_id": cid,
                 "company_name": company_name,
@@ -1288,34 +1371,26 @@ def stagger_increasing_technologies(
                     comp_years["alignment_type"].to_numpy(dtype=object), A
                 ),
             }
-
-            # Add baseline trajectory if available
             if baseline_mat is not None:
-                output_dict["asset_baseline_trajectory"] = baseline_mat.ravel()
+                out["asset_baseline_trajectory"] = baseline_mat.ravel()
             else:
-                output_dict["asset_baseline_trajectory"] = np.nan
+                out["asset_baseline_trajectory"] = np.nan
 
-            parts.append(pd.DataFrame(output_dict))
+            real_parts = pd.DataFrame(out)
+            parts.append(real_parts)
 
-        # ---------- Synthetic: one asset gets the excess ----------
-        synth_id = f"NEW_{cid}_{sector}_{tech}_{geo}"
-        if aset.empty:
-            S_shock = 0.0
-        else:
-            shock_slice = aset[aset["year"] == int(shock_year)]
-            S_shock = (
-                float(shock_slice["asset_activity"].sum())
-                if not shock_slice.empty
-                else 0.0
-            )
-
-        C = comp_years["company_trajectory_latesudden"].to_numpy(dtype=float)
-        synth_cap = np.where(
-            years >= int(shock_year), np.maximum(0.0, C - S_shock), 0.0
+        # ---------- Synthetic: per-year top-up to hit company series ----------
+        tmask = years >= int(shock_year)
+        synth_cap = np.zeros(T, dtype=np.float64)
+        # top-up = company minus real sum (never negative)
+        synth_cap[tmask] = np.clip(
+            C[tmask] - sum_real_by_year[tmask], a_min=0.0, a_max=None
         )
-        synth_before = np.concatenate(([0.0], synth_cap[:-1]))
-        alloc = synth_cap - synth_before
 
+        synth_before = np.concatenate(([0.0], synth_cap[:-1]))
+        synth_alloc = synth_cap - synth_before
+
+        # Age: start when it first turns positive
         pos = synth_cap > 0.0
         if pos.any():
             first_idx = int(np.argmax(pos))
@@ -1323,8 +1398,8 @@ def stagger_increasing_technologies(
         else:
             synth_age = np.zeros_like(synth_cap, dtype=float)
 
-        synth_output_dict = {
-            "asset_id": synth_id,
+        synth_dict = {
+            "asset_id": f"NEW_{cid}_{sector}_{tech}_{geo}",
             "company_id": cid,
             "company_name": company_name,
             "scenario_geography": geo,
@@ -1333,17 +1408,15 @@ def stagger_increasing_technologies(
             "year": years.astype(int),
             "asset_age": synth_age,
             "capacity_before_shock": synth_before,
-            "allocated_shock": alloc,
+            "allocated_shock": synth_alloc,
             "capacity_after_shock": synth_cap,
             "is_synthetic": True,
             "late_sudden_phase": comp_years["late_sudden_phase"].values,
             "alignment_type": comp_years["alignment_type"].values,
+            # baseline for a synthetic build is 0
+            "asset_baseline_trajectory": np.zeros_like(synth_cap, dtype=float),
         }
-
-        # For synthetic assets, baseline trajectory is 0 (no historical baseline)
-        synth_output_dict["asset_baseline_trajectory"] = np.zeros_like(synth_cap)
-
-        parts.append(pd.DataFrame(synth_output_dict))
+        parts.append(pd.DataFrame(synth_dict))
 
     if not parts:
         return pd.DataFrame(columns=RESULT_COLS)
