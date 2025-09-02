@@ -14,46 +14,6 @@ logger = logging.getLogger(__name__)
 # Constants
 HOURS_PER_YEAR = 8760
 
-# Technology defaults
-TECHNOLOGY_DEFAULTS = {
-    "Coal": {
-        "decom_usd_per_mw": 50000,
-    },
-    "Gas": {
-        "decom_usd_per_mw": 30000,
-    },
-    "GasCap": {
-        "decom_usd_per_mw": 30000,
-    },
-    "Oil": {
-        "decom_usd_per_mw": 40000,
-    },
-    "OilCap": {
-        "decom_usd_per_mw": 40000,
-    },
-    "NuclearCap": {
-        "decom_usd_per_mw": 500000,
-    },
-    "SolarCap - CSP": {
-        "decom_usd_per_mw": 20000,
-    },
-    "SolarCap - PV": {
-        "decom_usd_per_mw": 20000,
-    },
-    "WindCap - Offshore": {
-        "decom_usd_per_mw": 25000,
-    },
-    "WindCap - Onshore": {
-        "decom_usd_per_mw": 25000,
-    },
-    "HydroCap": {
-        "decom_usd_per_mw": 100000,
-    },
-    "GeothermalCap": {
-        "decom_usd_per_mw": 75000,
-    },
-}
-
 
 def validate_and_standardize_inputs(
     asset_level_staggered_shock: pd.DataFrame,
@@ -273,9 +233,7 @@ def build_scenario_surfaces(scenarios_validated: pd.DataFrame) -> pd.DataFrame:
     surfaces["lifetime_years"] = scenarios["lifetime_years"]
 
     # Add decommissioning costs
-    surfaces["decom_usd_per_mw"] = surfaces["technology"].map(
-        lambda x: TECHNOLOGY_DEFAULTS.get(x, {}).get("decom_usd_per_mw", 50000)
-    )
+    surfaces["scrap_usd_per_mw"] = -surfaces["capex_usd_per_mw"] / 2
 
     logger.info("Built scenario surfaces with %s rows", len(surfaces))
 
@@ -614,7 +572,7 @@ def compute_flow_based_capex(
         retired_mask = capex_data["capex_indicator"] == "retired_max_cap"
         capex_data["decom_cost"] = np.where(
             retired_mask,
-            capex_data["decom_usd_per_mw"] * capex_data["capex_capacity"],
+            capex_data["scrap_usd_per_mw"] * capex_data["capex_capacity"],
             0.0,
         )
     else:
@@ -1009,7 +967,7 @@ def write_asset_earnings_series(asset_cashflows: pd.DataFrame) -> pd.DataFrame:
         # "carbon_price_usd_per_tco2",
         # "fom_usd_per_mw_yr",
         # "capex_usd_per_mw",
-        # "decom_usd_per_mw",
+        # "scrap_usd_per_mw",
         # Earnings series
         "Q",  # used in reporting
         "revenue",

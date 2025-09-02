@@ -23,14 +23,6 @@ def filter_scenarios(
     scenarios_pathways: pd.DataFrame, target_scenario: str, baseline_scenario: str
 ) -> pd.DataFrame:
 
-    # TODO: remove after integration of scenario data in DBT
-    if baseline_scenario == "AR6_MESSAGEix-GLOBIOM_1.2_COV_NoPolicyNoCOVID_550":
-        scenarios_pathways.loc[
-            (scenarios_pathways["scenario_provider"] == "MESSAGEix-GLOBIOM_1.2")
-            & (scenarios_pathways["scenario"] == "COV_NoPolicyNoCOVID_550"),
-            "scenario_type",
-        ] = "baseline"
-
     # Standardize scenario naming
     # TODO: remove after integration of scenario data in DBT
     scenarios_pathways["scenario"] = (
@@ -39,6 +31,16 @@ def filter_scenarios(
         + "_"
         + scenarios_pathways["scenario"].astype(str).str.strip()
     )
+
+    # TODO: remove after integration of scenario data in DBT
+    if baseline_scenario in [
+        "AR6_MESSAGEix-GLOBIOM_1.2_COV_NoPolicyNoCOVID_550",
+        "AR6_IMAGE 3.0_CO_NDCplus",
+    ]:
+        scenarios_pathways.loc[
+            scenarios_pathways["scenario"] == baseline_scenario,
+            "scenario_type",
+        ] = "baseline"
 
     scenarios_pathways.loc[
         scenarios_pathways["scenario_geography"] == "Global", "country_iso2_list"
@@ -56,6 +58,22 @@ def filter_scenarios(
             scenarios_pathways["scenario_type"] == "baseline"
         ].scenario.unique()
     ), "Baseline scenario not found in scenarios pathways"
+
+    baseline_geographies = set(
+        scenarios_pathways[scenarios_pathways["scenario"] == baseline_scenario][
+            "scenario_geography"
+        ].unique()
+    )
+    target_geographies = set(
+        scenarios_pathways[scenarios_pathways["scenario"] == target_scenario][
+            "scenario_geography"
+        ].unique()
+    )
+
+    assert baseline_geographies == target_geographies, (
+        f"Geographies in baseline scenario ({baseline_geographies}) do not match "
+        f"geographies in target scenario ({target_geographies})"
+    )
 
     scenarios_pathways_filtered = scenarios_pathways.loc[
         scenarios_pathways.scenario.isin([target_scenario, baseline_scenario]), :
@@ -99,13 +117,16 @@ def apply_ccs_suffix(
     assets_forecasts: pd.DataFrame,
     companies_ownership_tree: pd.DataFrame,
     scenarios_pathways: pd.DataFrame,
-    ccs_on: bool,
+    ccs_on: bool | None,
 ) -> pd.DataFrame:
-    if not any(
-        " - w/ CCS" in tech for tech in assets_forecasts["technology"].unique()
-    ) and not any(
-        " - w/o CCS" in tech for tech in assets_forecasts["technology"].unique()
-    ):
+    if (
+        not any(
+            " - w/ CCS" in tech for tech in scenarios_pathways["technology"].unique()
+        )
+        and not any(
+            " - w/o CCS" in tech for tech in scenarios_pathways["technology"].unique()
+        )
+    ) or ccs_on is None:
         logger.warning("No CCS technologies are present in the assets forecasts")
         return assets_forecasts, companies_ownership_tree
 
