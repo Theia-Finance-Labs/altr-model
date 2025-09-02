@@ -4,14 +4,18 @@
 # Documentation for this file format can be found in "Parameters"
 # Link: https://docs.kedro.org/en/0.19.12/configuration/parameters.html
 
-baseline_scenario: "AR6_MESSAGEix-GLOBIOM_1.2_COV_NoPolicyNoCOVID_550"
-target_scenario: "AR6_MESSAGEix-GLOBIOM_1.2_COV_GreenPush"
+
+baseline_scenario: "AR6_WITCH 5.0_CO_CurPol"
+target_scenario: "AR6_WITCH 5.0_EN_INDCi2030_1800f"
+
 max_forecast_horizon: 5
 
 ownership_level: 1
 
 # Technology scenario mapping control
-ccs_on: False  # If true, use w/ CCS scenarios for Coal, Gas, Biomass. If false, use w/o CCS
+# If True, use w/ CCS scenarios for Coal, Gas, Biomass. If False, use w/o CCS
+# If Null, use technology without distinction.
+ccs_on: False
 
 
 company_ids:
