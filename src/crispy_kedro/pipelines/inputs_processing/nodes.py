@@ -6,6 +6,9 @@ generated using Kedro 0.19.12
 import pandas as pd
 from typing import List, Tuple
 import numpy as np
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def check_input_parameters(
@@ -19,6 +22,15 @@ def check_input_parameters(
 def filter_scenarios(
     scenarios_pathways: pd.DataFrame, target_scenario: str, baseline_scenario: str
 ) -> pd.DataFrame:
+
+    # TODO: remove after integration of scenario data in DBT
+    if baseline_scenario == "AR6_MESSAGEix-GLOBIOM_1.2_COV_NoPolicyNoCOVID_550":
+        scenarios_pathways.loc[
+            (scenarios_pathways["scenario_provider"] == "MESSAGEix-GLOBIOM_1.2")
+            & (scenarios_pathways["scenario"] == "COV_NoPolicyNoCOVID_550"),
+            "scenario_type",
+        ] = "baseline"
+
     # Standardize scenario naming
     # TODO: remove after integration of scenario data in DBT
     scenarios_pathways["scenario"] = (
@@ -86,8 +98,36 @@ def filter_companies(
 def apply_ccs_suffix(
     assets_forecasts: pd.DataFrame,
     companies_ownership_tree: pd.DataFrame,
+    scenarios_pathways: pd.DataFrame,
     ccs_on: bool,
 ) -> pd.DataFrame:
+    if not any(
+        " - w/ CCS" in tech for tech in assets_forecasts["technology"].unique()
+    ) and not any(
+        " - w/o CCS" in tech for tech in assets_forecasts["technology"].unique()
+    ):
+        logger.warning("No CCS technologies are present in the assets forecasts")
+        return assets_forecasts, companies_ownership_tree
+
+    if (
+        not any(
+            " - w/ CCS" in tech for tech in scenarios_pathways["technology"].unique()
+        )
+        and ccs_on
+    ):
+        raise ValueError(
+            "With CCS technologies are not present in the scenarios pathways"
+        )
+    if (
+        not any(
+            " - w/o CCS" in tech for tech in scenarios_pathways["technology"].unique()
+        )
+        and not ccs_on
+    ):
+        raise ValueError(
+            "Without CCS technologies are not present in the scenarios pathways"
+        )
+
     ccs_technologies_mask_assets = assets_forecasts["technology"].isin(
         ["BiomassCap", "CoalCap", "GasCap", "OilCap"]
     )

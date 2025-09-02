@@ -4,10 +4,8 @@
 # Documentation for this file format can be found in "Parameters"
 # Link: https://docs.kedro.org/en/0.19.12/configuration/parameters.html
 
-baseline_scenario: "AR6_WITCH 5.0_CO_CurPol"
-target_scenario: "AR6_WITCH 5.0_EN_NPi2020_500"
-# target_scenario: "AR6_WITCH 5.0_EN_INDCi2030_1800f"
-# target_scenario: "AR6_WITCH 5.0_EN_INDCi2030_1000_NDCp"
+baseline_scenario: "AR6_MESSAGEix-GLOBIOM_1.2_COV_NoPolicyNoCOVID_550"
+target_scenario: "AR6_MESSAGEix-GLOBIOM_1.2_COV_GreenPush"
 max_forecast_horizon: 5
 
 ownership_level: 1

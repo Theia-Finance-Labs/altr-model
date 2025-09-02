@@ -57,6 +57,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                 inputs=dict(
                     assets_forecasts="downloaded_assets",
                     companies_ownership_tree="companies_ownership_tree",
+                    scenarios_pathways="scenarios_pathways",
                     ccs_on="params:ccs_on",
                 ),
                 outputs=["assets_forecasts_ccs", "companies_ownership_tree_ccs"],
