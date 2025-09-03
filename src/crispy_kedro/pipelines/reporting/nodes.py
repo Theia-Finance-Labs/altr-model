@@ -126,166 +126,200 @@ def plot_late_sudden_trajectories(
             # Sort by year for plotting
             group_sorted = group.sort_values("year")
 
-            # Check if we have the required trajectory columns
-            required_cols = [
-                "company_trajectory_target",
-                "company_trajectory_baseline",
-                "company_trajectory_latesudden",
-            ]
-            available_cols = [
-                col for col in required_cols if col in group_sorted.columns
-            ]
-
-            if not available_cols:
-                print(
-                    f"Warning: No trajectory columns found for {company_name} - {technology} - {scenario_geography}"
+            # Build series from melted structure: prefer 'latesudden_original' and 'latesudden_adjusted'
+            # Fall back to 'latesudden' if present. Ignore baseline.
+            has_melted = {"trajectory_type", "company_trajectory"}.issubset(
+                set(group_sorted.columns)
+            )
+            series_map = {}
+            if has_melted:
+                pivot = (
+                    group_sorted.pivot_table(
+                        index="year",
+                        columns="trajectory_type",
+                        values="company_trajectory",
+                        aggfunc="first",
+                    )
+                    .sort_index()
+                    .fillna(np.nan)
                 )
-                continue
+                years = pivot.index.to_numpy()
+                if "latesudden_original" in pivot.columns:
+                    series_map["original"] = pivot["latesudden_original"].to_numpy()
+                if "latesudden_adjusted" in pivot.columns:
+                    series_map["adjusted"] = pivot["latesudden_adjusted"].to_numpy()
+                if not series_map and "latesudden" in pivot.columns:
+                    series_map["latesudden"] = pivot["latesudden"].to_numpy()
+                # Also support baseline and target if present (optional)
+                if "baseline" in pivot.columns:
+                    series_map["baseline"] = pivot["baseline"].to_numpy()
+                if "target" in pivot.columns:
+                    series_map["target"] = pivot["target"].to_numpy()
+                if len(series_map) == 0:
+                    print(
+                        f"Warning: No latesudden trajectories found for {company_name} - {technology} - {scenario_geography}"
+                    )
+                    continue
+            else:
+                # Backward compatibility with wide format
+                years = group_sorted["year"].to_numpy()
+                if "company_trajectory_latesudden" in group_sorted.columns:
+                    series_map["latesudden"] = group_sorted[
+                        "company_trajectory_latesudden"
+                    ].to_numpy()
+                if "company_trajectory_target" in group_sorted.columns:
+                    series_map["target"] = group_sorted[
+                        "company_trajectory_target"
+                    ].to_numpy()
+                if len(series_map) == 0:
+                    print(
+                        f"Warning: No trajectory columns found for {company_name} - {technology} - {scenario_geography}"
+                    )
+                    continue
 
             # Create the plot with extra space for legends outside
             fig, ax = plt.subplots(figsize=(16, 10))
 
-            years = group_sorted["year"]
+            # Plot trajectories
+            if "original" in series_map:
+                ax.plot(
+                    years,
+                    series_map["original"],
+                    label="L&S Original",
+                    linewidth=2.5,
+                    linestyle="-",
+                    color="red",
+                    alpha=0.85,
+                    zorder=2,
+                )
+            if "adjusted" in series_map:
+                ax.plot(
+                    years,
+                    series_map["adjusted"],
+                    label="L&S Adjusted",
+                    linewidth=2.5,
+                    linestyle="--",
+                    color="darkred",
+                    alpha=0.9,
+                    zorder=3,
+                )
+            if "latesudden" in series_map:
+                ax.plot(
+                    years,
+                    series_map["latesudden"],
+                    label="L&S",
+                    linewidth=3,
+                    linestyle="-",
+                    color="red",
+                    alpha=0.9,
+                    zorder=2,
+                )
+            if "baseline" in series_map:
+                ax.plot(
+                    years,
+                    series_map["baseline"],
+                    label="Baseline",
+                    linewidth=2.5,
+                    linestyle="-.",
+                    color="blue",
+                    alpha=0.8,
+                    zorder=1,
+                )
+            if "target" in series_map:
+                ax.plot(
+                    years,
+                    series_map["target"],
+                    label="Target",
+                    linewidth=2.5,
+                    linestyle="--",
+                    color="green",
+                    alpha=0.8,
+                    zorder=4,
+                )
+            # Add phase visualization if phase information is available
+            phase_legend_elements = []
+            if "late_sudden_phase" in group_sorted.columns:
+                # Create colored background areas for each phase
+                phase_spans = []
+                current_phase = None
+                phase_start = None
 
-            # Plot each available trajectory
-            if "company_trajectory_target" in group_sorted.columns:
-                target_data = group_sorted["company_trajectory_target"].dropna()
-                if not target_data.empty:
-                    ax.plot(
-                        years,
-                        group_sorted["company_trajectory_target"],
-                        label="Target Trajectory",
-                        linewidth=2.5,
-                        linestyle="--",
-                        color="green",
-                        alpha=0.8,
-                        zorder=3,
-                    )
-
-            if "company_trajectory_baseline" in group_sorted.columns:
-                baseline_data = group_sorted["company_trajectory_baseline"].dropna()
-                if not baseline_data.empty:
-                    ax.plot(
-                        years,
-                        group_sorted["company_trajectory_baseline"],
-                        label="Baseline Trajectory",
-                        linewidth=2.5,
-                        linestyle="-.",
-                        color="blue",
-                        alpha=0.8,
-                        zorder=2,
-                    )
-
-            # Plot Late & Sudden trajectory with phase coloring (plot first so it's below other lines)
-            if "company_trajectory_latesudden" in group_sorted.columns:
-                latesudden_data = group_sorted["company_trajectory_latesudden"].dropna()
-                if not latesudden_data.empty:
-                    # Plot the main late sudden trajectory with lower zorder so it's below other lines
-                    ax.plot(
-                        years,
-                        group_sorted["company_trajectory_latesudden"],
-                        label="Late & Sudden Trajectory",
-                        linewidth=3,
-                        color="red",
-                        alpha=0.9,
-                        zorder=1,
-                    )
-
-                    # Add phase visualization if phase information is available
-                    if "late_sudden_phase" in group_sorted.columns:
-                        # Create colored background areas for each phase
-                        phase_spans = []
-                        current_phase = None
-                        phase_start = None
-
-                        # Group consecutive years by phase to create spans
-                        for i, (year, phase) in enumerate(
-                            zip(years, group_sorted["late_sudden_phase"])
-                        ):
-                            if phase != current_phase:
-                                # End previous phase span
-                                if (
-                                    current_phase is not None
-                                    and phase_start is not None
-                                ):
-                                    # End the previous phase at the current year to avoid gaps
-                                    phase_spans.append(
-                                        (current_phase, phase_start, year - 1)
-                                    )
-
-                                # Start new phase span at the same year where previous phase ended
-                                # to ensure no gaps between phases
-                                current_phase = phase
-                                phase_start = year - 1
-
-                        # Don't forget the last phase - extend it slightly beyond the last data point
+                # Group consecutive years by phase to create spans
+                for i, (year, phase) in enumerate(
+                    zip(pd.Series(years), group_sorted["late_sudden_phase"])
+                ):
+                    if phase != current_phase:
+                        # End previous phase span
                         if current_phase is not None and phase_start is not None:
-                            # Extend the last phase to cover the full plot area
-                            last_year = years.iloc[-1]
-                            year_range = years.max() - years.min()
-                            extended_end = last_year + (
-                                year_range * 0.02
-                            )  # Add 2% of total range
-                            phase_spans.append(
-                                (current_phase, phase_start, extended_end)
+                            # End the previous phase at the current year to avoid gaps
+                            phase_spans.append((current_phase, phase_start, year - 1))
+
+                        # Start new phase span at the same year where previous phase ended
+                        # to ensure no gaps between phases
+                        current_phase = phase
+                        phase_start = year - 1
+
+                # Don't forget the last phase - extend it slightly beyond the last data point
+                if current_phase is not None and phase_start is not None:
+                    # Extend the last phase to cover the full plot area
+                    last_year = years[-1]
+                    year_range = years.max() - years.min()
+                    extended_end = last_year + (
+                        year_range * 0.02
+                    )  # Add 2% of total range
+                    phase_spans.append((current_phase, phase_start, extended_end))
+
+                # Draw colored background areas for each phase
+                for phase, start_year, end_year in phase_spans:
+                    if pd.notna(phase) and phase != "":
+                        color = phase_colors.get(phase, "#333333")
+
+                        # Create semi-transparent background area
+                        ax.axvspan(
+                            start_year, end_year, alpha=0.15, color=color, zorder=0
+                        )
+
+                        # Add more prominent vertical line at phase start (except first phase)
+                        if start_year != years[0]:
+                            ax.axvline(
+                                x=start_year,
+                                color=color,
+                                linestyle="--",
+                                alpha=0.8,
+                                linewidth=2,
+                                zorder=1,
                             )
 
-                        # Draw colored background areas for each phase
-                        phase_legend_elements = []
-                        for phase, start_year, end_year in phase_spans:
-                            if pd.notna(phase) and phase != "":
-                                color = phase_colors.get(phase, "#333333")
+                        # Add phase label at the top of the plot area
+                        mid_year = start_year + (end_year - start_year) / 2
+                        ax.text(
+                            mid_year,
+                            ax.get_ylim()[1] * 0.95,  # Near top of plot
+                            phase.replace("_", " ").title(),
+                            ha="center",
+                            va="top",
+                            fontsize=8,
+                            color=color,
+                            fontweight="bold",
+                            bbox=dict(
+                                boxstyle="round,pad=0.3",
+                                facecolor="white",
+                                edgecolor=color,
+                                alpha=0.8,
+                            ),
+                        )
 
-                                # Create semi-transparent background area
-                                ax.axvspan(
-                                    start_year,
-                                    end_year,
-                                    alpha=0.15,
-                                    color=color,
-                                    zorder=0,
-                                )
-
-                                # Add more prominent vertical line at phase start (except first phase)
-                                if start_year != years.iloc[0]:
-                                    ax.axvline(
-                                        x=start_year,
-                                        color=color,
-                                        linestyle="--",
-                                        alpha=0.8,
-                                        linewidth=2,
-                                        zorder=1,
-                                    )
-
-                                # Add phase label at the top of the plot area
-                                mid_year = start_year + (end_year - start_year) / 2
-                                ax.text(
-                                    mid_year,
-                                    ax.get_ylim()[1] * 0.95,  # Near top of plot
-                                    phase.replace("_", " ").title(),
-                                    ha="center",
-                                    va="top",
-                                    fontsize=8,
-                                    color=color,
-                                    fontweight="bold",
-                                    bbox=dict(
-                                        boxstyle="round,pad=0.3",
-                                        facecolor="white",
-                                        edgecolor=color,
-                                        alpha=0.8,
-                                    ),
-                                )
-
-                                # Create legend entry for this phase
-                                phase_legend_elements.append(
-                                    plt.Rectangle(
-                                        (0, 0),
-                                        1,
-                                        1,
-                                        facecolor=color,
-                                        alpha=0.3,
-                                        label=f"Phase: {phase.replace('_', ' ').title()}",
-                                    )
-                                )
+                        # Create legend entry for this phase
+                        phase_legend_elements.append(
+                            plt.Rectangle(
+                                (0, 0),
+                                1,
+                                1,
+                                facecolor=color,
+                                alpha=0.3,
+                                label=f"Phase: {phase.replace('_', ' ').title()}",
+                            )
+                        )
 
             # Customize the plot
             ax.set_xlabel("Year", fontsize=12)
@@ -360,8 +394,6 @@ def plot_staggered_shock(
     late_sudden_trajectories: pd.DataFrame,
     asset_level_df: pd.DataFrame,
     output_dir: str = "data/08_reporting/companies_staggered_shock_plots",
-    asset_after_col: str = "capacity_after_shock",
-    asset_before_col: str = "capacity_before_shock",
     include_synthetic: bool = True,
     min_points_for_asset: int = 1,
     max_individual_postshock_assets: int = 200,
@@ -383,10 +415,8 @@ def plot_staggered_shock(
     - Annotates assets with ages
     - Shows bar plots of shock absorption/residuals based on adjusted trajectory
     - Can optionally include synthetic assets (is_synthetic==True) or drop them.
-    - Expects late_sudden_trajectories to include: ['company_id','scenario_geography','technology','year',
-                                          'company_trajectory_latesudden_original', 'company_trajectory_latesudden_adjusted'].
-    - Expects asset_level_df to include: ['asset_id','company_id','scenario_geography','technology','year',
-                                          'asset_age', asset_before_col, asset_after_col, 'is_synthetic', 'allocated_shock'].
+    - Expects late_sudden_trajectories (melted) to include: ['company_id','company_name','scenario_geography','technology','year','trajectory_type','company_trajectory', 'late_sudden_phase','alignment_type'] with trajectory_type in { 'latesudden_original','latesudden_adjusted','latesudden' }.
+    - Expects asset_level_df (melted) to include: ['asset_id','company_id','company_name','scenario_geography','technology','year','asset_age','is_synthetic','late_sudden_phase','alignment_type','trajectory_type','asset_trajectory'] with trajectory_type in { 'baseline','latesudden' }.
     - Performance guards: when there are many assets, individual per-asset lines and annotations are skipped using
       the threshold max_individual_postshock_assets to keep figure saving fast.
     - Residual annotations are also capped via max_residual_annotations to avoid thousands of text artists.
@@ -418,22 +448,35 @@ def plot_staggered_shock(
         Negative => over-absorbed (assets below company).
         Values below 1 in absolute value are set to 0 to filter out noise.
         """
-        # Company series for requested years - use adjusted trajectory
-        comp_year = (
-            late_sudden_traj[["year", "company_trajectory_latesudden_adjusted"]]
-            .copy()
-            .dropna(subset=["year"])
+        # Company series for requested years - use adjusted trajectory if present, else generic latesudden
+        comp_pvt = late_sudden_traj.pivot_table(
+            index="year",
+            columns="trajectory_type",
+            values="company_trajectory",
+            aggfunc="first",
+        ).sort_index()
+        if "latesudden_adjusted" in comp_pvt.columns:
+            comp_series = comp_pvt["latesudden_adjusted"].copy()
+        else:
+            comp_series = comp_pvt.get("latesudden", pd.Series(dtype=float)).copy()
+        comp_year = comp_series.reset_index().rename(
+            columns={0: "company_trajectory_latesudden_adjusted"}
         )
+        comp_year.columns = ["year", "company_trajectory_latesudden_adjusted"]
+        comp_year = comp_year.dropna(subset=["year"])
         comp_year["year"] = comp_year["year"].astype(int)
 
-        # Aggregate post-shock asset totals per year
+        # Aggregate post-shock asset totals per year from melted latesudden trajectories
+        aset_ls = asset_level_data[
+            asset_level_data["trajectory_type"] == "latesudden"
+        ].copy()
         asset_year = (
             (
-                asset_level_data.groupby("year", as_index=False)
-                .agg(total_after=(asset_after_col, "sum"))
+                aset_ls.groupby("year", as_index=False)
+                .agg(total_after=("asset_trajectory", "sum"))
                 .sort_values("year")
             )
-            if not asset_level_data.empty
+            if not aset_ls.empty
             else pd.DataFrame({"year": [], "total_after": []})
         )
         if not asset_year.empty:
@@ -477,14 +520,14 @@ def plot_staggered_shock(
                 traj["company_id"].astype(str)
             )
 
-    # guarantee required cols exist
+    # guarantee required cols exist (melted)
     needed_traj = {
         "scenario_geography",
         "company_id",
         "technology",
         "year",
-        "company_trajectory_latesudden_original",
-        "company_trajectory_latesudden_adjusted",
+        "trajectory_type",
+        "company_trajectory",
     }
     missing_t = needed_traj - set(traj.columns)
     if missing_t:
@@ -497,8 +540,8 @@ def plot_staggered_shock(
         "technology",
         "year",
         "asset_age",
-        asset_before_col,
-        asset_after_col,
+        "trajectory_type",
+        "asset_trajectory",
     }
     missing_a = needed_assets - set(asset_level_df.columns)
     if missing_a:
@@ -562,13 +605,30 @@ def plot_staggered_shock(
             if comp.empty:
                 continue
 
-            years = comp["year"].to_numpy(dtype=int)
-            company_vals_original = comp[
-                "company_trajectory_latesudden_original"
-            ].to_numpy(dtype=float)
-            company_vals_adjusted = comp[
-                "company_trajectory_latesudden_adjusted"
-            ].to_numpy(dtype=float)
+            # Build company original/adjusted series from melted
+            comp_pvt = comp.pivot_table(
+                index="year",
+                columns="trajectory_type",
+                values="company_trajectory",
+                aggfunc="first",
+            ).sort_index()
+            years = comp_pvt.index.to_numpy(dtype=int)
+            company_vals_original = (
+                comp_pvt.get(
+                    "latesudden_original", pd.Series(index=comp_pvt.index, dtype=float)
+                )
+                .reindex(comp_pvt.index)
+                .to_numpy(dtype=float)
+            )
+            company_vals_adjusted = (
+                (
+                    comp_pvt.get("latesudden_adjusted")
+                    if "latesudden_adjusted" in comp_pvt.columns
+                    else comp_pvt.get("latesudden")
+                )
+                .reindex(comp_pvt.index)
+                .to_numpy(dtype=float)
+            )
             max_year = max(years)
 
             # asset-level (filter geo-aware, optionally drop synthetic)
@@ -627,33 +687,32 @@ def plot_staggered_shock(
             )
 
             if not aset.empty:
-                # aggregate sums for post-shock
+                # aggregate sums for post-shock from melted 'latesudden'
+                aset_ls = aset[aset["trajectory_type"] == "latesudden"].copy()
                 aset_year = (
-                    aset.groupby("year", as_index=False)
-                    .agg(
-                        total_after=(asset_after_col, "sum"),
-                        total_before=(asset_before_col, "sum"),
-                    )
+                    aset_ls.groupby("year", as_index=False)
+                    .agg(total_after=("asset_trajectory", "sum"))
                     .sort_values("year")
                 )
 
                 # Sum of assets after shock
-                ax1.plot(
-                    aset_year["year"].to_numpy(dtype=int),
-                    aset_year["total_after"].to_numpy(dtype=float),
-                    lw=2.5,
-                    linestyle="--",
-                    label="Sum of assets (post-shock)",
-                    color="blue",
-                    alpha=0.8,
-                )
+                if not aset_year.empty:
+                    ax1.plot(
+                        aset_year["year"].to_numpy(dtype=int),
+                        aset_year["total_after"].to_numpy(dtype=float),
+                        lw=2.5,
+                        linestyle="--",
+                        label="Sum of assets (post-shock)",
+                        color="blue",
+                        alpha=0.8,
+                    )
 
                 # Individual asset lines (post-shock) with age annotations
                 if num_post_assets <= max_individual_postshock_assets:
                     colors = plt.cm.tab10(np.linspace(0, 1, 10))
                     color_idx = 0
                     for aid, df_a in (
-                        aset[["asset_id", "year", "asset_age", asset_after_col]]
+                        aset_ls[["asset_id", "year", "asset_age", "asset_trajectory"]]
                         .dropna(subset=["year"])
                         .groupby("asset_id")
                     ):
@@ -664,7 +723,7 @@ def plot_staggered_shock(
                         color = colors[color_idx % len(colors)]
                         ax1.plot(
                             df_a["year"].to_numpy(dtype=int),
-                            df_a[asset_after_col].to_numpy(dtype=float),
+                            df_a["asset_trajectory"].to_numpy(dtype=float),
                             lw=1.5,
                             alpha=0.7,
                             label=f"Asset {aid} (post-shock)",
@@ -672,11 +731,10 @@ def plot_staggered_shock(
                         )
 
                         if annotate_asset_ages:
-                            # Annotate age at first plotted year
                             try:
                                 y0 = int(df_a["year"].iloc[0])
                                 a0 = float(df_a["asset_age"].iloc[0])
-                                v0 = float(df_a[asset_after_col].iloc[0])
+                                v0 = float(df_a["asset_trajectory"].iloc[0])
                                 ax1.text(
                                     y0,
                                     v0,
@@ -691,9 +749,6 @@ def plot_staggered_shock(
                             except Exception:
                                 pass
                         color_idx += 1
-                else:
-                    # Too many assets to plot individually; keep only aggregated line
-                    pass
 
             ax1.set_xlabel("Year")
             ax1.set_ylabel(
@@ -746,8 +801,7 @@ def plot_staggered_shock(
                         candidates.append(
                             aset_year["total_after"].to_numpy(dtype=float)
                         )
-                    if not aset.empty:
-                        candidates.append(aset[asset_after_col].to_numpy(dtype=float))
+                    # For melted, individual asset series are already included via aset_year aggregate
                     all_vals = (
                         np.concatenate([c for c in candidates if c is not None])
                         if candidates
@@ -824,8 +878,6 @@ def plot_staggered_shock(
                         candidates.append(
                             aset_year["total_after"].to_numpy(dtype=float)
                         )
-                    if not aset.empty:
-                        candidates.append(aset[asset_after_col].to_numpy(dtype=float))
                     all_vals = (
                         np.concatenate([c for c in candidates if c is not None])
                         if candidates
@@ -850,7 +902,7 @@ def plot_staggered_shock(
             # Shock absorption bar plot
             ax2 = fig.add_subplot(gs[1])
 
-            if not aset.empty and "allocated_shock" in aset.columns:
+            if not aset.empty:
                 residuals = _calculate_shock_residuals(comp, aset, years)
 
                 # Create bars, with positive and negative values in different colors
@@ -1089,7 +1141,7 @@ def reporting_validate_inputs(
         "sector",
         "technology",
         "year",
-        "capacity_after_shock",
+        "asset_trajectory",
         "capacity_factor",
         "efficiency_decimal",
         "Q",
@@ -1109,20 +1161,15 @@ def reporting_validate_inputs(
     if missing_earnings_cols:
         logger.warning(f"Missing columns in asset_earnings: {missing_earnings_cols}")
 
-    # Check required columns in asset_npv
-    required_npv_cols = [
+    # Check required columns in asset_npv (support new wide columns)
+    required_npv_base = {
         "asset_id",
         "company_id",
         "scenario_geography",
         "sector",
         "technology",
-        "discount_rate",
-        "DCF_sum",
-        "Terminal_Value",
-        "NPV",
-    ]
-
-    missing_npv_cols = set(required_npv_cols) - set(asset_npv.columns)
+    }
+    missing_npv_cols = required_npv_base - set(asset_npv.columns)
     if missing_npv_cols:
         logger.warning(f"Missing columns in asset_npv: {missing_npv_cols}")
 
@@ -1156,11 +1203,16 @@ def reporting_validate_inputs(
     logger.info(f"Asset NPV: {len(asset_npv)} rows")
     logger.info(f"Company NPV: {len(company_npv)} rows")
 
-    # Check for negative NPVs
-    negative_npvs = asset_npv[asset_npv["NPV"] < 0]
+    # Check for negative NPVs using latesudden_npv (equivalent to old NPV logic)
+    if "latesudden_npv" in asset_npv.columns:
+        negative_npvs = asset_npv[asset_npv["latesudden_npv"] < 0]
+        npv_col = "latesudden_npv"
+    else:
+        negative_npvs = pd.DataFrame()
+        npv_col = "n/a"
     if len(negative_npvs) > 0:
         logger.info(
-            f"Assets with negative NPV: {len(negative_npvs)} ({len(negative_npvs)/len(asset_npv)*100:.1f}%)"
+            f"Assets with negative NPV ({npv_col or 'n/a'}): {len(negative_npvs)} ({len(negative_npvs)/max(len(asset_npv),1)*100:.1f}%)"
         )
 
     logger.info("Input validation completed successfully")
@@ -1201,8 +1253,10 @@ def build_reporting_views(
     logger.info("Building asset explainability view...")
 
     # Merge earnings with NPV data to get discount rates
-    asset_explain = asset_earnings_validated.merge(
-        asset_npv_validated[["asset_id", "discount_rate", "NPV"]],
+    asset_explain = asset_earnings_validated.query(
+        "trajectory_type == 'latesudden'"
+    ).merge(
+        asset_npv_validated[["asset_id", "latesudden_discount_rate", "latesudden_npv"]],
         on="asset_id",
         how="left",
     )
@@ -1212,9 +1266,9 @@ def build_reporting_views(
     # RFC: With taxes enabled, add PV_Depreciation and PV_TaxShield components
     base_year = asset_explain["year"].min()
     asset_explain["years_from_base"] = asset_explain["year"] - base_year
-    asset_explain["discount_factor"] = (1 + asset_explain["discount_rate"]) ** (
-        -asset_explain["years_from_base"]
-    )
+    asset_explain["discount_factor"] = (
+        1 + asset_explain["latesudden_discount_rate"]
+    ) ** (-asset_explain["years_from_base"])
     asset_explain["PV_FCFF"] = asset_explain["FCFF"] * asset_explain["discount_factor"]
     asset_explain["PV_EBITDA"] = (
         asset_explain["EBITDA"] * asset_explain["discount_factor"]
@@ -1290,13 +1344,26 @@ def build_reporting_views(
             asset_data["fixed_cost"] * asset_data["discount_factor"]
         ).sum()
 
-    # Merge with NPV data
+    # Merge with NPV data (support new wide naming)
+    # Both latesudden_npv and baseline_npv should always exist
+    npv_cols_available = [
+        c
+        for c in [
+            "latesudden_npv",
+            "baseline_npv",
+            "DCF_sum",
+            "Terminal_Value",
+            "latesudden_discount_rate",
+        ]
+        if c in asset_npv_validated.columns
+    ]
     asset_npv_decomp = pv_components.merge(
-        asset_npv_validated[
-            ["asset_id", "NPV", "DCF_sum", "Terminal_Value", "discount_rate"]
-        ],
-        on="asset_id",
+        asset_npv_validated[["asset_id", *npv_cols_available]], on="asset_id"
     )
+
+    # Define a canonical NPV column equivalent to legacy behavior (latesudden_npv replaces old NPV)
+    asset_npv_decomp["NPV"] = asset_npv_decomp["latesudden_npv"]
+    asset_npv_decomp["discount_rate"] = asset_npv_decomp["latesudden_discount_rate"]
 
     # Add asset metadata
     asset_npv_decomp = asset_npv_decomp.merge(
@@ -1308,12 +1375,21 @@ def build_reporting_views(
 
     # Check NPV reconciliation (tax-neutral: NPV = PV_EBITDA - PV_CapEx)
     # RFC: With taxes, reconcile as NPV = PV_EBIT*(1-tax_rate) + PV_Depreciation*tax_rate - PV_CapEx
+    # Reconciliation against available NPV (prefer latesudden)
+    npv_preferred = (
+        "latesudden_npv"
+        if "latesudden_npv" in asset_npv_decomp.columns
+        else ("baseline_npv" if "baseline_npv" in asset_npv_decomp.columns else None)
+    )
     asset_npv_decomp["NPV_check"] = (
         asset_npv_decomp["PV_EBITDA"] - asset_npv_decomp["PV_CapEx"]
     )
-    asset_npv_decomp["NPV_diff"] = abs(
-        asset_npv_decomp["NPV"] - asset_npv_decomp["NPV_check"]
-    )
+    if npv_preferred is not None:
+        asset_npv_decomp["NPV_diff"] = abs(
+            asset_npv_decomp[npv_preferred] - asset_npv_decomp["NPV_check"]
+        )
+    else:
+        asset_npv_decomp["NPV_diff"] = np.nan
 
     # 3. Company tech stacks
     logger.info("Building company tech stacks...")
@@ -1447,7 +1523,7 @@ def plot_earnings_inner_workings(
         ax1_twin = ax1.twinx()
         ax1.plot(
             asset_data["year"],
-            asset_data["capacity_after_shock"],
+            asset_data["asset_trajectory"],
             "b-",
             linewidth=2,
             label="Capacity (MW)",
@@ -1656,10 +1732,17 @@ def plot_valuation_authority_pack(
     fig.suptitle("Portfolio Overview", fontsize=16)
 
     # Portfolio NPV distribution
-    portfolio_npv = company_npv_validated["NPV"].sum()
-    positive_npv = company_npv_validated[company_npv_validated["NPV"] > 0]["NPV"].sum()
+    # Use latesudden_npv as canonical NPV (equivalent to old NPV logic)
+    company_npv_validated = company_npv_validated.assign(
+        NPV=company_npv_validated["latesudden_npv"]
+    )
+
+    portfolio_npv = company_npv_validated.get("NPV", pd.Series(dtype=float)).sum()
+    positive_npv = company_npv_validated[company_npv_validated.get("NPV", 0) > 0][
+        "NPV"
+    ].sum()
     negative_npv = abs(
-        company_npv_validated[company_npv_validated["NPV"] < 0]["NPV"].sum()
+        company_npv_validated[company_npv_validated.get("NPV", 0) < 0]["NPV"].sum()
     )
 
     ax1.bar(
@@ -1790,6 +1873,8 @@ def export_reporting_tables(
     # 1. Company summary table
     logger.info("Creating company summary table...")
     company_summary = company_npv_validated.copy()
+    # Use latesudden_npv (equivalent to old NPV logic)
+    company_summary = company_summary.assign(NPV=company_summary["latesudden_npv"])
     company_summary["npv_millions"] = company_summary["NPV"] / 1_000_000
 
     # Add basic statistics
@@ -1821,9 +1906,26 @@ def export_reporting_tables(
     # 3. Top assets table
     logger.info("Creating top assets table...")
     top_n = reporting_params.get("top_n_assets_per_company", 10)
-    top_assets = view_asset_npv_decomp.nlargest(
-        top_n * 10, "NPV"
-    )  # More assets for full view
+    # Ensure view_asset_npv_decomp has an 'NPV' column for ranking; if not, create from available components
+    if "NPV" not in view_asset_npv_decomp.columns:
+        candidate_cols = [
+            c
+            for c in [
+                "latesudden_npv",
+                "npv_latesudden",
+                "baseline_npv",
+                "npv_baseline",
+            ]
+            if c in view_asset_npv_decomp.columns
+        ]
+        if candidate_cols:
+            view_asset_npv_decomp = view_asset_npv_decomp.assign(
+                NPV=view_asset_npv_decomp[candidate_cols[0]]
+            )
+        else:
+            view_asset_npv_decomp = view_asset_npv_decomp.assign(NPV=0.0)
+
+    top_assets = view_asset_npv_decomp.nlargest(top_n * 10, "NPV")
 
     top_assets_table = top_assets[
         ["asset_id", "company_id", "technology", "sector", "NPV"]

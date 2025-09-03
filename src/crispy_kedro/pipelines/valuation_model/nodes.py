@@ -123,20 +123,35 @@ def calculate_npv_per_asset(
     wide_index = [c for c in group_keys if c != "trajectory_type"]
     wide_index = [c for c in wide_index if c in per_traj_df.columns]
 
-    npv_wide = per_traj_df.pivot_table(
+    npv_wide = per_traj_df.pivot(
         index=wide_index,
         columns="trajectory_type",
-        values="NPV",
-        aggfunc="sum",
-        fill_value=0.0,
+        values=[
+            "NPV",
+            "discount_rate",
+        ],
     ).reset_index()
 
-    # Rename columns to desired output names
+    # Flatten multi-level columns and rename to desired output names
+    npv_wide.columns = npv_wide.columns.to_flat_index()
     rename_map = {}
-    if "baseline" in npv_wide.columns:
-        rename_map["baseline"] = "baseline_npv"
-    if "latesudden" in npv_wide.columns:
-        rename_map["latesudden"] = "latesudden_npv"
+    for col in npv_wide.columns:
+        if isinstance(col, tuple) and len(col) == 2:
+            value_name, trajectory_type = col
+            # Handle single-level columns (they become ('column_name', ''))
+            if trajectory_type == "":
+                rename_map[col] = value_name
+            # Handle multi-level columns for NPV and discount_rate
+            elif value_name == "NPV":
+                if trajectory_type == "baseline":
+                    rename_map[col] = "baseline_npv"
+                elif trajectory_type == "latesudden":
+                    rename_map[col] = "latesudden_npv"
+            elif value_name == "discount_rate":
+                if trajectory_type == "baseline":
+                    rename_map[col] = "baseline_discount_rate"
+                elif trajectory_type == "latesudden":
+                    rename_map[col] = "latesudden_discount_rate"
     npv_wide = npv_wide.rename(columns=rename_map)
 
     logger.info(f"Calculated NPV (wide) for {len(npv_wide)} assets")
@@ -164,6 +179,8 @@ def aggregate_to_company_technology_npv(asset_npv: pd.DataFrame) -> pd.DataFrame
         # Sum NPV components (already wide)
         "baseline_npv": "sum",
         "latesudden_npv": "sum",
+        "baseline_discount_rate": "mean",
+        "latesudden_discount_rate": "mean",
         # Count assets
         "asset_id": "count",
     }
@@ -194,15 +211,15 @@ def aggregate_to_company_npv(company_technology_npv: pd.DataFrame) -> pd.DataFra
     logger.info("Aggregating NPV to company level...")
 
     # Group by company and scenario dimensions only
-    groupby_cols = [
-        "company_id",
-    ]
+    groupby_cols = ["company_id"]
 
     # Define aggregation functions
     agg_funcs = {
         # Sum NPV components across all technologies
         "baseline_npv": "sum",
         "latesudden_npv": "sum",
+        "baseline_discount_rate": "mean",
+        "latesudden_discount_rate": "mean",
         # Sum asset counts
         "asset_count": "sum",
     }

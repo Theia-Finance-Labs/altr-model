@@ -7,25 +7,6 @@ from tqdm import tqdm
 logger = logging.getLogger(__name__)
 
 
-RESULT_COLS = [
-    "asset_id",
-    "company_id",
-    "company_name",
-    "scenario_geography",
-    "sector",
-    "technology",
-    "year",
-    "asset_age",
-    "capacity_before_shock",
-    "allocated_shock",
-    "capacity_after_shock",
-    "is_synthetic",
-    "late_sudden_phase",
-    "alignment_type",
-    "asset_baseline_trajectory",
-]
-
-
 def split_late_sudden_trajectories_by_alignment_type(
     companies_late_sudden_trajectories: pd.DataFrame,
 ):
@@ -159,15 +140,9 @@ def concatenate_staggered_shock_results(
         [dec_late_sudden_trajectories, inc_late_sudden_trajectories], ignore_index=True
     )
 
-    # Process decreasing tech corrections: keep only adjusted trajectories and rename to 'latesudden'
+    # Process decreasing tech corrections: keep BOTH 'latesudden_original' and 'latesudden_adjusted'
+    # to enable plotting of both series downstream. Do not rename types here.
     decreasing_corrected = decreasing_tech_late_sudden_trajectories_corrected.copy()
-    if not decreasing_corrected.empty:
-        # Keep only the adjusted trajectories (the ones we want for the final result)
-        decreasing_corrected = decreasing_corrected[
-            decreasing_corrected["trajectory_type"] == "latesudden_adjusted"
-        ].copy()
-        # Rename to standard 'latesudden' type
-        decreasing_corrected["trajectory_type"] = "latesudden"
 
     companies_late_sudden_trajectories = pd.concat(
         [
@@ -200,9 +175,18 @@ def concatenate_staggered_shock_results(
             )
         )
 
+    # Final set: include all late-sudden variants available (original, adjusted, generic) and baseline
     companies_late_sudden_trajectories_final = pd.concat(
         [
-            companies_late_sudden_trajectories.query("trajectory_type == 'latesudden'"),
+            companies_late_sudden_trajectories[
+                companies_late_sudden_trajectories["trajectory_type"].isin(
+                    [
+                        "latesudden",
+                        "latesudden_original",
+                        "latesudden_adjusted",
+                    ]
+                )
+            ],
             original_companies_late_sudden_trajectories.query(
                 "trajectory_type == 'baseline'"
             ),
@@ -780,11 +764,7 @@ def _stagger_decreasing_fast(
         adj_df["company_trajectory"] = C_adj
         corr_parts.append(pd.concat([base_df, adj_df], ignore_index=True))
 
-    assets_df = (
-        pd.concat(out_parts, ignore_index=True)
-        if out_parts
-        else pd.DataFrame(columns=RESULT_COLS)
-    )
+    assets_df = pd.concat(out_parts, ignore_index=True)
     corrections_df = (
         pd.concat(corr_parts, ignore_index=True)
         if corr_parts
@@ -1061,11 +1041,7 @@ def _prop_scale_decreasing_fast(
         adj_df["company_trajectory"] = C_adj
         corr_parts.append(pd.concat([base_df, adj_df], ignore_index=True))
 
-    assets_df = (
-        pd.concat(out_parts, ignore_index=True)
-        if out_parts
-        else pd.DataFrame(columns=RESULT_COLS)
-    )
+    assets_df = pd.concat(out_parts, ignore_index=True)
     corrections_df = (
         pd.concat(corr_parts, ignore_index=True)
         if corr_parts
@@ -1379,11 +1355,7 @@ def stagger_increasing_technologies(
         company_parts.append(company_df)
 
     # Combine results
-    assets_df = (
-        pd.concat(asset_parts, ignore_index=True)
-        if asset_parts
-        else pd.DataFrame(columns=RESULT_COLS)
-    )
+    assets_df = pd.concat(asset_parts, ignore_index=True)
 
     companies_df = (
         pd.concat(company_parts, ignore_index=True)
