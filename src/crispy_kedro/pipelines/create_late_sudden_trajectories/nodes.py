@@ -672,11 +672,28 @@ def concatenate_late_sudden_results(
     # Concatenate all late sudden results
     if late_sudden_dfs:
         all_late_sudden = pd.concat(late_sudden_dfs, ignore_index=True)
+        all_late_sudden = all_late_sudden[
+            [
+                "company_id",
+                "company_name",
+                "scenario_geography",
+                "sector",
+                "technology",
+                "year",
+                "company_activity",
+                "company_trajectory_baseline",
+                "company_trajectory_target",
+                "company_trajectory_latesudden",
+                "late_sudden_phase",
+                "alignment_type",
+            ]
+        ]
     else:
         # Create empty dataframe with expected columns if no data
         all_late_sudden = pd.DataFrame(
             columns=[
                 "company_id",
+                "company_name",
                 "scenario_geography",
                 "sector",
                 "technology",
@@ -690,4 +707,32 @@ def concatenate_late_sudden_results(
             ]
         )
 
-    return all_late_sudden
+    all_late_sudden_melted = (
+        all_late_sudden.melt(
+            id_vars=[
+                "company_id",
+                "company_name",
+                "scenario_geography",
+                "sector",
+                "technology",
+                "year",
+                "late_sudden_phase",
+                "alignment_type",
+            ],
+            value_vars=[
+                "company_trajectory_latesudden",
+                "company_trajectory_baseline",
+                "company_trajectory_target",
+            ],
+            var_name="variable",
+            value_name="company_trajectory",
+        )
+        .assign(
+            trajectory_type=lambda df: df["variable"].str.replace(
+                "company_trajectory_", "", regex=False
+            )
+        )
+        .drop(columns="variable")
+        .reset_index(drop=True)
+    )
+    return all_late_sudden_melted

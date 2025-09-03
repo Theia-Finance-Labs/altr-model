@@ -3,7 +3,6 @@ This is a boilerplate pipeline 'distribute_impacts_to_asset_level'
 generated using Kedro 0.19.12
 """
 
-from ctypes import alignment
 from kedro.pipeline import node, Pipeline, pipeline  # noqa
 from .nodes import (
     compute_asset_baseline_trajectories,
@@ -12,6 +11,7 @@ from .nodes import (
     stagger_increasing_technologies,
     concatenate_staggered_shock_results,
     flag_phased_out_assets_as_retired,
+    melt_asset_staggered_trajectories,
 )
 
 
@@ -70,14 +70,17 @@ def create_pipeline(**kwargs) -> Pipeline:
                     assets_with_baseline_trajectory="assets_with_baseline_trajectory",
                     shock_year="params:shock_year",
                 ),
-                outputs="increasing_tech_staggered_shock",
+                outputs=[
+                    "increasing_tech_staggered_shock",
+                    "increasing_tech_late_sudden_trajectories_with_names",
+                ],
             ),
             node(
                 concatenate_staggered_shock_results,
                 inputs=dict(
                     dec_late_sudden_trajectories="decreasing_tech_staggered_shock_flagged",
                     inc_late_sudden_trajectories="increasing_tech_staggered_shock",
-                    increasing_tech_late_sudden_trajectories="increasing_tech_late_sudden_trajectories",
+                    increasing_tech_late_sudden_trajectories="increasing_tech_late_sudden_trajectories_with_names",
                     decreasing_tech_late_sudden_trajectories_corrected="decreasing_tech_late_sudden_trajectories_corrected",
                     original_companies_late_sudden_trajectories="companies_late_sudden_trajectories",
                 ),
@@ -85,6 +88,14 @@ def create_pipeline(**kwargs) -> Pipeline:
                     "asset_level_staggered_shock",
                     "companies_late_sudden_trajectories_corrected",
                 ],
+            ),
+            # New: normalized/melted asset trajectories for downstream nodes
+            node(
+                melt_asset_staggered_trajectories,
+                inputs=dict(
+                    assets_staggered_late_sudden="asset_level_staggered_shock",
+                ),
+                outputs="asset_level_staggered_shock_melted",
             ),
         ],
         tags="altrisk",

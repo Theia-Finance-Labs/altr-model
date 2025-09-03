@@ -159,6 +159,7 @@ def plot_late_sudden_trajectories(
                         linestyle="--",
                         color="green",
                         alpha=0.8,
+                        zorder=3,
                     )
 
             if "company_trajectory_baseline" in group_sorted.columns:
@@ -172,13 +173,14 @@ def plot_late_sudden_trajectories(
                         linestyle="-.",
                         color="blue",
                         alpha=0.8,
+                        zorder=2,
                     )
 
-            # Plot Late & Sudden trajectory with phase coloring
+            # Plot Late & Sudden trajectory with phase coloring (plot first so it's below other lines)
             if "company_trajectory_latesudden" in group_sorted.columns:
                 latesudden_data = group_sorted["company_trajectory_latesudden"].dropna()
                 if not latesudden_data.empty:
-                    # Plot the main late sudden trajectory
+                    # Plot the main late sudden trajectory with lower zorder so it's below other lines
                     ax.plot(
                         years,
                         group_sorted["company_trajectory_latesudden"],
@@ -186,6 +188,7 @@ def plot_late_sudden_trajectories(
                         linewidth=3,
                         color="red",
                         alpha=0.9,
+                        zorder=1,
                     )
 
                     # Add phase visualization if phase information is available

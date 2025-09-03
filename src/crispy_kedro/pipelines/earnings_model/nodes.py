@@ -33,7 +33,7 @@ def validate_and_standardize_inputs(
 
     logger.info("Validating and standardizing inputs...")
 
-    # Clean asset data
+    # Clean asset data (melted: includes trajectory_type, asset_trajectory)
     assets = asset_level_staggered_shock.copy()
     logger.info("Initial assets shape: %s", assets.shape)
     logger.info(
@@ -52,12 +52,11 @@ def validate_and_standardize_inputs(
     for col in string_cols:
         assets[col] = assets[col].astype(str).str.strip()
 
-    # Ensure numeric columns
+    # Ensure numeric columns (melted)
     numeric_cols = [
         "year",
         "asset_age",
-        "capacity_before_shock",
-        "capacity_after_shock",
+        "asset_trajectory",
     ]
     for col in numeric_cols:
         before_conversion = len(assets)
@@ -74,6 +73,11 @@ def validate_and_standardize_inputs(
         logger.warning(
             "Sample non-NaN values: %s", assets[col].dropna().head(3).tolist()
         )
+
+    # Standardize trajectory_type and map to capacity_after_shock for downstream
+    if "trajectory_type" in assets.columns:
+        assets["trajectory_type"] = assets["trajectory_type"].astype(str).str.strip()
+    assets["capacity_after_shock"] = assets["asset_trajectory"].astype(float)
 
     # Clean scenarios data
     scenarios = downloaded_scenarios.copy()
@@ -132,7 +136,11 @@ def validate_and_standardize_inputs(
         assets_static["emission_factor"], errors="coerce"
     ).fillna(0.0)
 
-    # Check year continuity per asset (non-destructive check)
+    # Standardize trajectory_type
+    if "trajectory_type" in assets.columns:
+        assets["trajectory_type"] = assets["trajectory_type"].astype(str).str.strip()
+
+    # Check year continuity per asset and trajectory (non-destructive check)
     logger.info("Assets shape before year continuity check: %s", assets.shape)
     if len(assets) > 0:
         # Remove any rows with NaN years to avoid issues
@@ -145,7 +153,7 @@ def validate_and_standardize_inputs(
                 assets_before_filter - assets_after_filter,
             )
 
-        year_check = assets.groupby("asset_id")["year"].apply(
+        year_check = assets.groupby(["asset_id", "trajectory_type"])["year"].apply(
             lambda x: x.sort_values().diff().dropna().unique()
         )
         logger.info("Year continuity check completed for %s assets", len(year_check))
@@ -352,7 +360,13 @@ def validate_capacity_flow_identity(
     # Get capacity flows by indicator type per asset-year
     # Use pivot_table with aggfunc='sum' to aggregate flows by type
     flows_pivot = data.pivot_table(
-        index=["company_id", "asset_id", "technology", "year"],
+        index=[
+            "company_id",
+            "asset_id",
+            "technology",
+            "year",
+            *(["trajectory_type"] if "trajectory_type" in data.columns else []),
+        ],
         columns="capex_indicator",
         values="capex_capacity",
         fill_value=0.0,
@@ -365,28 +379,28 @@ def validate_capacity_flow_identity(
             flows_pivot[col] = 0.0
 
     # Get unique asset-year combinations from original data
-    capacity_data = data[
-        [
-            "company_id",
-            "asset_id",
-            "technology",
-            "year",
-            "capacity_after_shock",
-            "capacity_before_shock",
-        ]
-    ].drop_duplicates()
+    base_cols = [
+        "company_id",
+        "asset_id",
+        "technology",
+        "year",
+        *(["trajectory_type"] if "trajectory_type" in data.columns else []),
+    ]
+    capacity_data = data[base_cols + ["asset_trajectory"]].drop_duplicates()
 
-    validation_data = flows_pivot.merge(
-        capacity_data, on=["company_id", "asset_id", "technology", "year"], how="left"
-    )
+    validation_data = flows_pivot.merge(capacity_data, on=base_cols, how="left")
 
     # Calculate previous year capacity
     validation_data = validation_data.sort_values(
         ["company_id", "asset_id", "technology", "year"]
+        + (["trajectory_type"] if "trajectory_type" in validation_data.columns else [])
     )
-    validation_data["K_prev"] = validation_data.groupby(
-        ["company_id", "asset_id", "technology"]
-    )["capacity_after_shock"].shift(1)
+    group_keys = ["company_id", "asset_id", "technology"] + (
+        ["trajectory_type"] if "trajectory_type" in validation_data.columns else []
+    )
+    validation_data["K_prev"] = validation_data.groupby(group_keys)[
+        "asset_trajectory"
+    ].shift(1)
 
     # Apply flow identity: K_t = K_{t-1} - retired + replaced + new_build
     # TODO the 0.05 is hardcoded like it is in the compute_capacity_flows() function.
@@ -403,7 +417,7 @@ def validate_capacity_flow_identity(
 
     if len(validation_data) > 0:
         validation_data["capacity_diff"] = abs(
-            validation_data["capacity_after_shock"] - validation_data["K_calculated"]
+            validation_data["asset_trajectory"] - validation_data["K_calculated"]
         )
 
         # Log validation results
@@ -433,7 +447,7 @@ def validate_capacity_flow_identity(
                     "  Asset %s Year %s: Actual=%.2f MW, Calculated=%.2f MW, Diff=%.2f MW",
                     row["asset_id"],
                     row["year"],
-                    row["capacity_after_shock"],
+                    row["asset_trajectory"],
                     row["K_calculated"],
                     row["capacity_diff"],
                 )
@@ -454,19 +468,27 @@ def compute_capacity_flows(asset_panel: pd.DataFrame) -> pd.DataFrame:
     data = asset_panel.copy()
     data = data.sort_values(
         ["company_id", "asset_id", "technology", "year"]
+        + (["trajectory_type"] if "trajectory_type" in asset_panel.columns else [])
     ).reset_index(drop=True)
 
-    # Calculate capacity changes vectorized
-    data["K_prev"] = data.groupby(["company_id", "asset_id", "technology"])[
-        "capacity_after_shock"
-    ].shift(1)
-    data["capacity_change"] = (data["capacity_after_shock"] - data["K_prev"]).fillna(0)
+    # Use asset_trajectory (melted capacity)
+    if "asset_trajectory" not in data.columns:
+        raise ValueError("compute_capacity_flows expects 'asset_trajectory' column")
+
+    # Calculate capacity changes vectorized, per trajectory_type when present
+    group_keys = ["company_id", "asset_id", "technology"] + (
+        ["trajectory_type"] if "trajectory_type" in data.columns else []
+    )
+    data["K_prev"] = data.groupby(group_keys)["asset_trajectory"].shift(1)
+    data["capacity_change"] = (data["asset_trajectory"] - data["K_prev"]).fillna(0)
 
     # Create flow records vectorized - this creates multiple rows per asset-year
     flow_records = []
 
-    # 1. New buildout flows (positive capacity changes)
-    new_buildout_mask = data["is_synthetic"] & (data["capacity_change"] > 0)
+    # 1. New buildout flows (positive capacity changes on synthetic assets)
+    new_buildout_mask = data.get("is_synthetic", pd.Series(False, index=data.index)) & (
+        data["capacity_change"] > 0
+    )
     if new_buildout_mask.any():
         new_buildout_data = data[new_buildout_mask].copy()
         new_buildout_data["capex_indicator"] = "new_buildout_cap"
@@ -482,7 +504,9 @@ def compute_capacity_flows(asset_panel: pd.DataFrame) -> pd.DataFrame:
         flow_records.append(retirement_data)
 
     # 3. Replacement flows (5% of existing non-synthetic capacity annually)
-    replacement_mask = (~data["is_synthetic"]) & (data["capacity_change"] > 0)
+    replacement_mask = (
+        ~data.get("is_synthetic", pd.Series(False, index=data.index))
+    ) & (data["capacity_change"] > 0)
     if replacement_mask.any():
         replacement_data = data[replacement_mask].copy()
         replacement_data["capex_indicator"] = "roll_over_cap"
@@ -508,7 +532,14 @@ def compute_capacity_flows(asset_panel: pd.DataFrame) -> pd.DataFrame:
 
     # Sort result by asset and year for consistency
     result = result.sort_values(
-        ["company_id", "asset_id", "technology", "year", "capex_indicator"]
+        [
+            "company_id",
+            "asset_id",
+            "technology",
+            "year",
+            *(["trajectory_type"] if "trajectory_type" in result.columns else []),
+            "capex_indicator",
+        ]
     ).reset_index(drop=True)
 
     logger.info(
@@ -632,8 +663,8 @@ def compute_ops_block(
 
     ops_data = asset_capex_block.copy()
 
-    # Calculate average capacity for the year
-    ops_data["K_avg"] = ops_data["capacity_after_shock"]
+    # Calculate average capacity for the year (use melted capacity)
+    ops_data["K_avg"] = ops_data["asset_trajectory"]
 
     # Production
     ops_data["Q"] = ops_data["K_avg"] * ops_data["capacity_factor"] * HOURS_PER_YEAR
@@ -731,8 +762,7 @@ def aggregate_to_company_technology_earnings(
                     "decom_cost",
                     "capex_total",
                     "FCFF",
-                    "capacity_after_shock",
-                    "capacity_before_shock",
+                    "asset_trajectory",
                 ]
             )
         },
@@ -769,9 +799,9 @@ def aggregate_to_company_technology_earnings(
             asset_cashflows.groupby(["company_id", "technology", "year"])
             .apply(
                 lambda x: (
-                    (x["capacity_factor"] * x["capacity_after_shock"]).sum()
-                    / x["capacity_after_shock"].sum()
-                    if x["capacity_after_shock"].sum() > 0
+                    (x["capacity_factor"] * x["asset_trajectory"]).sum()
+                    / x["asset_trajectory"].sum()
+                    if x["asset_trajectory"].sum() > 0
                     else 0
                 )
             )
@@ -839,8 +869,7 @@ def aggregate_to_company_earnings(company_tech_earnings: pd.DataFrame) -> pd.Dat
                     "decom_cost",
                     "capex_total",
                     "FCFF",
-                    "capacity_after_shock",
-                    "capacity_before_shock",
+                    "asset_trajectory",
                 ]
             )
         },
@@ -872,9 +901,9 @@ def aggregate_to_company_earnings(company_tech_earnings: pd.DataFrame) -> pd.Dat
             company_tech_earnings.groupby(["company_id", "year"])
             .apply(
                 lambda x: (
-                    (x["capacity_factor"] * x["capacity_after_shock"]).sum()
-                    / x["capacity_after_shock"].sum()
-                    if x["capacity_after_shock"].sum() > 0
+                    (x["capacity_factor"] * x["asset_trajectory"]).sum()
+                    / x["asset_trajectory"].sum()
+                    if x["asset_trajectory"].sum() > 0
                     else 0
                 )
             )
@@ -949,9 +978,9 @@ def write_asset_earnings_series(asset_cashflows: pd.DataFrame) -> pd.DataFrame:
         "year",
         "is_synthetic",
         # State
-        "capacity_after_shock",  # used in reporting
+        "trajectory_type",
+        "asset_trajectory",  # used in reporting
         "capacity_factor",  # used in reporting
-        # "capacity_before_shock",
         # "efficiency_decimal",
         # "lifetime_years",
         # "aligned",
