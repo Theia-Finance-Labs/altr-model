@@ -5,7 +5,7 @@
 # Link: https://docs.kedro.org/en/0.19.12/configuration/parameters.html
 
 
-apply_retirement: False
+apply_retirement: True
 apply_decreasing_staggered_shock: True
 
 staggered_shock:

@@ -19,137 +19,144 @@ def calculate_npv_per_asset(
     terminal_method: str = "perpetuity",
 ) -> pd.DataFrame:
     """
-    Node 1: Calculate NPV per asset using DCF with terminal value.
+    Node 1: Calculate NPV per asset using DCF with terminal value, per trajectory_type.
 
-    Applies different discount rates based on scenario type:
-    - baseline scenarios: use discount_rate_baseline
-    - shock/transition scenarios: use discount_rate_shock (higher due to transition risk)
+    Returns one row per asset x scenario with two columns:
+      - baseline_npv
+      - latesudden_npv
 
-    Validation enforces tax-neutral FCFF. No depreciation or tax shield included.
-    RFC: When enabling taxes, change FCFF build and set use_after_tax_wacc=true.
-
-    No depreciation component is discounted since taxes/shield are disabled.
-    RFC: With taxes on, add PV_Dep and switch identity to match EBIT(1−T)+Dep.
+    The DCF methodology and discounting logic are identical for both types.
     """
 
-    logger.info("Calculating NPV per asset using DCF methodology...")
+    logger.info(
+        "Calculating NPV per asset using DCF methodology (per trajectory_type)..."
+    )
 
     npv_data = asset_earnings.copy()
 
     # Determine discount rate based on scenario type
-    # If scenario contains baseline indicators, use baseline rate, otherwise shock rate
     baseline_indicators = ["baseline", "current", "indc", "ndc", "curpol"]
 
     def get_discount_rate(scenario_type, scenario_name):
-        """Determine appropriate discount rate based on scenario characteristics."""
         scenario_lower = str(scenario_name).lower() if pd.notna(scenario_name) else ""
         type_lower = str(scenario_type).lower() if pd.notna(scenario_type) else ""
-
-        # Check if this is a baseline scenario
-        if any(
-            indicator in scenario_lower or indicator in type_lower
-            for indicator in baseline_indicators
-        ):
-            return discount_rate_baseline
-        else:
-            return discount_rate_shock
-
-    # Apply discount rates
-    npv_data["discount_rate"] = npv_data.apply(
-        lambda row: get_discount_rate(
-            row.get("scenario_type", ""), row.get("scenario", "")
-        ),
-        axis=1,
-    )
-
-    # Group by asset and calculate NPV
-    npv_results = []
-
-    # Add progress bar for asset processing
-    asset_groups = list(npv_data.groupby("asset_id"))
-    for asset_id, asset_data in tqdm(
-        asset_groups, desc="Calculating NPV per asset", unit="asset"
-    ):
-        asset_data = asset_data.sort_values("year").copy()
-
-        # Get asset metadata
-        first_row = asset_data.iloc[0]
-        discount_rate = first_row["discount_rate"]
-        base_year = asset_data["year"].min()
-
-        # Calculate present values
-        asset_data["years_from_base"] = asset_data["year"] - base_year
-        asset_data["discount_factor"] = (1 + discount_rate) ** (
-            -asset_data["years_from_base"]
+        return (
+            discount_rate_baseline
+            if any(
+                indicator in scenario_lower or indicator in type_lower
+                for indicator in baseline_indicators
+            )
+            else discount_rate_shock
         )
-        asset_data["pv_fcff"] = asset_data["FCFF"] * asset_data["discount_factor"]
 
-        # Calculate DCF sum (present value of explicit forecast period)
-        dcf_sum = asset_data["pv_fcff"].sum()
+    # Guard: need trajectory_type and FCFF
+    need_cols = ["asset_id", "year", "FCFF", "trajectory_type"]
+    missing = [c for c in need_cols if c not in npv_data.columns]
+    if missing:
+        raise ValueError(f"asset_earnings missing required columns for NPV: {missing}")
 
-        # Calculate terminal value
+    group_keys = [
+        "asset_id",
+        "company_id",
+        "scenario_geography",
+        "sector",
+        "technology",
+        "is_synthetic",
+        "alignment_type",
+        "trajectory_type",
+    ]
+
+    per_traj_results = []
+
+    for key, g in tqdm(
+        list(npv_data.groupby(group_keys)), desc="NPV per asset/trajectory", unit="grp"
+    ):
+        g = g.sort_values("year").copy()
+        first_row = g.iloc[0]
+        discount_rate = get_discount_rate(
+            first_row.get("scenario_type", ""), first_row.get("scenario", "")
+        )
+        base_year = int(g["year"].min())
+
+        # DCF
+        g["years_from_base"] = g["year"] - base_year
+        g["discount_factor"] = (1 + discount_rate) ** (-g["years_from_base"])
+        g["pv_fcff"] = g["FCFF"] * g["discount_factor"]
+        dcf_sum = float(g["pv_fcff"].sum())
+
+        # Terminal value (per trajectory)
         terminal_value = 0.0
-
-        if (terminal_method == "perpetuity") and (len(asset_data) > 0):
-            # Use final year FCFF for terminal value calculation
-            final_fcff = asset_data["FCFF"].iloc[-1]
-            final_year = asset_data["year"].iloc[-1]
-
+        if (terminal_method == "perpetuity") and (len(g) > 0):
+            final_fcff = float(g["FCFF"].iloc[-1])
+            final_year = int(g["year"].iloc[-1])
             if final_fcff > 0:
-                # Terminal value = Final FCFF * (1 + g) / (r - g)
                 terminal_cf = final_fcff * (1 + terminal_growth_rate)
                 if discount_rate > terminal_growth_rate:
                     terminal_value_nominal = terminal_cf / (
                         discount_rate - terminal_growth_rate
                     )
-
-                    # Discount terminal value back to base year
-                    years_to_terminal = final_year + 1 - base_year
+                    years_to_terminal = (final_year + 1) - base_year
                     terminal_discount_factor = (1 + discount_rate) ** (
                         -years_to_terminal
                     )
-                    terminal_value = terminal_value_nominal * terminal_discount_factor
+                    terminal_value = float(
+                        terminal_value_nominal * terminal_discount_factor
+                    )
 
-        # Total NPV = DCF sum + Terminal value
         npv_total = dcf_sum + terminal_value
 
-        # Create result record with asset metadata
-        result = {
-            "asset_id": asset_id,
-            "company_id": first_row["company_id"],
-            "scenario_provider": first_row.get("scenario_provider", ""),
-            "scenario": first_row.get("scenario", ""),
-            "scenario_type": first_row.get("scenario_type", ""),
-            "scenario_geography": first_row["scenario_geography"],
-            "sector": first_row["sector"],
-            "technology": first_row["technology"],
-            "is_synthetic": first_row.get("is_synthetic", False),
-            "aligned": first_row.get("aligned", True),
-            "increasing": first_row.get("increasing", False),
-            "alignment_type": first_row.get("alignment_type", "aligned"),
-            "discount_rate": discount_rate,
-            "base_year": base_year,
-            "terminal_method": terminal_method,
-            "terminal_growth_rate": terminal_growth_rate,
-            "DCF_sum": dcf_sum,
-            "Terminal_Value": terminal_value,
-            "NPV": npv_total,
-        }
+        meta = {k: first_row.get(k) for k in group_keys}
+        meta.update(
+            {
+                "discount_rate": discount_rate,
+                "base_year": base_year,
+                "terminal_method": terminal_method,
+                "terminal_growth_rate": terminal_growth_rate,
+                "NPV": npv_total,
+            }
+        )
+        per_traj_results.append(meta)
 
-        npv_results.append(result)
+    per_traj_df = pd.DataFrame(per_traj_results)
 
-    npv_df = pd.DataFrame(npv_results)
+    # Pivot to wide columns per asset/scenario (baseline_npv, latesudden_npv)
+    wide_index = [c for c in group_keys if c != "trajectory_type"]
+    wide_index = [c for c in wide_index if c in per_traj_df.columns]
 
-    logger.info(f"Calculated NPV for {len(npv_df)} assets")
-    logger.info(f"Average NPV: ${npv_df['NPV'].mean():,.0f}")
-    logger.info(
-        f"Baseline rate assets: {(npv_df['discount_rate'] == discount_rate_baseline).sum()}"
-    )
-    logger.info(
-        f"Shock rate assets: {(npv_df['discount_rate'] == discount_rate_shock).sum()}"
-    )
+    npv_wide = per_traj_df.pivot(
+        index=wide_index,
+        columns="trajectory_type",
+        values=[
+            "NPV",
+            "discount_rate",
+        ],
+    ).reset_index()
 
-    return npv_df
+    # Flatten multi-level columns and rename to desired output names
+    npv_wide.columns = npv_wide.columns.to_flat_index()
+    rename_map = {}
+    for col in npv_wide.columns:
+        if isinstance(col, tuple) and len(col) == 2:
+            value_name, trajectory_type = col
+            # Handle single-level columns (they become ('column_name', ''))
+            if trajectory_type == "":
+                rename_map[col] = value_name
+            # Handle multi-level columns for NPV and discount_rate
+            elif value_name == "NPV":
+                if trajectory_type == "baseline":
+                    rename_map[col] = "baseline_npv"
+                elif trajectory_type == "latesudden":
+                    rename_map[col] = "latesudden_npv"
+            elif value_name == "discount_rate":
+                if trajectory_type == "baseline":
+                    rename_map[col] = "baseline_discount_rate"
+                elif trajectory_type == "latesudden":
+                    rename_map[col] = "latesudden_discount_rate"
+    npv_wide = npv_wide.rename(columns=rename_map)
+
+    logger.info(f"Calculated NPV (wide) for {len(npv_wide)} assets")
+
+    return npv_wide
 
 
 def aggregate_to_company_technology_npv(asset_npv: pd.DataFrame) -> pd.DataFrame:
@@ -162,30 +169,19 @@ def aggregate_to_company_technology_npv(asset_npv: pd.DataFrame) -> pd.DataFrame
     # Group by company, technology and scenario dimensions
     groupby_cols = [
         "company_id",
+        "sector",
         "technology",
-        "scenario_provider",
-        "scenario",
-        "scenario_type",
         "scenario_geography",
     ]
 
     # Define aggregation functions
     agg_funcs = {
-        # Sum NPV components
-        "DCF_sum": "sum",
-        "Terminal_Value": "sum",
-        "NPV": "sum",
-        # Take first value for metadata (should be consistent within group)
-        "sector": "first",
-        "discount_rate": "first",
-        "base_year": "first",
-        "terminal_method": "first",
-        "terminal_growth_rate": "first",
-        # Boolean flags - any True means True for the group
-        "is_synthetic": "any",
-        "aligned": "any",
-        "increasing": "any",
-        # Count number of assets
+        # Sum NPV components (already wide)
+        "baseline_npv": "sum",
+        "latesudden_npv": "sum",
+        "baseline_discount_rate": "mean",
+        "latesudden_discount_rate": "mean",
+        # Count assets
         "asset_id": "count",
     }
 
@@ -194,19 +190,14 @@ def aggregate_to_company_technology_npv(asset_npv: pd.DataFrame) -> pd.DataFrame
     # Rename asset count column
     company_tech_npv = company_tech_npv.rename(columns={"asset_id": "asset_count"})
 
-    # Create alignment type summary
-    alignment_summary = (
-        asset_npv.groupby(groupby_cols)
-        .apply(lambda x: ", ".join(x["alignment_type"].unique()))
-        .reset_index(name="alignment_type_mix")
+    company_tech_npv = company_tech_npv.assign(
+        npv_change=(
+            company_tech_npv["latesudden_npv"] - company_tech_npv["baseline_npv"]
+        )
+        / company_tech_npv["baseline_npv"],
     )
-
-    company_tech_npv = company_tech_npv.merge(
-        alignment_summary, on=groupby_cols, how="left"
-    )
-
     logger.info(
-        f"Aggregated to {len(company_tech_npv)} company-technology combinations"
+        f"Aggregated to {len(company_tech_npv)} company-technology-scenario_geography combinations"
     )
 
     return company_tech_npv
@@ -220,76 +211,27 @@ def aggregate_to_company_npv(company_technology_npv: pd.DataFrame) -> pd.DataFra
     logger.info("Aggregating NPV to company level...")
 
     # Group by company and scenario dimensions only
-    groupby_cols = [
-        "company_id",
-        "scenario_provider",
-        "scenario",
-        "scenario_type",
-        "scenario_geography",
-    ]
+    groupby_cols = ["company_id"]
 
     # Define aggregation functions
     agg_funcs = {
         # Sum NPV components across all technologies
-        "DCF_sum": "sum",
-        "Terminal_Value": "sum",
-        "NPV": "sum",
+        "baseline_npv": "sum",
+        "latesudden_npv": "sum",
+        "baseline_discount_rate": "mean",
+        "latesudden_discount_rate": "mean",
         # Sum asset counts
         "asset_count": "sum",
-        # Take first value for metadata
-        "sector": "first",
-        "discount_rate": "first",
-        "base_year": "first",
-        "terminal_method": "first",
-        "terminal_growth_rate": "first",
-        # Boolean flags - any True means True for the company
-        "is_synthetic": "any",
-        "aligned": "any",
-        "increasing": "any",
     }
 
     company_npv = (
         company_technology_npv.groupby(groupby_cols).agg(agg_funcs).reset_index()
     )
 
-    # Create technology mix summary
-    tech_mix = (
-        company_technology_npv.groupby(groupby_cols)
-        .apply(lambda x: ", ".join(sorted(x["technology"].unique())))
-        .reset_index(name="technology_mix")
+    company_npv = company_npv.assign(
+        npv_change=(company_npv["latesudden_npv"] - company_npv["baseline_npv"])
+        / company_npv["baseline_npv"],
     )
-
-    company_npv = company_npv.merge(tech_mix, on=groupby_cols, how="left")
-
-    # Create sector mix summary
-    sector_mix = (
-        company_technology_npv.groupby(groupby_cols)
-        .apply(lambda x: ", ".join(sorted(x["sector"].unique())))
-        .reset_index(name="sector_mix")
-    )
-
-    company_npv = company_npv.merge(sector_mix, on=groupby_cols, how="left")
-
-    # Create alignment type summary
-    alignment_mix = (
-        company_technology_npv.groupby(groupby_cols)
-        .apply(
-            lambda x: ", ".join(
-                sorted(
-                    set(
-                        [
-                            item
-                            for sublist in x["alignment_type_mix"].str.split(", ")
-                            for item in sublist
-                        ]
-                    )
-                )
-            )
-        )
-        .reset_index(name="alignment_type_mix")
-    )
-
-    company_npv = company_npv.merge(alignment_mix, on=groupby_cols, how="left")
 
     logger.info(f"Aggregated to {len(company_npv)} company-level records")
 

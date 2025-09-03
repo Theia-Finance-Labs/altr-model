@@ -6,10 +6,6 @@ generated using Kedro 0.19.12
 import pandas as pd
 from typing import Tuple, Union
 import numpy as np
-import matplotlib.pyplot as plt
-import os
-from pathlib import Path
-import re
 
 
 def determine_companies_technologies_alignment(
@@ -142,23 +138,13 @@ def late_sudden_misaligned_high_carbon_companies(
     """
     Late & Sudden pathway for *misaligned high-carbon* companies with *asset retirement*.
 
-        Retirement rule (permanent capacity reduction):
-      For each asset (company_id, sector, technology) that retires in year y_r with a given
-      `capacity`, subtract that capacity from the L&S pathway for all years >= y_r (cumulative
-      for multiple assets). Values are clipped to >= 0.
-
     Phase labeling:
       - Base phases: forecast / bau / transition / aligned / aligned_compensation
-      - The specific year when a retirement event occurs gets the "retirement" phase.
-      - Retirement phase remains "retirement" even when compensation is applied.
 
     Inputs
     ------
     misaligned_high_carbon_companies_trajectories : DataFrame
         Already filtered companies_trajectories for misaligned high-carbon companies
-    assets_retirement_dates : DataFrame with columns
-        ['company_id','scenario_geography','sector','technology','retirement_year','capacity']
-        capacity treated as non-negative.
     shock_year, alignment_year : int
 
     Returns
@@ -236,7 +222,7 @@ def late_sudden_misaligned_high_carbon_companies(
             ls[mask_p4] = target[mask_p4]
             phase[mask_p4] = "aligned"
 
-        # -------- Phase 5: Compensation (uniform, non-positive; same logic, computed AFTER retirements) --------
+        # -------- Phase 5: Compensation  --------
         pre_mask = years <= alignment_year
         post_mask = years > alignment_year
         pre_excess = float(np.nansum(ls[pre_mask] - target[pre_mask]))
@@ -249,12 +235,7 @@ def late_sudden_misaligned_high_carbon_companies(
             comp_per_year = -compensation_volume / n_years_comp  # <= 0
             ls[post_mask] = np.maximum(ls[post_mask] + comp_per_year, 0.0)
             # Upgrade alignment labels to reflect compensation
-            # Keep retirement phase as-is, only modify aligned phases
-            phase[post_mask] = np.where(
-                phase[post_mask] == "retirement",
-                "retirement",  # Keep retirement phase unchanged
-                "aligned_compensation",
-            )
+            phase[post_mask] = "aligned_compensation"
 
         # -------- Attach outputs --------
         g["company_trajectory_latesudden"] = ls
@@ -691,11 +672,28 @@ def concatenate_late_sudden_results(
     # Concatenate all late sudden results
     if late_sudden_dfs:
         all_late_sudden = pd.concat(late_sudden_dfs, ignore_index=True)
+        all_late_sudden = all_late_sudden[
+            [
+                "company_id",
+                "company_name",
+                "scenario_geography",
+                "sector",
+                "technology",
+                "year",
+                "company_activity",
+                "company_trajectory_baseline",
+                "company_trajectory_target",
+                "company_trajectory_latesudden",
+                "late_sudden_phase",
+                "alignment_type",
+            ]
+        ]
     else:
         # Create empty dataframe with expected columns if no data
         all_late_sudden = pd.DataFrame(
             columns=[
                 "company_id",
+                "company_name",
                 "scenario_geography",
                 "sector",
                 "technology",
@@ -709,4 +707,32 @@ def concatenate_late_sudden_results(
             ]
         )
 
-    return all_late_sudden
+    all_late_sudden_melted = (
+        all_late_sudden.melt(
+            id_vars=[
+                "company_id",
+                "company_name",
+                "scenario_geography",
+                "sector",
+                "technology",
+                "year",
+                "late_sudden_phase",
+                "alignment_type",
+            ],
+            value_vars=[
+                "company_trajectory_latesudden",
+                "company_trajectory_baseline",
+                "company_trajectory_target",
+            ],
+            var_name="variable",
+            value_name="company_trajectory",
+        )
+        .assign(
+            trajectory_type=lambda df: df["variable"].str.replace(
+                "company_trajectory_", "", regex=False
+            )
+        )
+        .drop(columns="variable")
+        .reset_index(drop=True)
+    )
+    return all_late_sudden_melted

@@ -62,14 +62,6 @@ def determine_assets_retirement_dates(
         ["company_id", "asset_id", "scenario_geography", "technology", "year"]
     )
 
-    # Get the maximum forecast year for each asset
-    last_forecast_year = (
-        allocated_assets_to_companies.dropna(subset=["asset_activity"])
-        .year.round(0)
-        .max()
-        .astype(int)
-    )
-
     # Merge with lifetime data
     extended_assets = pd.merge(
         extended_assets,
@@ -78,11 +70,43 @@ def determine_assets_retirement_dates(
         how="left",
     )
 
+    def apply_refurbishment_to_assets(extended_assets: pd.DataFrame) -> pd.DataFrame:
+        # Keep original ages for reference
+        extended_assets["asset_age_original"] = extended_assets["asset_age"]
+
+        # Ensure integer years for offsets
+        extended_assets["year"] = extended_assets["year"].astype(int)
+
+        # Keys that define a unique asset timeline (match your earlier sort)
+        grp_keys = ["company_id", "asset_id", "scenario_geography", "technology"]
+
+        # First year and first observed age per asset timeline (respects prior sort)
+        first_year = extended_assets.groupby(grp_keys)["year"].transform("first")
+        first_age = extended_assets.groupby(grp_keys)["asset_age"].transform("first")
+
+        # Year offset within each asset timeline
+        year_offset = extended_assets["year"] - first_year
+
+        # Lifetime validity mask
+        lifetime = extended_assets["lifetime_years"]
+        valid_life = lifetime.notna() & np.isfinite(lifetime) & (lifetime > 0)
+
+        # Start-of-series age aligned to refurbishment cycle ONLY at the first year:
+        # new_start_age = first_age % lifetime  (when lifetime valid); else keep first_age
+        start_age = np.where(valid_life, np.mod(first_age, lifetime), first_age)
+
+        # Then age increases linearly each year without further wrapping
+        extended_assets["asset_age"] = start_age + year_offset
+
+        return extended_assets
+
+    # Apply refurbishment to assets
+    extended_assets = apply_refurbishment_to_assets(extended_assets)
+
     # Find retirement dates: when asset_age exceeds lifetime_years for the first time
     # and only consider years after the last forecast year
     retirement_candidates = extended_assets[
         (extended_assets["asset_age"] > extended_assets["lifetime_years"])
-        & (extended_assets["year"] > last_forecast_year)
     ]
 
     # Get the first year each asset exceeds its lifetime (retirement year)

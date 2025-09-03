@@ -13,8 +13,6 @@ from .nodes import (
     compute_ops_block,
     compute_fcff,
     write_asset_earnings_series,
-    aggregate_to_company_technology_earnings,
-    aggregate_to_company_earnings,
 )
 
 
@@ -25,7 +23,7 @@ def create_pipeline(**kwargs) -> Pipeline:
             node(
                 func=validate_and_standardize_inputs,
                 inputs=dict(
-                    asset_level_staggered_shock="asset_level_staggered_shock",
+                    asset_level_staggered_shock="asset_level_staggered_shock_melted",
                     downloaded_scenarios="scenarios_pathways",
                     all_alignment_classifications="all_alignment_classifications",
                     assets_data="assets_forecasts_with_scenario_geographies",
@@ -34,7 +32,6 @@ def create_pipeline(**kwargs) -> Pipeline:
                     assets_validated="_temp_assets_validated",
                     scenarios_validated="_temp_scenarios_validated",
                     alignments_validated="_temp_alignments_validated",
-                    assets_static_validated="_temp_assets_static_validated",
                 ),
             ),
             # Node 2: Build scenario surfaces
@@ -49,7 +46,6 @@ def create_pipeline(**kwargs) -> Pipeline:
                 inputs=dict(
                     assets_adjusted="_temp_assets_validated",
                     scenario_surfaces="_temp_scenario_surfaces",
-                    assets_static_validated="_temp_assets_static_validated",
                     shock_year="params:shock_year",
                 ),
                 outputs="_temp_asset_panel_enriched",
@@ -89,18 +85,6 @@ def create_pipeline(**kwargs) -> Pipeline:
                 ),
                 outputs="asset_earnings",
             ),
-            # # Node 9: Aggregate to company-technology level
-            # node(
-            #     func=aggregate_to_company_technology_earnings,
-            #     inputs="_temp_asset_cashflows",
-            #     outputs="company_technology_earnings",
-            # ),
-            # # Node 10: Aggregate to company level
-            # node(
-            #     func=aggregate_to_company_earnings,
-            #     inputs="company_technology_earnings",
-            #     outputs="company_earnings",
-            # ),
         ],
         tags="altrisk",
     )
