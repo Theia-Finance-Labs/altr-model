@@ -202,9 +202,7 @@ def concatenate_staggered_shock_results(
 
     companies_late_sudden_trajectories_final = pd.concat(
         [
-            companies_late_sudden_trajectories[
-                companies_late_sudden_trajectories["trajectory_type"] == "latesudden"
-            ],
+            companies_late_sudden_trajectories.query("trajectory_type == 'latesudden'"),
             original_companies_late_sudden_trajectories.query(
                 "trajectory_type == 'baseline'"
             ),
@@ -1155,21 +1153,6 @@ def stagger_decreasing_technologies(
         return assets_df, corrections_df
 
     # ---------- FAST STAGGERED BRANCH ----------
-    need_c = GROUP_COLS + [
-        "year",
-        "trajectory_type",
-        "company_trajectory",
-        "late_sudden_phase",
-        "alignment_type",
-    ]
-    miss_c = [c for c in need_c if c not in late_sudden_trajectories.columns]
-    if miss_c:
-        raise ValueError(f"late_sudden_trajectories missing columns: {miss_c}")
-
-    need_a = GROUP_COLS + ["asset_id", "year", "asset_activity", "asset_age"]
-    miss_a = [c for c in need_a if c not in assets_with_baseline_trajectory.columns]
-    if miss_a:
-        raise ValueError(f"assets_with_baseline_trajectory missing columns: {miss_a}")
 
     lsc = late_sudden_trajectories.copy()
     lsc = lsc[lsc["trajectory_type"] == "latesudden"].copy()

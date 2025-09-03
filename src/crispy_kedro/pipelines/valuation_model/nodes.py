@@ -55,20 +55,14 @@ def calculate_npv_per_asset(
     if missing:
         raise ValueError(f"asset_earnings missing required columns for NPV: {missing}")
 
-    # Build group keys (keep common scenario dimensions if present)
     group_keys = [
         "asset_id",
-        *(["company_id"] if "company_id" in npv_data.columns else []),
-        *(["scenario_provider"] if "scenario_provider" in npv_data.columns else []),
-        *(["scenario"] if "scenario" in npv_data.columns else []),
-        *(["scenario_type"] if "scenario_type" in npv_data.columns else []),
-        *(["scenario_geography"] if "scenario_geography" in npv_data.columns else []),
-        *(["sector"] if "sector" in npv_data.columns else []),
-        *(["technology"] if "technology" in npv_data.columns else []),
-        *(["is_synthetic"] if "is_synthetic" in npv_data.columns else []),
-        *(["aligned"] if "aligned" in npv_data.columns else []),
-        *(["increasing"] if "increasing" in npv_data.columns else []),
-        *(["alignment_type"] if "alignment_type" in npv_data.columns else []),
+        "company_id",
+        "scenario_geography",
+        "sector",
+        "technology",
+        "is_synthetic",
+        "alignment_type",
         "trajectory_type",
     ]
 
@@ -145,12 +139,6 @@ def calculate_npv_per_asset(
         rename_map["latesudden"] = "latesudden_npv"
     npv_wide = npv_wide.rename(columns=rename_map)
 
-    # Ensure both columns present
-    if "baseline_npv" not in npv_wide.columns:
-        npv_wide["baseline_npv"] = 0.0
-    if "latesudden_npv" not in npv_wide.columns:
-        npv_wide["latesudden_npv"] = 0.0
-
     logger.info(f"Calculated NPV (wide) for {len(npv_wide)} assets")
 
     return npv_wide
@@ -166,10 +154,8 @@ def aggregate_to_company_technology_npv(asset_npv: pd.DataFrame) -> pd.DataFrame
     # Group by company, technology and scenario dimensions
     groupby_cols = [
         "company_id",
+        "sector",
         "technology",
-        "scenario_provider",
-        "scenario",
-        "scenario_type",
         "scenario_geography",
     ]
 
@@ -178,30 +164,23 @@ def aggregate_to_company_technology_npv(asset_npv: pd.DataFrame) -> pd.DataFrame
         # Sum NPV components (already wide)
         "baseline_npv": "sum",
         "latesudden_npv": "sum",
-        # Take first value for metadata (should be consistent within group)
-        "sector": "first",
         # Count assets
         "asset_id": "count",
     }
-
-    # Ensure needed columns exist
-    for col in ["baseline_npv", "latesudden_npv"]:
-        if col not in asset_npv.columns:
-            asset_npv[col] = 0.0
-
-    if "asset_id" not in asset_npv.columns:
-        # create a surrogate count by taking number of rows per group later
-        tmp = asset_npv.copy()
-        tmp["asset_id"] = tmp.get("asset_id", pd.Series(dtype=object))
-        asset_npv = tmp
 
     company_tech_npv = asset_npv.groupby(groupby_cols).agg(agg_funcs).reset_index()
 
     # Rename asset count column
     company_tech_npv = company_tech_npv.rename(columns={"asset_id": "asset_count"})
 
+    company_tech_npv = company_tech_npv.assign(
+        npv_change=(
+            company_tech_npv["latesudden_npv"] - company_tech_npv["baseline_npv"]
+        )
+        / company_tech_npv["baseline_npv"],
+    )
     logger.info(
-        f"Aggregated to {len(company_tech_npv)} company-technology combinations"
+        f"Aggregated to {len(company_tech_npv)} company-technology-scenario_geography combinations"
     )
 
     return company_tech_npv
@@ -217,10 +196,6 @@ def aggregate_to_company_npv(company_technology_npv: pd.DataFrame) -> pd.DataFra
     # Group by company and scenario dimensions only
     groupby_cols = [
         "company_id",
-        "scenario_provider",
-        "scenario",
-        "scenario_type",
-        "scenario_geography",
     ]
 
     # Define aggregation functions
@@ -232,12 +207,13 @@ def aggregate_to_company_npv(company_technology_npv: pd.DataFrame) -> pd.DataFra
         "asset_count": "sum",
     }
 
-    for col in ["baseline_npv", "latesudden_npv"]:
-        if col not in company_technology_npv.columns:
-            company_technology_npv[col] = 0.0
-
     company_npv = (
         company_technology_npv.groupby(groupby_cols).agg(agg_funcs).reset_index()
+    )
+
+    company_npv = company_npv.assign(
+        npv_change=(company_npv["latesudden_npv"] - company_npv["baseline_npv"])
+        / company_npv["baseline_npv"],
     )
 
     logger.info(f"Aggregated to {len(company_npv)} company-level records")

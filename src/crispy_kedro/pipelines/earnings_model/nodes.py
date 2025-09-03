@@ -35,6 +35,32 @@ def validate_and_standardize_inputs(
 
     # Clean asset data (melted: includes trajectory_type, asset_trajectory)
     assets = asset_level_staggered_shock.copy()
+
+    # Add emission factor to assets
+    assets = assets.merge(
+        assets_data[
+            [
+                "asset_id",
+                "sector",
+                "technology",
+                "scenario_geography",
+                "year",
+                "emission_factor",
+            ]
+        ],
+        on=[
+            "asset_id",
+            "sector",
+            "technology",
+            "scenario_geography",
+            "year",
+        ],
+        how="left",
+    )
+
+    # Fill missing emission factors with 0 (for synthetic assets that are renewables)
+    assets["emission_factor"] = assets["emission_factor"].fillna(0.0)
+
     logger.info("Initial assets shape: %s", assets.shape)
     logger.info(
         "Initial assets sample: %s",
@@ -53,11 +79,7 @@ def validate_and_standardize_inputs(
         assets[col] = assets[col].astype(str).str.strip()
 
     # Ensure numeric columns (melted)
-    numeric_cols = [
-        "year",
-        "asset_age",
-        "asset_trajectory",
-    ]
+    numeric_cols = ["year", "asset_age", "asset_trajectory", "emission_factor"]
     for col in numeric_cols:
         before_conversion = len(assets)
         assets[col] = pd.to_numeric(assets[col], errors="coerce")
@@ -74,10 +96,8 @@ def validate_and_standardize_inputs(
             "Sample non-NaN values: %s", assets[col].dropna().head(3).tolist()
         )
 
-    # Standardize trajectory_type and map to capacity_after_shock for downstream
-    if "trajectory_type" in assets.columns:
-        assets["trajectory_type"] = assets["trajectory_type"].astype(str).str.strip()
-    assets["capacity_after_shock"] = assets["asset_trajectory"].astype(float)
+    # Standardize trajectory_type
+    assets["trajectory_type"] = assets["trajectory_type"].astype(str)
 
     # Clean scenarios data
     scenarios = downloaded_scenarios.copy()
@@ -112,33 +132,17 @@ def validate_and_standardize_inputs(
     alignments = all_alignment_classifications.copy()
 
     # Standardize columns
-    alignments["company_id"] = alignments["company_id"].astype(str).str.strip()
-    alignments["scenario_geography"] = (
-        alignments["scenario_geography"].astype(str).str.strip()
-    )
-    alignments["sector"] = alignments["sector"].astype(str).str.strip()
-    alignments["technology"] = alignments["technology"].astype(str).str.strip()
+    alignments["company_id"] = alignments["company_id"].astype(str)
+    alignments["scenario_geography"] = alignments["scenario_geography"].astype(str)
+    alignments["sector"] = alignments["sector"].astype(str)
+    alignments["technology"] = alignments["technology"].astype(str)
 
     # Ensure boolean columns
     alignments["aligned"] = alignments["aligned"].astype(bool)
     alignments["increasing"] = alignments["increasing"].astype(bool)
 
-    # Clean assets static data (emission factors, etc.)
-    assets_static = assets_data.copy()
-
-    # Standardize columns
-    assets_static["asset_id"] = assets_static["asset_id"].astype(str).str.strip()
-    assets_static["sector"] = assets_static["sector"].astype(str).str.strip()
-    assets_static["technology"] = assets_static["technology"].astype(str).str.strip()
-
-    # Ensure numeric emission factors
-    assets_static["emission_factor"] = pd.to_numeric(
-        assets_static["emission_factor"], errors="coerce"
-    ).fillna(0.0)
-
     # Standardize trajectory_type
-    if "trajectory_type" in assets.columns:
-        assets["trajectory_type"] = assets["trajectory_type"].astype(str).str.strip()
+    assets["trajectory_type"] = assets["trajectory_type"].astype(str)
 
     # Check year continuity per asset and trajectory (non-destructive check)
     logger.info("Assets shape before year continuity check: %s", assets.shape)
@@ -166,13 +170,11 @@ def validate_and_standardize_inputs(
     logger.info("Processed %s asset-year rows", len(assets))
     logger.info("Processed %s scenario-year rows", len(scenarios))
     logger.info("Processed %s alignment classifications", len(alignments))
-    logger.info("Processed %s assets static data rows", len(assets_static))
 
     return {
         "assets_validated": assets,
         "scenarios_validated": scenarios,
         "alignments_validated": alignments,
-        "assets_static_validated": assets_static,
     }
 
 
@@ -251,7 +253,6 @@ def build_scenario_surfaces(scenarios_validated: pd.DataFrame) -> pd.DataFrame:
 def assemble_asset_panel(
     assets_adjusted: pd.DataFrame,
     scenario_surfaces: pd.DataFrame,
-    assets_static_validated: pd.DataFrame,
     shock_year: int,
 ) -> pd.DataFrame:
     """
@@ -281,34 +282,22 @@ def assemble_asset_panel(
         )
         .reset_index(drop=True)
         .sort_values(["scenario_geography", "sector", "technology", "year"])
+        .assign(trajectory_type="latesudden")
     )
+    baseline_scenario_surfaces = scenario_surfaces.loc[
+        scenario_surfaces["scenario_type"] == "baseline",
+        :,
+    ].assign(trajectory_type="baseline")
+    all_scenario_surfaces = pd.concat(
+        [baseline_scenario_surfaces, mixed_scenario_surfaces], axis=0
+    ).reset_index(drop=True)
 
     # Join scenario surfaces
     panel_enriched = panel.merge(
-        mixed_scenario_surfaces,
-        on=["scenario_geography", "sector", "technology", "year"],
+        all_scenario_surfaces,
+        on=["trajectory_type", "scenario_geography", "sector", "technology", "year"],
         how="left",
     )
-
-    # Join assets static data to get emission factors
-    # TODO: emission factors should be propagated from earlier
-    #   in the pipeline, from the staggered shock part
-    assets_static_validated_1_row = (
-        assets_static_validated.sort_values("year")
-        .groupby(["asset_id", "sector", "technology"])
-        .first()
-        .reset_index()
-    )
-    panel_enriched = panel_enriched.merge(
-        assets_static_validated_1_row.loc[
-            :, ["asset_id", "sector", "technology", "emission_factor"]
-        ],
-        on=["asset_id", "sector", "technology"],
-        how="left",
-    )
-
-    # Fill missing emission factors with 0 (for synthetic assets or missing data)
-    panel_enriched["emission_factor"] = panel_enriched["emission_factor"].fillna(0.0)
 
     logger.info("Assembled panel with %s asset-year rows", len(panel_enriched))
 
@@ -334,12 +323,13 @@ def validate_capacity_flow_identity(
 
     # Sort by asset and year
     data = data.sort_values(
-        ["company_id", "asset_id", "technology", "year"]
+        ["trajectory_type", "company_id", "asset_id", "technology", "year"]
     ).reset_index(drop=True)
 
     # Check for and remove duplicates before pivoting
     # Each (company_id, asset_id, technology, year, capex_indicator) combination should be unique
     duplicate_check_cols = [
+        "trajectory_type",
         "company_id",
         "asset_id",
         "technology",
@@ -349,23 +339,20 @@ def validate_capacity_flow_identity(
 
     duplicates_count = data.duplicated(subset=duplicate_check_cols).sum()
     if duplicates_count > 0:
-        logger.warning(
+        raise ValueError(
             "Found %s duplicate capacity flow records. Removing duplicates...",
             duplicates_count,
         )
-        # Keep first occurrence of duplicates
-        data = data.drop_duplicates(subset=duplicate_check_cols, keep="first")
-        logger.info("After deduplication: %s rows remaining", len(data))
 
     # Get capacity flows by indicator type per asset-year
     # Use pivot_table with aggfunc='sum' to aggregate flows by type
     flows_pivot = data.pivot_table(
         index=[
+            "trajectory_type",
             "company_id",
             "asset_id",
             "technology",
             "year",
-            *(["trajectory_type"] if "trajectory_type" in data.columns else []),
         ],
         columns="capex_indicator",
         values="capex_capacity",
@@ -384,7 +371,7 @@ def validate_capacity_flow_identity(
         "asset_id",
         "technology",
         "year",
-        *(["trajectory_type"] if "trajectory_type" in data.columns else []),
+        "trajectory_type",
     ]
     capacity_data = data[base_cols + ["asset_trajectory"]].drop_duplicates()
 
@@ -392,12 +379,9 @@ def validate_capacity_flow_identity(
 
     # Calculate previous year capacity
     validation_data = validation_data.sort_values(
-        ["company_id", "asset_id", "technology", "year"]
-        + (["trajectory_type"] if "trajectory_type" in validation_data.columns else [])
+        ["trajectory_type", "company_id", "asset_id", "technology", "year"]
     )
-    group_keys = ["company_id", "asset_id", "technology"] + (
-        ["trajectory_type"] if "trajectory_type" in validation_data.columns else []
-    )
+    group_keys = ["trajectory_type", "company_id", "asset_id", "technology"]
     validation_data["K_prev"] = validation_data.groupby(group_keys)[
         "asset_trajectory"
     ].shift(1)
@@ -467,8 +451,7 @@ def compute_capacity_flows(asset_panel: pd.DataFrame) -> pd.DataFrame:
 
     data = asset_panel.copy()
     data = data.sort_values(
-        ["company_id", "asset_id", "technology", "year"]
-        + (["trajectory_type"] if "trajectory_type" in asset_panel.columns else [])
+        ["trajectory_type", "company_id", "asset_id", "technology", "year"]
     ).reset_index(drop=True)
 
     # Use asset_trajectory (melted capacity)
@@ -476,9 +459,7 @@ def compute_capacity_flows(asset_panel: pd.DataFrame) -> pd.DataFrame:
         raise ValueError("compute_capacity_flows expects 'asset_trajectory' column")
 
     # Calculate capacity changes vectorized, per trajectory_type when present
-    group_keys = ["company_id", "asset_id", "technology"] + (
-        ["trajectory_type"] if "trajectory_type" in data.columns else []
-    )
+    group_keys = ["trajectory_type", "company_id", "asset_id", "technology"]
     data["K_prev"] = data.groupby(group_keys)["asset_trajectory"].shift(1)
     data["capacity_change"] = (data["asset_trajectory"] - data["K_prev"]).fillna(0)
 
@@ -537,7 +518,7 @@ def compute_capacity_flows(asset_panel: pd.DataFrame) -> pd.DataFrame:
             "asset_id",
             "technology",
             "year",
-            *(["trajectory_type"] if "trajectory_type" in result.columns else []),
+            "trajectory_type",
             "capex_indicator",
         ]
     ).reset_index(drop=True)
@@ -731,230 +712,6 @@ def compute_fcff(asset_ops_block: pd.DataFrame) -> pd.DataFrame:
     logger.info("Computed FCFF for %s asset-year rows", len(cashflow_data))
 
     return cashflow_data
-
-
-def aggregate_to_company_technology_earnings(
-    asset_cashflows: pd.DataFrame,
-) -> pd.DataFrame:
-    """
-    Aggregate asset-level earnings to company-technology level.
-    """
-
-    logger.info("Aggregating to company-technology level...")
-
-    # Define aggregation functions for different metrics
-    agg_funcs = {
-        # Sum financial flows and physical quantities
-        **{
-            col: "sum"
-            for col in asset_cashflows.columns
-            if any(
-                metric in col
-                for metric in [
-                    "Q",
-                    "revenue",
-                    "var_cost",
-                    "fixed_cost",
-                    "carbon_cost_net",
-                    "EBITDA",
-                    "growth_capex",
-                    "replace_capex",
-                    "decom_cost",
-                    "capex_total",
-                    "FCFF",
-                    "asset_trajectory",
-                ]
-            )
-        },
-        # Take first value for metadata (should be same across assets of same company-technology)
-        **{
-            col: "first"
-            for col in asset_cashflows.columns
-            if col
-            in [
-                "scenario_provider",
-                "scenario",
-                "scenario_type",
-                "scenario_geography",
-                "sector",
-                "aligned",
-                "increasing",
-                "alignment_type",
-                "emission_factor",
-            ]
-        },
-    }
-
-    # Group by company, technology, and year
-    company_tech_agg = (
-        asset_cashflows.groupby(["company_id", "technology", "year"])
-        .agg(agg_funcs)
-        .reset_index()
-    )
-
-    # Calculate capacity factor and efficiency as weighted averages
-    if "capacity_factor" in asset_cashflows.columns:
-        # Weight capacity factor by capacity
-        weighted_cf = (
-            asset_cashflows.groupby(["company_id", "technology", "year"])
-            .apply(
-                lambda x: (
-                    (x["capacity_factor"] * x["asset_trajectory"]).sum()
-                    / x["asset_trajectory"].sum()
-                    if x["asset_trajectory"].sum() > 0
-                    else 0
-                )
-            )
-            .reset_index(name="capacity_factor")
-        )
-
-        company_tech_agg = company_tech_agg.merge(
-            weighted_cf, on=["company_id", "technology", "year"], how="left"
-        )
-
-    if "efficiency_decimal" in asset_cashflows.columns:
-        # Weight efficiency by production
-        weighted_eff = (
-            asset_cashflows.groupby(["company_id", "technology", "year"])
-            .apply(
-                lambda x: (
-                    (x["efficiency_decimal"] * x["Q"]).sum() / x["Q"].sum()
-                    if x["Q"].sum() > 0
-                    else 0
-                )
-            )
-            .reset_index(name="efficiency_decimal")
-        )
-
-        company_tech_agg = company_tech_agg.merge(
-            weighted_eff, on=["company_id", "technology", "year"], how="left"
-        )
-
-    # Add synthetic asset indicator
-    company_tech_agg["has_synthetic_assets"] = (
-        asset_cashflows.groupby(["company_id", "technology", "year"])["is_synthetic"]
-        .any()
-        .reset_index(drop=True)
-    )
-
-    logger.info("Aggregated to %s company-technology-year rows", len(company_tech_agg))
-
-    return company_tech_agg
-
-
-def aggregate_to_company_earnings(company_tech_earnings: pd.DataFrame) -> pd.DataFrame:
-    """
-    Aggregate company-technology level earnings to company level.
-    """
-
-    logger.info("Aggregating to company level...")
-
-    # Define aggregation functions
-    agg_funcs = {
-        # Sum all financial and physical metrics
-        **{
-            col: "sum"
-            for col in company_tech_earnings.columns
-            if any(
-                metric in col
-                for metric in [
-                    "Q",
-                    "revenue",
-                    "var_cost",
-                    "fixed_cost",
-                    "carbon_cost_net",
-                    "EBITDA",
-                    "growth_capex",
-                    "replace_capex",
-                    "decom_cost",
-                    "capex_total",
-                    "FCFF",
-                    "asset_trajectory",
-                ]
-            )
-        },
-        # Take first value for metadata
-        **{
-            col: "first"
-            for col in company_tech_earnings.columns
-            if col
-            in ["scenario_provider", "scenario", "scenario_type", "scenario_geography"]
-        },
-        # Any alignment across technologies
-        **{
-            col: "any"
-            for col in company_tech_earnings.columns
-            if col in ["aligned", "increasing", "has_synthetic_assets"]
-        },
-    }
-
-    # Group by company and year only
-    company_agg = (
-        company_tech_earnings.groupby(["company_id", "year"])
-        .agg(agg_funcs)
-        .reset_index()
-    )
-
-    # Calculate weighted averages for rates
-    if "capacity_factor" in company_tech_earnings.columns:
-        weighted_cf = (
-            company_tech_earnings.groupby(["company_id", "year"])
-            .apply(
-                lambda x: (
-                    (x["capacity_factor"] * x["asset_trajectory"]).sum()
-                    / x["asset_trajectory"].sum()
-                    if x["asset_trajectory"].sum() > 0
-                    else 0
-                )
-            )
-            .reset_index(name="capacity_factor")
-        )
-
-        company_agg = company_agg.merge(
-            weighted_cf, on=["company_id", "year"], how="left"
-        )
-
-    if "efficiency_decimal" in company_tech_earnings.columns:
-        weighted_eff = (
-            company_tech_earnings.groupby(["company_id", "year"])
-            .apply(
-                lambda x: (
-                    (x["efficiency_decimal"] * x["Q"]).sum() / x["Q"].sum()
-                    if x["Q"].sum() > 0
-                    else 0
-                )
-            )
-            .reset_index(name="efficiency_decimal")
-        )
-
-        company_agg = company_agg.merge(
-            weighted_eff, on=["company_id", "year"], how="left"
-        )
-
-    # Create technology mix summary
-    tech_mix = (
-        company_tech_earnings.groupby(["company_id", "year"])
-        .apply(lambda x: ", ".join(x["technology"].unique()))
-        .reset_index(name="technology_mix")
-    )
-
-    company_agg = company_agg.merge(tech_mix, on=["company_id", "year"], how="left")
-
-    # Create sector mix summary
-    if "sector" in company_tech_earnings.columns:
-        sector_mix = (
-            company_tech_earnings.groupby(["company_id", "year"])
-            .apply(lambda x: ", ".join(x["sector"].unique()))
-            .reset_index(name="sector_mix")
-        )
-
-        company_agg = company_agg.merge(
-            sector_mix, on=["company_id", "year"], how="left"
-        )
-
-    logger.info("Aggregated to %s company-year rows", len(company_agg))
-
-    return company_agg
 
 
 def write_asset_earnings_series(asset_cashflows: pd.DataFrame) -> pd.DataFrame:
