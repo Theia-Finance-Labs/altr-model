@@ -6,7 +6,7 @@
 
 
 baseline_scenario: "AR6_WITCH 5.0_CO_CurPol"
-target_scenario: "AR6_WITCH 5.0_EN_INDCi2030_1800f"
+target_scenario: "AR6_WITCH 5.0_EN_NPi2020_500"
 
 max_forecast_horizon: 5
 

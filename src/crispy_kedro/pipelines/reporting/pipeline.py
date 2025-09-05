@@ -12,6 +12,7 @@ from .nodes import (
     plot_earnings_inner_workings,
     plot_valuation_authority_pack,
     export_reporting_tables,
+    plot_asset_financial_trajectories,
     reporting_qc_summary,
 )
 
@@ -114,7 +115,18 @@ def create_pipeline(**kwargs) -> Pipeline:
                 },
                 name="export_reporting_tables_node",
             ),
-            # Node 6: Quality control summary
+            # Node 6: Plot asset financial trajectories by trajectory type
+            node(
+                func=plot_asset_financial_trajectories,
+                inputs=dict(
+                    yearly_npv_trajectories="yearly_npv_trajectories",
+                    asset_level_staggered_shock_melted="asset_level_staggered_shock_melted",
+                    reporting_params="params:reporting",
+                ),
+                outputs="asset_financial_trajectories_plots_dir",
+                name="plot_asset_financial_trajectories_node",
+            ),
+            # Node 7: Quality control summary
             node(
                 func=reporting_qc_summary,
                 inputs=dict(

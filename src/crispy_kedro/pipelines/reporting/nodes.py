@@ -1983,13 +1983,345 @@ def export_reporting_tables(
     }
 
 
+def plot_asset_financial_trajectories(
+    yearly_npv_trajectories: pd.DataFrame,
+    asset_level_staggered_shock_melted: pd.DataFrame,
+    reporting_params: Dict,
+) -> str:
+    """
+    Plot financial component trajectories for each asset, comparing trajectory types.
+
+    Creates grid plots showing revenue, var_cost, fixed_cost, carbon_cost_net,
+    capex_total, EBITDA, and FCFF trajectories with different trajectory types
+    overlaid for comparison.
+
+    Parameters
+    ----------
+    yearly_npv_trajectories : pd.DataFrame
+        DataFrame with yearly trajectories containing financial components
+        and trajectory_type column
+    reporting_params : Dict
+        Reporting configuration parameters
+
+    Returns
+    -------
+    str
+        Path to output directory
+    """
+
+    logger.info("Creating asset financial trajectory plots...")
+
+    # Create output directory
+    output_dir = Path("data/08_reporting/asset_financial_trajectories")
+    if output_dir.exists():
+        import shutil
+
+        shutil.rmtree(output_dir)
+        logger.info(f"Cleaned up existing directory: {output_dir}")
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    logger.info(f"Output directory created: {output_dir}")
+
+    # Financial components to plot
+    financial_components = [
+        "revenue",
+        "var_cost",
+        "fixed_cost",
+        "carbon_cost_net",
+        "capex_total",
+        "EBITDA",
+        "FCFF",
+    ]
+
+    # Merge in melted asset trajectories to bring company_name/asset_name and production series
+    melted_cols = [
+        "asset_id",
+        "company_id",
+        "company_name",
+        "asset_name",
+        "scenario_geography",
+        "technology",
+        "year",
+        "trajectory_type",
+        "asset_trajectory",
+    ]
+    melted_use = asset_level_staggered_shock_melted[melted_cols].copy()
+    merged = yearly_npv_trajectories.merge(
+        melted_use,
+        on=[
+            "asset_id",
+            "company_id",
+            "scenario_geography",
+            "technology",
+            "year",
+            "trajectory_type",
+        ],
+        how="left",
+        suffixes=("", "_melted"),
+    )
+
+    # Check which components are available
+    available_components = [
+        comp for comp in financial_components if comp in merged.columns
+    ]
+    if not available_components:
+        logger.warning("No financial components found in yearly_npv_trajectories")
+        return str(output_dir)
+
+    logger.info(
+        f"Found {len(available_components)} financial components: {available_components}"
+    )
+
+    # Plot settings
+    plots_config = reporting_params.get("plots", {})
+    dpi = plots_config.get("dpi", 160)
+
+    # Define colors and styles for trajectory types to handle overlapping lines
+    trajectory_styles = {
+        "baseline": {
+            "color": "#1f77b4",  # Blue
+            "linestyle": "-",  # Solid line
+            "marker": "o",  # Circle marker
+            "linewidth": 3.0,
+            "alpha": 0.8,
+            "markersize": 6,
+            "markeredgewidth": 1,
+            "markeredgecolor": "white",
+        },
+        "latesudden": {
+            "color": "#ff7f0e",  # Orange
+            "linestyle": "--",  # Dashed line
+            "marker": "s",  # Square marker
+            "linewidth": 2.5,
+            "alpha": 0.9,
+            "markersize": 5,
+            "markeredgewidth": 1,
+            "markeredgecolor": "white",
+        },
+        "target": {
+            "color": "#2ca02c",  # Green
+            "linestyle": "-.",  # Dash-dot line
+            "marker": "^",  # Triangle marker
+            "linewidth": 2.5,
+            "alpha": 0.8,
+            "markersize": 5,
+            "markeredgewidth": 1,
+            "markeredgecolor": "white",
+        },
+    }
+
+    def clean_name_for_filename(name):
+        """Clean name for use in filename"""
+        if pd.isna(name):
+            return "Unknown"
+        cleaned = re.sub(r'[<>:"/\\|?*]', "_", str(name))
+        cleaned = re.sub(r"[^\w\s-]", "_", cleaned)
+        cleaned = re.sub(r"\s+", "_", cleaned)
+        return cleaned[:100]  # Limit length
+
+    # Group by asset and required metadata
+    group_cols = [
+        "asset_id",
+        "company_id",
+        "scenario_geography",
+        "sector",
+        "technology",
+    ]
+
+    # Add company_name and asset_name if available
+    if "company_name" in yearly_npv_trajectories.columns:
+        group_cols.append("company_name")
+    if "asset_name" in yearly_npv_trajectories.columns:
+        group_cols.append("asset_name")
+
+    # Filter group_cols to only include existing columns
+    existing_group_cols = [
+        col for col in group_cols if col in yearly_npv_trajectories.columns
+    ]
+
+    plots_created = 0
+    total_asset_company_pairs = (
+        merged[["asset_id", "company_id"]].drop_duplicates().shape[0]
+    )
+
+    logger.info(
+        f"Creating trajectory plots for {total_asset_company_pairs} asset-company pairs..."
+    )
+
+    for i, ((asset_id, company_id), asset_data) in enumerate(
+        merged.groupby(["asset_id", "company_id"])
+    ):
+        if i % 50 == 0:  # Log progress every 50 asset-company pairs
+            logger.info(
+                f"Progress: {i}/{total_asset_company_pairs} asset-company pairs processed"
+            )
+
+        # Get asset metadata
+        first_row = asset_data.iloc[0]
+        company_id = first_row.get("company_id", "Unknown")
+        company_name = first_row.get("company_name", company_id)
+        asset_name = first_row.get("asset_name", asset_id)
+        technology = first_row.get("technology", "Unknown")
+        scenario_geography = first_row.get("scenario_geography", "Unknown")
+
+        # Clean names for filename
+        company_clean = clean_name_for_filename(company_name)
+        asset_clean = clean_name_for_filename(asset_name)
+        tech_clean = clean_name_for_filename(technology)
+        geo_clean = clean_name_for_filename(scenario_geography)
+
+        # Create filename
+        filename = f"{company_clean}-{tech_clean}-{asset_clean}-{geo_clean}.png"
+        filepath = output_dir / filename
+
+        # Sort by year for plotting
+        asset_data_sorted = asset_data.sort_values(["trajectory_type", "year"])
+
+        # Create subplot grid (3 rows, 3 columns for 7 components + production)
+        fig, axes = plt.subplots(3, 3, figsize=(18, 12))
+        fig.suptitle(
+            f"Financial Trajectories: {company_name}\n{technology} - {asset_name} - {scenario_geography}",
+            fontsize=16,
+            fontweight="bold",
+        )
+
+        # Flatten axes for easier indexing
+        axes_flat = axes.flatten()
+
+        # Define component categories for visual identification
+        basic_financial = [
+            "revenue",
+            "var_cost",
+            "fixed_cost",
+            "carbon_cost_net",
+            "capex_total",
+        ]
+        composed_financial = ["EBITDA", "FCFF"]
+        production_components = ["asset_trajectory"]
+
+        # Category colors for subplot backgrounds
+        category_colors = {
+            "basic": "#f0f8ff",  # Light blue background
+            "composed": "#f0fff0",  # Light green background
+            "production": "#fff5ee",  # Light orange background
+        }
+
+        # All components to plot (financial + production)
+        all_components = available_components.copy()
+        if "asset_trajectory" in asset_data_sorted.columns:
+            all_components.append("asset_trajectory")
+
+        # Plot each component
+        for comp_idx, component in enumerate(all_components):
+            if comp_idx >= len(axes_flat):
+                break  # Safety check
+
+            ax = axes_flat[comp_idx]
+
+            # Determine component category and set background color
+            if component in basic_financial:
+                category = "basic"
+                ax.set_facecolor(category_colors["basic"])
+            elif component in composed_financial:
+                category = "composed"
+                ax.set_facecolor(category_colors["composed"])
+            elif component == "asset_trajectory":
+                category = "production"
+                ax.set_facecolor(category_colors["production"])
+            else:
+                category = "other"
+
+            # Plot each trajectory type
+            for traj_type, traj_data in asset_data_sorted.groupby("trajectory_type"):
+                if (
+                    component in traj_data.columns
+                    and not traj_data[component].isna().all()
+                ):
+                    # Get style for this trajectory type (default style for unknown types)
+                    style = trajectory_styles.get(
+                        traj_type,
+                        {
+                            "color": "#333333",
+                            "linestyle": ":",
+                            "marker": "x",
+                            "linewidth": 2.0,
+                            "alpha": 0.7,
+                            "markersize": 4,
+                            "markeredgewidth": 1,
+                            "markeredgecolor": "white",
+                        },
+                    )
+
+                    # Plot all data including zero values to show complete trajectories
+                    plot_data = traj_data
+
+                    if len(plot_data) > 0:
+                        ax.plot(
+                            plot_data["year"],
+                            plot_data[component],
+                            label=traj_type.replace("_", " ").title(),
+                            **style,  # Unpack all style parameters
+                        )
+
+            # Customize subplot based on component type
+            if component == "asset_trajectory":
+                title = "Production (Asset Capacity)"
+                ylabel = "MW or Activity Level"
+            else:
+                title = component.replace("_", " ").title()
+                ylabel = (
+                    f"{component} ($)" if component != "capacity_factor" else component
+                )
+
+            ax.set_title(title, fontsize=12, fontweight="bold")
+            ax.set_xlabel("Year")
+            ax.set_ylabel(ylabel)
+            ax.grid(True, alpha=0.3)
+            ax.legend(fontsize=9)
+
+            # Format y-axis for currency values
+            if component in [
+                "revenue",
+                "var_cost",
+                "fixed_cost",
+                "carbon_cost_net",
+                "capex_total",
+                "EBITDA",
+                "FCFF",
+            ]:
+                ax.ticklabel_format(style="scientific", axis="y", scilimits=(0, 0))
+
+        # Hide unused subplots
+        for comp_idx in range(len(all_components), len(axes_flat)):
+            axes_flat[comp_idx].set_visible(False)
+
+        # Adjust layout
+        plt.tight_layout()
+
+        # Save plot
+        try:
+            plt.savefig(filepath, dpi=dpi, bbox_inches="tight", facecolor="white")
+            plots_created += 1
+        except Exception as e:
+            logger.warning(f"Error saving plot for asset {asset_id}: {e}")
+
+        # Close figure to free memory
+        plt.close()
+
+    logger.info(
+        f"Created {plots_created} asset-company financial trajectory plots in {output_dir}"
+    )
+
+    return str(output_dir)
+
+
 def reporting_qc_summary(
     view_asset_npv_decomp: pd.DataFrame,
     view_asset_explain: pd.DataFrame,
     reporting_params: Dict,
 ) -> pd.DataFrame:
     """
-    Node 6: Quality control checks and reporting diagnostics.
+    Node 7: Quality control checks and reporting diagnostics.
     """
 
     logger.info("Running reporting QC checks...")

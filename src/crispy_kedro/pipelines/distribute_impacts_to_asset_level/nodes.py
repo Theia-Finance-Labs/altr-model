@@ -389,9 +389,6 @@ def compute_asset_baseline_trajectories(
             group["asset_activity"] = group["asset_activity"].fillna(0.0)
             return group
 
-        # Get company baseline values
-        company_baseline = group["_company_baseline"].copy()
-
         # Fill missing values using baseline scaling where possible
         for idx in group.index[~valid_mask]:
             current_year = group.at[idx, "year"]
@@ -515,8 +512,10 @@ def _index_assets_by_group(
     if miss:
         raise ValueError(f"assets missing columns: {miss}")
 
-    # Include baseline trajectory if available
+    # Include optional columns if available
     cols_to_keep = ["asset_id", "year", "asset_activity", "asset_age"]
+    if "asset_name" in assets.columns:
+        cols_to_keep.append("asset_name")
     if "asset_baseline_trajectory" in assets.columns:
         cols_to_keep.append("asset_baseline_trajectory")
 
@@ -617,6 +616,15 @@ def _stagger_decreasing_fast(
 
         asset_ids = aset["asset_id"].astype(str).unique()
         A = asset_ids.shape[0]
+        if "asset_name" in aset.columns:
+            name_map = (
+                aset.drop_duplicates("asset_id")
+                .set_index("asset_id")["asset_name"]
+                .astype(str)
+            )
+            asset_names = name_map.reindex(asset_ids, fill_value="").to_numpy()
+        else:
+            asset_names = np.array([""] * A, dtype=object)
 
         # Build matrices
         act_pvt = aset.pivot(
@@ -724,6 +732,7 @@ def _stagger_decreasing_fast(
         T, A = after_mat.shape
         output_dict = {
             "asset_id": np.tile(asset_ids.astype(str), T),
+            "asset_name": np.tile(asset_names, T),
             "company_id": company_id,
             "company_name": company_name,
             "scenario_geography": key[2],
@@ -877,6 +886,15 @@ def _prop_scale_decreasing_fast(
 
         asset_ids = aset["asset_id"].astype(str).unique()
         A = asset_ids.shape[0]
+        if "asset_name" in aset.columns:
+            name_map = (
+                aset.drop_duplicates("asset_id")
+                .set_index("asset_id")["asset_name"]
+                .astype(str)
+            )
+            asset_names = name_map.reindex(asset_ids, fill_value="").to_numpy()
+        else:
+            asset_names = np.array([""] * A, dtype=object)
 
         act_pvt = aset.pivot(
             index="year", columns="asset_id", values="asset_activity"
@@ -1001,6 +1019,7 @@ def _prop_scale_decreasing_fast(
         # ——— Emit assets
         output_dict = {
             "asset_id": np.tile(asset_ids.astype(str), T),
+            "asset_name": np.tile(asset_names, T),
             "company_id": key[0],
             "company_name": company_name,
             "scenario_geography": key[1],
@@ -1224,6 +1243,8 @@ def stagger_increasing_technologies(
 
         # Select asset columns, include baseline if present
         cols_to_select = ["asset_id", "year", "asset_activity", "asset_age"]
+        if "asset_name" in assets_bau.columns:
+            cols_to_select.append("asset_name")
         has_baseline = "asset_baseline_trajectory" in assets_bau.columns
         if has_baseline:
             cols_to_select.append("asset_baseline_trajectory")
@@ -1244,6 +1265,15 @@ def stagger_increasing_technologies(
         if not aset.empty:
             asset_ids = aset["asset_id"].astype(str).unique()
             A = asset_ids.shape[0]
+            if "asset_name" in aset.columns:
+                name_map = (
+                    aset.drop_duplicates("asset_id")
+                    .set_index("asset_id")["asset_name"]
+                    .astype(str)
+                )
+                asset_names = name_map.reindex(asset_ids, fill_value="").to_numpy()
+            else:
+                asset_names = np.array([""] * A, dtype=object)
 
             act_pvt = aset.pivot(
                 index="year", columns="asset_id", values="asset_activity"
@@ -1272,6 +1302,7 @@ def stagger_increasing_technologies(
 
             out = {
                 "asset_id": np.tile(asset_ids.astype(str), T),
+                "asset_name": np.tile(asset_names, T),
                 "company_id": cid,
                 "company_name": company_name,
                 "scenario_geography": geo,
@@ -1319,6 +1350,7 @@ def stagger_increasing_technologies(
 
         synth_dict = {
             "asset_id": f"NEW_{cid}_{sector}_{tech}_{geo}",
+            "asset_name": f"NEW_{cid}_{sector}_{tech}_{geo}",
             "company_id": cid,
             "company_name": company_name,
             "scenario_geography": geo,
@@ -1403,6 +1435,7 @@ def melt_asset_staggered_trajectories(
         return pd.DataFrame(
             columns=[
                 "asset_id",
+                "asset_name",
                 "company_id",
                 "company_name",
                 "scenario_geography",
@@ -1422,24 +1455,24 @@ def melt_asset_staggered_trajectories(
 
     id_cols = [
         "asset_id",
+        "asset_name",
         "company_id",
-        *(["company_name"] if "company_name" in df.columns else []),
+        "company_name",
         "scenario_geography",
         "sector",
         "technology",
         "year",
         "asset_age",
         "is_synthetic",
-        *(["late_sudden_phase"] if "late_sudden_phase" in df.columns else []),
-        *(["alignment_type"] if "alignment_type" in df.columns else []),
+        "late_sudden_phase",
+        "alignment_type",
     ]
 
     # Build value cols present
-    value_map = []
-    if "capacity_after_shock" in df.columns:
-        value_map.append(("latesudden", "capacity_after_shock"))
-    if "asset_baseline_trajectory" in df.columns:
-        value_map.append(("baseline", "asset_baseline_trajectory"))
+    value_map = [
+        ("latesudden", "capacity_after_shock"),
+        ("baseline", "asset_baseline_trajectory"),
+    ]
 
     melted_parts: List[pd.DataFrame] = []
     for ttype, col in value_map:
@@ -1447,13 +1480,6 @@ def melt_asset_staggered_trajectories(
         sub["trajectory_type"] = ttype
         sub["asset_trajectory"] = df[col].astype(float)
         melted_parts.append(sub)
-
-    if not melted_parts:
-        # No known value columns present, return identifiers with empty values
-        empty = df[id_cols].copy()
-        empty["trajectory_type"] = pd.Series(dtype=object)
-        empty["asset_trajectory"] = pd.Series(dtype=float)
-        return empty.head(0)
 
     out = pd.concat(melted_parts, ignore_index=True)
     # Sort for stability
