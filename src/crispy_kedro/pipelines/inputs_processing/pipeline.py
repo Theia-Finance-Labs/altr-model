@@ -48,7 +48,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                 inputs=dict(
                     companies_ownership_tree="downloaded_companies",
                     company_ids="params:company_ids",
-                    ownership_level="params:ownership_level",
+                    ownership_type="params:ownership_type",
                 ),
                 outputs="companies_ownership_tree",
             ),

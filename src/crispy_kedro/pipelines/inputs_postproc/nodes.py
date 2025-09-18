@@ -21,7 +21,7 @@ def apply_reduce_granularity_from_asset_to_company_level(
                     "sector",
                     "technology",
                     "year",
-                    "ownership_level",
+                    "ownership_type",
                     "capacity_unit",
                 ],
             )
@@ -37,12 +37,22 @@ def apply_reduce_granularity_from_asset_to_company_level(
             .reset_index()
         )
 
-        companies_forecasts["asset_id"] = "unique_asset_" + companies_forecasts[
-            "company_id"
-        ].astype(str)
-        companies_forecasts["asset_name"] = "unique_asset_" + companies_forecasts[
-            "company_name"
-        ].astype(str)
+        companies_forecasts["asset_id"] = (
+            "unique_company_asset_"
+            + companies_forecasts["sector"]
+            + "_"
+            + companies_forecasts["technology"]
+            + "_"
+            + companies_forecasts["company_id"].astype(str)
+        )
+        companies_forecasts["asset_name"] = (
+            "UNIQUE_COMPANY_ASSET_"
+            + companies_forecasts["sector"]
+            + "_"
+            + companies_forecasts["technology"]
+            + "_"
+            + companies_forecasts["company_name"].astype(str)
+        )
         companies_forecasts[
             ["country_iso2", "country_name", "latitude", "longitude"]
         ] = np.nan

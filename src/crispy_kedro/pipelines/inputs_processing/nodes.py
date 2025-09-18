@@ -94,14 +94,17 @@ def filter_scenarios(
 def filter_companies(
     companies_ownership_tree: pd.DataFrame,
     company_ids: List[str],
-    ownership_level: int,
+    ownership_type: str,
 ) -> pd.DataFrame:
 
     # TODO : remove with logic to handle multi-level ownerships,
     # and/or fix in the data when owner=parent ie 1 company id matches 2 owewrnships levels
     companies_owners = companies_ownership_tree[
-        companies_ownership_tree["ownership_level"] == ownership_level
+        companies_ownership_tree["ownership_type"] == ownership_type
     ]
+
+    # TODO : fix in dbt
+    companies_owners = companies_owners.rename(columns={"production_year": "year"})
 
     if company_ids:
         filtered_companies_ownership_tree = companies_owners.loc[

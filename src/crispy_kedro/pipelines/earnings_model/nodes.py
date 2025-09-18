@@ -333,6 +333,7 @@ def validate_capacity_flow_identity(
         "company_id",
         "asset_id",
         "technology",
+        "scenario_geography",
         "year",
         "capex_indicator",
     ]
@@ -725,7 +726,9 @@ def write_asset_earnings_series(asset_cashflows: pd.DataFrame) -> pd.DataFrame:
     output_columns = [
         # Keys
         "asset_id",
+        "asset_name",
         "company_id",
+        "company_name",
         "scenario_provider",
         "scenario",
         "scenario_type",

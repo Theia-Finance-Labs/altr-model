@@ -4,7 +4,6 @@ Valuation model pipeline nodes for converting earnings to NPV using DCF methodol
 
 import pandas as pd
 import numpy as np
-from typing import Dict, List
 import logging
 from tqdm import tqdm
 
@@ -31,20 +30,17 @@ def compute_yearly_npv_trajectories(
 
     npv_data = asset_earnings.copy()
 
-    # Determine discount rate based on scenario type
-    baseline_indicators = ["baseline", "current", "indc", "ndc", "curpol"]
+    def get_discount_rate(scenario_type):
+        if scenario_type == "baseline":
+            return discount_rate_baseline
+        elif scenario_type == "target":
+            return discount_rate_shock
+        else:
+            raise ValueError(f"Invalid scenario type: {scenario_type}")
 
-    def get_discount_rate(scenario_type, scenario_name):
-        scenario_lower = str(scenario_name).lower() if pd.notna(scenario_name) else ""
-        type_lower = str(scenario_type).lower() if pd.notna(scenario_type) else ""
-        return (
-            discount_rate_baseline
-            if any(
-                indicator in scenario_lower or indicator in type_lower
-                for indicator in baseline_indicators
-            )
-            else discount_rate_shock
-        )
+    npv_data["discount_rate"] = npv_data.apply(
+        lambda row: get_discount_rate(row["scenario_type"]), axis=1
+    )
 
     # Guard: need trajectory_type and FCFF
     need_cols = ["asset_id", "year", "FCFF", "trajectory_type"]
@@ -69,8 +65,10 @@ def compute_yearly_npv_trajectories(
         logger.warning("No financial component columns found in asset_earnings")
 
     group_keys = [
+        "asset_name",
         "asset_id",
         "company_id",
+        "company_name",
         "scenario_geography",
         "sector",
         "technology",
@@ -88,14 +86,11 @@ def compute_yearly_npv_trajectories(
     ):
         g = g.sort_values("year").copy()
         first_row = g.iloc[0]
-        discount_rate = get_discount_rate(
-            first_row.get("scenario_type", ""), first_row.get("scenario", "")
-        )
         base_year = int(g["year"].min())
 
         # Calculate discount factors for each year
         g["years_from_base"] = g["year"] - base_year
-        g["discount_factor"] = (1 + discount_rate) ** (-g["years_from_base"])
+        g["discount_factor"] = (1 + g["discount_rate"]) ** (-g["years_from_base"])
         g["pv_fcff"] = g["FCFF"] * g["discount_factor"]
 
         # Calculate yearly NPV contribution (PV of FCFF only for forecast years)
@@ -109,12 +104,13 @@ def compute_yearly_npv_trajectories(
 
             if final_fcff > 0:
                 terminal_cf = final_fcff * (1 + terminal_growth_rate)
-                if discount_rate > terminal_growth_rate:
+                final_discount_rate = g.iloc[-1]["discount_rate"]
+                if final_discount_rate > terminal_growth_rate:
                     terminal_value_nominal = terminal_cf / (
-                        discount_rate - terminal_growth_rate
+                        final_discount_rate - terminal_growth_rate
                     )
                     years_to_terminal = (final_year + 1) - base_year
-                    terminal_discount_factor = (1 + discount_rate) ** (
+                    terminal_discount_factor = (1 + final_discount_rate) ** (
                         -years_to_terminal
                     )
                     terminal_value = float(
@@ -143,7 +139,6 @@ def compute_yearly_npv_trajectories(
             if col not in g.columns:
                 g[col] = first_row.get(col)
 
-        g["discount_rate"] = discount_rate
         g["base_year"] = base_year
         g["terminal_method"] = terminal_method
         g["terminal_growth_rate"] = terminal_growth_rate
@@ -197,7 +192,9 @@ def calculate_npv_per_asset(
     # Group keys (everything except trajectory_type and year)
     group_keys = [
         "asset_id",
+        "asset_name",
         "company_id",
+        "company_name",
         "scenario_geography",
         "sector",
         "technology",
@@ -208,7 +205,7 @@ def calculate_npv_per_asset(
     # Sum yearly NPV by trajectory type
     agg_dict = {
         "yearly_npv": "sum",
-        "discount_rate": "first",  # Should be same for all years within trajectory
+        "discount_rate": "mean",  # changes over time depending on scenario type
         "base_year": "first",
         "terminal_method": "first",
         "terminal_growth_rate": "first",
@@ -299,6 +296,7 @@ def aggregate_to_company_technology_npv(asset_npv: pd.DataFrame) -> pd.DataFrame
     # Group by company, technology and scenario dimensions
     groupby_cols = [
         "company_id",
+        "company_name",
         "sector",
         "technology",
         "scenario_geography",
@@ -340,7 +338,7 @@ def aggregate_to_company_npv(company_technology_npv: pd.DataFrame) -> pd.DataFra
     logger.info("Aggregating NPV to company level...")
 
     # Group by company and scenario dimensions only
-    groupby_cols = ["company_id"]
+    groupby_cols = ["company_id", "company_name"]
 
     # Define aggregation functions
     agg_funcs = {
