@@ -1,5 +1,7 @@
-# This is a boilerplate parameters config generated for pipeline 'report_outputs'
+# This is a boilerplate parameters config generated for pipeline 'inputs_postproc'
 # using Kedro 0.19.12.
 #
 # Documentation for this file format can be found in "Parameters"
 # Link: https://docs.kedro.org/en/0.19.12/configuration/parameters.html
+
+reduce_granularity_from_asset_to_company_level: False
