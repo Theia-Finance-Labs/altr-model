@@ -30,6 +30,9 @@ def compute_yearly_npv_trajectories(
 
     npv_data = asset_earnings.copy()
 
+    # TODO: for some reason some assets have no scenario associated; MUST FIX THIS
+    npv_data = npv_data.dropna(subset=["scenario_type"]).reset_index(drop=True)
+
     def get_discount_rate(scenario_type):
         if scenario_type == "baseline":
             return discount_rate_baseline
