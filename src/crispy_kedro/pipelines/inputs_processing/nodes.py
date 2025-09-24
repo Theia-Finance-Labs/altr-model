@@ -70,10 +70,26 @@ def filter_scenarios(
         ].unique()
     )
 
-    assert baseline_geographies == target_geographies, (
-        f"Geographies in baseline scenario ({baseline_geographies}) do not match "
-        f"geographies in target scenario ({target_geographies})"
-    )
+    # Find common geographies between baseline and target scenarios
+    common_geographies = baseline_geographies.intersection(target_geographies)
+
+    # Check if there are any differences and warn if so
+    if baseline_geographies != target_geographies:
+        baseline_only = baseline_geographies - target_geographies
+        target_only = target_geographies - baseline_geographies
+
+        logger.warning(
+            f"Geographies in baseline scenario ({baseline_geographies}) do not match "
+            f"geographies in target scenario ({target_geographies}). "
+            f"Baseline-only geographies: {baseline_only}. "
+            f"Target-only geographies: {target_only}. "
+            f"Filtering to common geographies: {common_geographies}"
+        )
+
+    # Filter scenarios_pathways to only include common geographies
+    scenarios_pathways = scenarios_pathways[
+        scenarios_pathways["scenario_geography"].isin(common_geographies)
+    ]
 
     scenarios_pathways_filtered = scenarios_pathways.loc[
         scenarios_pathways.scenario.isin([target_scenario, baseline_scenario]), :
