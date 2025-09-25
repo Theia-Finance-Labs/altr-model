@@ -43,7 +43,7 @@ financial_averages:
 
 downloaded_scenarios:
   type: pandas.CSVDataset
-  filepath: data/05_model_input/downloaded_scenarios_gcam.csv
+  filepath: data/05_model_input/downloaded_scenarios.csv
 
 downloaded_assets:
   type: pandas.CSVDataset
