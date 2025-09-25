@@ -99,6 +99,10 @@ asset_earnings:
 # ================== VALUATION MODEL OUTPUTS ===
 # ================================================
 
+yearly_npv_trajectories:
+  type: pandas.CSVDataset
+  filepath: data/07_model_output/yearly_npv_trajectories.csv
+
 asset_npv:
   type: pandas.CSVDataset
   filepath: data/07_model_output/asset_npv.csv
