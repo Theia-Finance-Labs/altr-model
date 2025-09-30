@@ -196,7 +196,7 @@ def build_scenario_surfaces(scenarios_validated: pd.DataFrame) -> pd.DataFrame:
         "technology",
         "year",
         "scenario",
-        "scenario_provider",
+        # "scenario_provider",
         "scenario_type",
     ]
     surfaces = scenarios[surface_cols].copy()
@@ -729,7 +729,7 @@ def write_asset_earnings_series(asset_cashflows: pd.DataFrame) -> pd.DataFrame:
         "asset_name",
         "company_id",
         "company_name",
-        "scenario_provider",
+        # "scenario_provider",
         "scenario",
         "scenario_type",
         "scenario_geography",

@@ -248,10 +248,16 @@ def assign_scenario_geographies_to_assets(
     geographies_to_countries_mapping = (
         scenarios_pathways[["scenario_geography", "country_iso2_list"]]
         .drop_duplicates()
-        .assign(country_iso2_list=lambda x: x.country_iso2_list.str.split(","))
+        .assign(
+            country_iso2_list=lambda x: x.country_iso2_list.astype(str).str.split(",")
+        )
         .explode("country_iso2_list")
         .rename(columns={"country_iso2_list": "country_iso2"})
     )
+
+    geographies_to_countries_mapping.loc[
+        geographies_to_countries_mapping["country_iso2"] == "nan", "country_iso2"
+    ] = None
 
     # Count how many countries each geography contains (NaNs are excluded from the count)
     geography_sizes = (

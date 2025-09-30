@@ -19,6 +19,7 @@ from .nodes import (
 
 
 def create_pipeline(**kwargs) -> Pipeline:
+    """Create the inputs processing pipeline."""
     return pipeline(
         [
             node(
