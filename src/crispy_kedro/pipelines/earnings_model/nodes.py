@@ -36,30 +36,49 @@ def validate_and_standardize_inputs(
     # Clean asset data (melted: includes trajectory_type, asset_trajectory)
     assets = asset_level_staggered_shock.copy()
 
-    # Add emission factor to assets
-    assets = assets.merge(
-        assets_data[
-            [
-                "asset_id",
-                "sector",
-                "technology",
-                "scenario_geography",
-                "year",
-                "emission_factor",
-            ]
-        ],
-        on=[
+    # Add emission factor to assets by merging the shorter EF series (typically 2023-2030)
+    # onto the longer staggered trajectories (up to 2050). Then forward-fill per asset/technology.
+    ef_source = assets_data[
+        [
             "asset_id",
-            "sector",
             "technology",
             "scenario_geography",
             "year",
-        ],
+            "emission_factor",
+        ]
+    ].drop_duplicates()
+    assets = assets.merge(
+        ef_source,
+        on=["asset_id", "technology", "scenario_geography", "year"],
         how="left",
     )
 
-    # Fill missing emission factors with 0 (for synthetic assets that are renewables)
-    assets["emission_factor"] = assets["emission_factor"].fillna(0.0)
+    # Forward-fill emission_factor along each (asset_id, technology) across years
+    if not assets.empty:
+        assets = (
+            assets.sort_values(["asset_id", "technology", "year"])
+            .groupby(["asset_id", "technology"], group_keys=False)
+            .apply(lambda g: g.assign(emission_factor=g["emission_factor"].ffill()))
+        )
+
+    # For newly created renewable synthetic assets, set remaining missing EF to 0
+    renewable_techs = {
+        "SolarCap - CSP",
+        "SolarCap - PV",
+        "WindCap - Offshore",
+        "WindCap - Onshore",
+        "HydroCap",
+        "NuclearCap",
+        "GeothermalCap",
+    }
+    if "is_synthetic" in assets.columns:
+        syn_renew_mask = (
+            assets["is_synthetic"].astype(bool)
+            & assets["technology"].isin(list(renewable_techs))
+            & assets["emission_factor"].isna()
+        )
+        if syn_renew_mask.any():
+            assets.loc[syn_renew_mask, "emission_factor"] = 0.0
 
     logger.info("Initial assets shape: %s", assets.shape)
     logger.info(

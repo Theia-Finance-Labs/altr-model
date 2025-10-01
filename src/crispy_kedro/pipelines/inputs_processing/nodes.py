@@ -32,16 +32,6 @@ def filter_scenarios(
         + scenarios_pathways["scenario"].astype(str).str.strip()
     )
 
-    # TODO: remove after integration of scenario data in DBT
-    if baseline_scenario in [
-        "AR6_MESSAGEix-GLOBIOM_1.2_COV_NoPolicyNoCOVID_550",
-        "AR6_IMAGE 3.0_CO_NDCplus",
-    ]:
-        scenarios_pathways.loc[
-            scenarios_pathways["scenario"] == baseline_scenario,
-            "scenario_type",
-        ] = "baseline"
-
     scenarios_pathways.loc[
         scenarios_pathways["scenario_geography"] == "Global", "country_iso2_list"
     ] = np.nan

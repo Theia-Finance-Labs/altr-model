@@ -1,5 +1,5 @@
 # Earnings model parameters
-market_passthrough: 0.5  # 50% carbon price passthrough to market prices
+market_passthrough: 0  # 0.5 => 50% carbon price passthrough to market prices
 
 # Cost element switches for earnings model
 include_replacement_capex: False  # Include CapEx for replacing retired eligible assets
