@@ -281,7 +281,7 @@ def calculate_npv_per_asset(
         with np.errstate(divide="ignore", invalid="ignore"):
             baseline_arr = npv_wide["baseline_npv"].to_numpy(dtype=np.float64)
             shock_arr = npv_wide["latesudden_npv"].to_numpy(dtype=np.float64)
-            change_arr = np.true_divide((shock_arr - baseline_arr), baseline_arr)
+            change_arr = np.true_divide((shock_arr - baseline_arr), abs(baseline_arr))
         npv_wide["npv_change"] = change_arr
 
     logger.info(f"Calculated NPV (wide) for {len(npv_wide)} assets")
@@ -324,7 +324,7 @@ def aggregate_to_company_technology_npv(asset_npv: pd.DataFrame) -> pd.DataFrame
     with np.errstate(divide="ignore", invalid="ignore"):
         base_ct = company_tech_npv["baseline_npv"].to_numpy(dtype=np.float64)
         shock_ct = company_tech_npv["latesudden_npv"].to_numpy(dtype=np.float64)
-        change_ct = np.true_divide((shock_ct - base_ct), base_ct)
+        change_ct = np.true_divide((shock_ct - base_ct), abs(base_ct))
     company_tech_npv["npv_change"] = change_ct
     logger.info(
         f"Aggregated to {len(company_tech_npv)} company-technology-scenario_geography combinations"
@@ -361,7 +361,7 @@ def aggregate_to_company_npv(company_technology_npv: pd.DataFrame) -> pd.DataFra
     with np.errstate(divide="ignore", invalid="ignore"):
         base_c = company_npv["baseline_npv"].to_numpy(dtype=np.float64)
         shock_c = company_npv["latesudden_npv"].to_numpy(dtype=np.float64)
-        change_c = np.true_divide((shock_c - base_c), base_c)
+        change_c = np.true_divide((shock_c - base_c), abs(base_c))
     company_npv["npv_change"] = change_c
 
     logger.info(f"Aggregated to {len(company_npv)} company-level records")

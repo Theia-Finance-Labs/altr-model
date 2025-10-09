@@ -5,6 +5,9 @@ generated using Kedro 0.19.12
 
 import pandas as pd
 import numpy as np
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def apply_reduce_granularity_from_asset_to_company_level(
@@ -31,8 +34,8 @@ def apply_reduce_granularity_from_asset_to_company_level(
                 ownership_percentage=("ownership_percentage", "mean"),
                 workforce_size=("workforce_size", "sum"),
                 asset_activity=("asset_activity", "sum"),
-                capacity_factor=("capacity_factor", "sum"),
-                emission_factor=("emission_factor", "sum"),
+                capacity_factor=("capacity_factor", "mean"),
+                emission_factor=("emission_factor", "mean"),
             )
             .reset_index()
         )
@@ -90,11 +93,40 @@ def determine_assets_retirement_dates(
         # Keys that define a unique asset timeline (match your earlier sort)
         grp_keys = ["company_id", "asset_id", "scenario_geography", "technology"]
 
-        # First year and first observed age per asset timeline (respects prior sort)
-        first_year = extended_assets.groupby(grp_keys)["year"].transform("first")
-        first_age = extended_assets.groupby(grp_keys)["asset_age"].transform("first")
+        # First non-zero, non-NA age and its corresponding year per asset timeline
+        # Build a table of the first valid (non-zero, non-NA) age rows per group
+        valid_mask = extended_assets["asset_age"].notna() & (
+            extended_assets["asset_age"] != 0
+        )
+        first_valid_rows = (
+            extended_assets.loc[valid_mask]
+            .sort_values(
+                ["company_id", "asset_id", "scenario_geography", "technology", "year"]
+            )
+            .groupby(grp_keys, as_index=False)
+            .first()[grp_keys + ["asset_age", "year"]]
+            .rename(
+                columns={"asset_age": "first_valid_age", "year": "first_valid_year"}
+            )
+        )
 
-        # Year offset within each asset timeline
+        # Merge back to broadcast first valid age/year across all rows in the group
+        extended_assets = extended_assets.merge(
+            first_valid_rows, on=grp_keys, how="left"
+        )
+
+        # Fallbacks: if a group has no valid age, fall back to plain first() age/year
+        fallback_first_year = extended_assets.groupby(grp_keys)["year"].transform(
+            "first"
+        )
+        fallback_first_age = extended_assets.groupby(grp_keys)["asset_age"].transform(
+            "first"
+        )
+
+        first_year = extended_assets["first_valid_year"].fillna(fallback_first_year)
+        first_age = extended_assets["first_valid_age"].fillna(fallback_first_age)
+
+        # Year offset within each asset timeline (aligned to first valid age's year when available)
         year_offset = extended_assets["year"] - first_year
 
         # Lifetime validity mask
@@ -107,6 +139,11 @@ def determine_assets_retirement_dates(
 
         # Then age increases linearly each year without further wrapping
         extended_assets["asset_age"] = start_age + year_offset
+
+        # Drop helper broadcast columns before returning
+        extended_assets = extended_assets.drop(
+            columns=["first_valid_age", "first_valid_year"], errors="ignore"
+        )
 
         return extended_assets
 

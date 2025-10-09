@@ -81,6 +81,41 @@ def filter_scenarios(
         scenarios_pathways["scenario_geography"].isin(common_geographies)
     ]
 
+    # Create sector+technology combinations for baseline and target scenarios
+    baseline_sector_tech = set(
+        scenarios_pathways[scenarios_pathways["scenario"] == baseline_scenario].apply(
+            lambda row: (row["sector"], row["technology"]), axis=1
+        )
+    )
+    target_sector_tech = set(
+        scenarios_pathways[scenarios_pathways["scenario"] == target_scenario].apply(
+            lambda row: (row["sector"], row["technology"]), axis=1
+        )
+    )
+
+    # Find common sector+technology combinations
+    common_sector_tech = baseline_sector_tech.intersection(target_sector_tech)
+
+    # Check if there are any differences and warn if so
+    if baseline_sector_tech != target_sector_tech:
+        baseline_only = baseline_sector_tech - target_sector_tech
+        target_only = target_sector_tech - baseline_sector_tech
+
+        logger.warning(
+            f"Sector+Technology combinations in baseline scenario do not match "
+            f"those in target scenario. "
+            f"Baseline-only combinations: {baseline_only}. "
+            f"Target-only combinations: {target_only}. "
+            f"Filtering to common combinations: {common_sector_tech}"
+        )
+
+    # Filter scenarios_pathways to only include common sector+technology combinations
+    scenarios_pathways = scenarios_pathways[
+        scenarios_pathways.apply(
+            lambda row: (row["sector"], row["technology"]) in common_sector_tech, axis=1
+        )
+    ]
+
     scenarios_pathways_filtered = scenarios_pathways.loc[
         scenarios_pathways.scenario.isin([target_scenario, baseline_scenario]), :
     ].reset_index(drop=True)
@@ -196,7 +231,13 @@ def filter_assets(
         assets_forecasts["asset_id"].isin(owned_assets), :
     ]
 
-    scenario_start_year = scenarios_pathways.year.min()
+    both_scenario_start_year = (
+        scenarios_pathways.groupby("scenario_type")["year"].min().to_dict()
+    )
+    assert (
+        both_scenario_start_year["baseline"] == both_scenario_start_year["target"]
+    ), "Baseline and target scenarios start at different years"
+    scenario_start_year = both_scenario_start_year["baseline"]
     forecast_end_year = scenario_start_year + max_forecast_horizon
 
     filtered_assets_forecasts = filtered_assets_forecasts.loc[
@@ -473,7 +514,8 @@ def determine_lifetime_per_technology(
 
 def interpolate_scenarios_annually(scenarios_pathways: pd.DataFrame) -> pd.DataFrame:
     """
-    Interpolate scenario data to fill missing years with linear interpolation.
+    Interpolate scenario data to fill missing years with linear interpolation and extend
+    to the maximum year across the entire dataset using constant values.
 
     This is a temporary fix to handle the fact that downloaded_scenarios.csv contains
     5-year interval data but the late_sudden trajectory algorithms expect annual data.
@@ -482,7 +524,7 @@ def interpolate_scenarios_annually(scenarios_pathways: pd.DataFrame) -> pd.DataF
         scenarios_pathways: DataFrame with scenario data (potentially sparse years)
 
     Returns:
-        DataFrame with annually interpolated scenario data
+        DataFrame with annually interpolated scenario data extended to max year
     """
 
     # Main grouping columns for interpolation (keeping it simple)
@@ -506,18 +548,21 @@ def interpolate_scenarios_annually(scenarios_pathways: pd.DataFrame) -> pd.DataF
         col for col in numeric_cols if col in scenarios_pathways.columns
     ]
 
+    # Get the maximum year across the entire dataset
+    global_max_year = int(scenarios_pathways["year"].max())
+
     interpolated_scenarios = []
 
     # Group by main identifiers and interpolate within each group
-    for group_key, group_df in scenarios_pathways.groupby(group_cols, dropna=False):
+    for _, group_df in scenarios_pathways.groupby(group_cols, dropna=False):
         group_df = group_df.sort_values("year").copy()
 
         # Get the year range for this group
         min_year = int(group_df["year"].min())
-        max_year = int(group_df["year"].max())
+        group_max_year = int(group_df["year"].max())
 
-        # Create annual year range
-        annual_years = list(range(min_year, max_year + 1))
+        # Create annual year range extending to global max year
+        annual_years = list(range(min_year, global_max_year + 1))
 
         # Create base template with first row's non-numeric values
         template_row = group_df.iloc[0].copy()
@@ -546,11 +591,26 @@ def interpolate_scenarios_annually(scenarios_pathways: pd.DataFrame) -> pd.DataF
                 merged_df[col] = merged_df[actual_col]
                 merged_df.drop(columns=[actual_col], inplace=True)
 
-        # Interpolate missing values
+        # Interpolate missing values within the original range
         for col in existing_numeric_cols:
             if col in merged_df.columns:
                 merged_df[col] = pd.to_numeric(merged_df[col], errors="coerce")
-                merged_df[col] = merged_df[col].interpolate(method="linear")
+                # Only interpolate within the original data range
+                original_range_mask = (merged_df["year"] >= min_year) & (
+                    merged_df["year"] <= group_max_year
+                )
+                merged_df.loc[original_range_mask, col] = merged_df.loc[
+                    original_range_mask, col
+                ].interpolate(method="linear")
+
+                # For years beyond the group's max year, extend with the last known value
+                if group_max_year < global_max_year:
+                    last_known_value = merged_df.loc[
+                        merged_df["year"] == group_max_year, col
+                    ].iloc[0]
+                    if not pd.isna(last_known_value):
+                        extension_mask = merged_df["year"] > group_max_year
+                        merged_df.loc[extension_mask, col] = last_known_value
 
         interpolated_scenarios.append(merged_df)
 

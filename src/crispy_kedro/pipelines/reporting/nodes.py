@@ -244,24 +244,30 @@ def plot_late_sudden_trajectories(
                 current_phase = None
                 phase_start = None
 
-                # Group consecutive years by phase to create spans
-                for i, (year, phase) in enumerate(
-                    zip(pd.Series(years), group_sorted["late_sudden_phase"])
+                # Ensure we have exactly one phase value per year in chronological order
+                phase_years_df = (
+                    group_sorted[["year", "late_sudden_phase"]]
+                    .dropna(subset=["late_sudden_phase"])
+                    .drop_duplicates(subset=["year"])
+                    .sort_values("year")
+                )
+
+                for year, phase in zip(
+                    phase_years_df["year"].to_numpy(),
+                    phase_years_df["late_sudden_phase"].to_numpy(),
                 ):
-                    if phase != current_phase:
-                        # End previous phase span
-                        if current_phase is not None and phase_start is not None:
-                            # End the previous phase at the current year to avoid gaps
-                            phase_spans.append((current_phase, phase_start, year - 1))
-
-                        # Start new phase span at the same year where previous phase ended
-                        # to ensure no gaps between phases
+                    if current_phase is None:
                         current_phase = phase
-                        phase_start = year - 1
+                        phase_start = year
+                        continue
+                    if phase != current_phase:
+                        # Close the previous span at the boundary year (no off-by-one)
+                        phase_spans.append((current_phase, phase_start, year))
+                        current_phase = phase
+                        phase_start = year
 
-                # Don't forget the last phase - extend it slightly beyond the last data point
+                # Close the last span, extend slightly beyond the last data point for aesthetics
                 if current_phase is not None and phase_start is not None:
-                    # Extend the last phase to cover the full plot area
                     last_year = years[-1]
                     year_range = years.max() - years.min()
                     extended_end = last_year + (
@@ -280,7 +286,10 @@ def plot_late_sudden_trajectories(
                         )
 
                         # Add more prominent vertical line at phase start (except first phase)
-                        if start_year != years[0]:
+                        if (
+                            phase_years_df.shape[0] > 0
+                            and start_year != phase_years_df["year"].iloc[0]
+                        ):
                             ax.axvline(
                                 x=start_year,
                                 color=color,
@@ -709,7 +718,7 @@ def plot_staggered_shock(
 
                 # Individual asset lines (post-shock) with age annotations
                 if num_post_assets <= max_individual_postshock_assets:
-                    colors = plt.cm.tab10(np.linspace(0, 1, 10))
+                    colors = plt.cm.get_cmap("tab10")(np.linspace(0, 1, 10))
                     color_idx = 0
                     for aid, df_a in (
                         aset_ls[["asset_id", "year", "asset_age", "asset_trajectory"]]
@@ -1604,13 +1613,13 @@ def plot_earnings_inner_workings(
 
         # Save plot
         if save_png:
-            png_path = output_dir / f"asset_timeline_{asset_id}.png"
+            png_path = output_dir / (f"asset_timeline_{asset_id}.png").replace("/", " ")
             plt.savefig(png_path, dpi=dpi, bbox_inches="tight")
             logger.info(f"Saved PNG: {png_path}")
-        if save_pdf:
-            pdf_path = output_dir / f"asset_timeline_{asset_id}.pdf"
-            plt.savefig(pdf_path, bbox_inches="tight")
-            logger.info(f"Saved PDF: {pdf_path}")
+        # if save_pdf:
+        #     pdf_path = output_dir / f"asset_timeline_{asset_id}.pdf"
+        #     plt.savefig(pdf_path, bbox_inches="tight")
+        #     logger.info(f"Saved PDF: {pdf_path}")
         plt.close()
         plots_created += 1
 

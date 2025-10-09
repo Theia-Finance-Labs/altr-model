@@ -71,6 +71,13 @@ def validate_and_standardize_inputs(
         "NuclearCap",
         "GeothermalCap",
     }
+    renew_mask = (
+        assets["technology"].isin(list(renewable_techs))
+        & assets["emission_factor"].isna()
+    )
+    if renew_mask.any():
+        assets.loc[renew_mask, "emission_factor"] = 0.0
+
     if "is_synthetic" in assets.columns:
         syn_renew_mask = (
             assets["is_synthetic"].astype(bool)
@@ -135,6 +142,7 @@ def validate_and_standardize_inputs(
         "scenario_year",
         "lifetime_years",
         "efficiency_decimal",
+        "fuel_intensity",
         "capacity_additions_mw_per_yr",
         "om_cost_usd_per_mw_per_yr",
         "capital_cost_usd_per_mw",
@@ -257,6 +265,7 @@ def build_scenario_surfaces(scenarios_validated: pd.DataFrame) -> pd.DataFrame:
 
     # Efficiency
     surfaces["efficiency_decimal"] = scenarios["efficiency_decimal"]
+    surfaces["fuel_intensity"] = scenarios["fuel_intensity"]
 
     # Lifetime
     surfaces["lifetime_years"] = scenarios["lifetime_years"]
@@ -663,6 +672,7 @@ def compute_ops_block(
     logger.info("Computing operations block...")
 
     ops_data = asset_capex_block.copy()
+    ops_data["emission_factor"] = ops_data["emission_factor"].fillna(0.0)
 
     # Calculate average capacity for the year (use melted capacity)
     ops_data["K_avg"] = ops_data["asset_trajectory"]
@@ -671,8 +681,11 @@ def compute_ops_block(
     ops_data["Q"] = ops_data["K_avg"] * ops_data["capacity_factor"] * HOURS_PER_YEAR
 
     # Fuel cost per MWh_e (for power generation)
+    # ops_data["fuel_cost_per_mwh"] = (
+    #     ops_data["fuel_price_usd_per_mwh_fuel"] / ops_data["efficiency_decimal"]
+    # )
     ops_data["fuel_cost_per_mwh"] = (
-        ops_data["fuel_price_usd_per_mwh_fuel"] / ops_data["efficiency_decimal"]
+        ops_data["fuel_price_usd_per_mwh_fuel"] * ops_data["fuel_intensity"]
     )
     ops_data["fuel_cost_per_mwh"] = ops_data["fuel_cost_per_mwh"].fillna(0)
 
