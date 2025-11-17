@@ -6,7 +6,6 @@ generated using Kedro 0.19.12
 from kedro.pipeline import node, Pipeline, pipeline  # noqa
 
 from .nodes import (
-    align_scenarios_at_first_year,
     apply_reduce_granularity_from_asset_to_company_level,
     determine_assets_retirement_dates,
     extend_allocated_assets_to_companies,

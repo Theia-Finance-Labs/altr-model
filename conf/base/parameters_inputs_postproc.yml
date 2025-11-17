@@ -5,3 +5,5 @@
 # Link: https://docs.kedro.org/en/0.19.12/configuration/parameters.html
 
 reduce_granularity_from_asset_to_company_level: False
+
+theta_capex_recovery: 1

@@ -687,6 +687,7 @@ def compute_ops_block(
     ops_data["fuel_cost_per_mwh"] = (
         ops_data["fuel_price_usd_per_mwh_fuel"] * ops_data["fuel_intensity"]
     )
+
     ops_data["fuel_cost_per_mwh"] = ops_data["fuel_cost_per_mwh"].fillna(0)
 
     # Variable fuel cost

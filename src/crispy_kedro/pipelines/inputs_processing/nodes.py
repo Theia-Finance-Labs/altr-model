@@ -15,6 +15,7 @@ def check_input_parameters(
     shock_year: int,
     alignment_year: int,
 ) -> None:
+
     if alignment_year < shock_year:
         raise ValueError("Alignment year must be greater than shock year")
 
@@ -226,6 +227,47 @@ def filter_assets(
     scenarios_pathways: pd.DataFrame,
     max_forecast_horizon: int,
 ) -> pd.DataFrame:
+
+    # TODO REMOVE HARDFIX FOR NGFS
+    assets_forecasts = assets_forecasts.loc[
+        ~assets_forecasts.country_iso2.isna()
+        & ~assets_forecasts.country_iso2.isin(
+            [
+                "AS",
+                "BM",
+                "AW",
+                "SZ",
+                "FO",
+                "CW",
+                "DM",
+                "GF",
+                "PS",
+                "KN",
+                "MK",
+                "IM",
+                "PM",
+                "XK",
+                "SC",
+                "SS",
+                "AX",
+                "KY",
+                "BQ",
+                "GG",
+                "MS",
+                "JE",
+            ]
+        ),
+        :,
+    ]
+
+    # TODO REMOVE HARDFIX FOR NGFS
+    assets_forecasts.loc[
+        assets_forecasts["technology"].isin(
+            ["WindCap - Offshore", "WindCap - Onshore"]
+        ),
+        "technology",
+    ] = "WindCap"
+
     owned_assets = companies_ownership_tree["asset_id"].unique().tolist()
     filtered_assets_forecasts = assets_forecasts.loc[
         assets_forecasts["asset_id"].isin(owned_assets), :
@@ -621,3 +663,97 @@ def interpolate_scenarios_annually(scenarios_pathways: pd.DataFrame) -> pd.DataF
         return result
     else:
         return scenarios_pathways  # Return original if no interpolation was possible
+
+
+def scale_electricity_price(
+    scenarios_pathways: pd.DataFrame, theta: float = 1.0
+) -> pd.DataFrame:
+    # """
+    # Adjust electricity prices per technology and year so that:
+    #   - each tech covers SRMC + θ*(FOM/MWh + α*CapAnn/MWh)
+    #   - energy-weighted mean price equals the original average price
+
+    # Parameters
+    # ----------
+    # scenarios_pathways : pd.DataFrame
+    #     Must include:
+    #     ['scenario', 'year', 'scenario_geography',
+    #      'scenario_price', 'fuel_price', 'efficiency_decimal',
+    #      'om_cost_usd_per_mw_per_yr', 'capital_cost_usd_per_mw',
+    #      'scenario_capacity_factor', 'scenario_pathway',   # in MW!
+    #      'capacity_additions_mw_per_yr', 'lifetime_years']
+    # theta : float, optional
+    #     Fraction of fixed + capex recovery via energy (default = 1.0)
+
+    # Returns
+    # -------
+    # pd.DataFrame
+    #     Same as input, with new column 'scenario_price_scaled'.
+    # """
+
+    # df = scenarios_pathways.copy()
+    # hours_per_year = 8760
+
+    # # --- Core costs per MWh ---
+    # df["srmc"] = df["fuel_price"] / df["efficiency_decimal"]
+    # # df["srmc"] = df["fuel_intensity"]
+
+    # df["fom_per_mwh"] = df["om_cost_usd_per_mw_per_yr"] / (
+    #     hours_per_year * df["scenario_capacity_factor"]
+    # )
+
+    # df["capann_per_mwh"] = (df["capital_cost_usd_per_mw"] / df["lifetime_years"]) / (
+    #     hours_per_year * df["scenario_capacity_factor"]
+    # )
+
+    # # --- Build share α = ΔK / K ---
+    # df["fleet_capacity_mw"] = df["scenario_pathway"]  # already MW
+    # df["alpha_build"] = (
+    #     df["capacity_additions_mw_per_yr"].fillna(0) / df["fleet_capacity_mw"]
+    # )
+    # df["alpha_build"] = df["alpha_build"].clip(lower=0, upper=1)
+
+    # # --- Breakeven target price ---
+    # df["target_price"] = (
+    #     df["srmc"] + theta * df["fom_per_mwh"]  # + theta * df["capann_per_mwh"]
+    # )
+    # # + theta * df["capann_per_mwh"]
+
+    # # --- Energy weights (now in MWh) ---
+    # df["E"] = df["scenario_pathway"] * df["scenario_capacity_factor"] * hours_per_year
+
+    # # --- Normalize per (scenario, year, geography) ---
+    # def normalize_group(g):
+    #     w = g["E"] / g["E"].sum()
+    #     P_avg = g["scenario_price"].mean()
+    #     P = g["target_price"]
+
+    #     r = P_avg / (w * P).sum()
+    #     P_scaled = r * P
+
+    #     pinned = P_scaled < g["target_price"]
+    #     if pinned.any():
+    #         P_scaled[pinned] = g.loc[pinned, "target_price"]
+    #         free = ~pinned
+    #         if free.any():
+    #             r = (P_avg - (w[pinned] * P_scaled[pinned]).sum()) / (
+    #                 w[free] * P_scaled[free]
+    #             ).sum()
+    #             P_scaled[free] *= r
+
+    #     g["scenario_price_scaled"] = P_scaled
+    #     return g
+
+    # df = (
+    #     df.groupby(["scenario", "year", "scenario_geography"], group_keys=False)
+    #     .apply(normalize_group)
+    #     .reset_index(drop=True)
+    # )
+    # df["scenario_price_scaled"] = np.where(
+    #     df["scenario_capacity_factor"] == 0,
+    #     0,  # df["scenario_price"],
+    #     df["scenario_price_scaled"],
+    # )
+    # return df
+
+    return scenarios_pathways

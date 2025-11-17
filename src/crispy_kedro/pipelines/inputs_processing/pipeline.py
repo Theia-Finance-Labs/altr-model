@@ -15,6 +15,7 @@ from .nodes import (
     determine_increasing_or_decreasing_techs,
     determine_lifetime_per_technology,
     interpolate_scenarios_annually,
+    scale_electricity_price,
 )
 
 
@@ -42,6 +43,14 @@ def create_pipeline(**kwargs) -> Pipeline:
             node(
                 func=interpolate_scenarios_annually,
                 inputs=dict(scenarios_pathways="scenarios_pathways_filtered"),
+                outputs="scenarios_pathways_interpolated",
+            ),
+            node(
+                func=scale_electricity_price,
+                inputs=dict(
+                    scenarios_pathways="scenarios_pathways_interpolated",
+                    theta="params:theta_capex_recovery",
+                ),
                 outputs="scenarios_pathways",
             ),
             node(
