@@ -6,7 +6,7 @@
 db_assets_forecasts:
   type: ibis.TableDataset
   table_name: assets_forecasts
-  database: bertrand2_marts
+  database: bertrand_marts
   connection:
     backend: bigquery
     project_id: cloud-1in1000
@@ -15,7 +15,7 @@ db_assets_forecasts:
 plant_ownerships:
   type: ibis.TableDataset
   table_name: companies_ownership_tree
-  database: bertrand2_marts
+  database: bertrand_marts
   connection:
     backend: bigquery
     project_id: cloud-1in1000
@@ -24,7 +24,7 @@ plant_ownerships:
 db_scenarios_pathways:
   type: ibis.TableDataset
   table_name: scenarios
-  database: bertrand2_marts
+  database: bertrand_marts
   connection:
     backend: bigquery
     project_id: cloud-1in1000
