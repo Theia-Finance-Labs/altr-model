@@ -2,6 +2,10 @@
 market_passthrough: 0  # 0.5 => 50% carbon price passthrough to market prices
 
 # Cost element switches for earnings model
+include_growth_capex: False        # Include growth CapEx for new buildout capacity
 include_replacement_capex: False  # Include CapEx for replacing retired eligible assets
 include_decom_costs: False        # Include decommissioning costs for retired assets
+
+# Frozen capacity feature - use capacity at retirement time for fixed costs
+use_frozen_capacity_for_fixed_costs: True  # If True, use frozen capacity at retirement for fixed cost calculations
 

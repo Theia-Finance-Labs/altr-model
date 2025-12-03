@@ -20,6 +20,7 @@ def validate_and_standardize_inputs(
     downloaded_scenarios: pd.DataFrame,
     all_alignment_classifications: pd.DataFrame,
     assets_data: pd.DataFrame,
+    frozen_capacity_at_retirement: pd.DataFrame = None,
 ) -> Dict[str, pd.DataFrame]:
     """
     Node 1: Validate and standardize all inputs.
@@ -29,12 +30,41 @@ def validate_and_standardize_inputs(
     - Strip/standardize strings (geo/sector/technology)
     - Keep only needed columns
     - Assert year is contiguous per asset
+    - Optionally merge frozen capacity at retirement for fixed cost calculations
     """
 
     logger.info("Validating and standardizing inputs...")
 
     # Clean asset data (melted: includes trajectory_type, asset_trajectory)
     assets = asset_level_staggered_shock.copy()
+
+    # Merge frozen capacity if provided
+    if (
+        frozen_capacity_at_retirement is not None
+        and not frozen_capacity_at_retirement.empty
+    ):
+        logger.info("Merging frozen capacity at retirement data...")
+        merge_keys = [
+            "asset_id",
+            "company_id",
+            "scenario_geography",
+            "technology",
+            "year",
+        ]
+        assets = assets.merge(
+            frozen_capacity_at_retirement[
+                merge_keys + ["frozen_capacity_at_retirement"]
+            ],
+            on=merge_keys,
+            how="left",
+        )
+        logger.info(
+            "Frozen capacity merged. Assets with frozen capacity: %s",
+            assets["frozen_capacity_at_retirement"].notna().sum(),
+        )
+    else:
+        logger.info("No frozen capacity data provided - continuing without it")
+        assets["frozen_capacity_at_retirement"] = None
 
     # Add emission factor to assets by merging the shorter EF series (typically 2023-2030)
     # onto the longer staggered trajectories (up to 2050). Then forward-fill per asset/technology.
@@ -265,7 +295,7 @@ def build_scenario_surfaces(scenarios_validated: pd.DataFrame) -> pd.DataFrame:
 
     # Efficiency
     surfaces["efficiency_decimal"] = scenarios["efficiency_decimal"]
-    surfaces["fuel_intensity"] = scenarios["fuel_intensity"]
+    # surfaces["fuel_intensity"] = scenarios["fuel_intensity"]
 
     # Lifetime
     surfaces["lifetime_years"] = scenarios["lifetime_years"]
@@ -561,6 +591,7 @@ def compute_capacity_flows(asset_panel: pd.DataFrame) -> pd.DataFrame:
 
 def compute_flow_based_capex(
     asset_panel_enriched: pd.DataFrame,
+    include_growth_capex: bool,
     include_replacement_capex: bool,
     include_decom_costs: bool,
 ) -> pd.DataFrame:
@@ -588,13 +619,17 @@ def compute_flow_based_capex(
     capex_data["capex_indicator"] = capex_data["capex_indicator"].fillna("none")
 
     # Map flow indicators to CapEx components
-    # Growth CapEx: new capacity builds
-    new_build_mask = capex_data["capex_indicator"] == "new_buildout_cap"
-    capex_data["growth_capex"] = np.where(
-        new_build_mask,
-        capex_data["capex_usd_per_mw"] * capex_data["capex_capacity"],
-        0.0,
-    )
+    # Growth CapEx: new capacity builds (can now be switched off)
+    if include_growth_capex:
+        new_build_mask = capex_data["capex_indicator"] == "new_buildout_cap"
+        capex_data["growth_capex"] = np.where(
+            new_build_mask,
+            capex_data["capex_usd_per_mw"] * capex_data["capex_capacity"],
+            0.0,
+        )
+    else:
+        capex_data["growth_capex"] = 0.0
+        logger.info("Growth CapEx switched OFF - setting to zero")
 
     # Replacement CapEx: rolled over capacity (can be switched off)
     if include_replacement_capex:
@@ -660,6 +695,7 @@ def compute_flow_based_capex(
 def compute_ops_block(
     asset_capex_block: pd.DataFrame,
     market_passthrough: float = 0.5,
+    use_frozen_capacity_for_fixed_costs: bool = False,
 ) -> pd.DataFrame:
     """
     Node 8: Compute operations block (production, costs, revenue, EBITDA).
@@ -667,9 +703,19 @@ def compute_ops_block(
     EBITDA_t = Revenue_t − FuelCost_t − FixedO&M_t − CarbonCost_net_t
     Note: No depreciation is considered here. EBITDA is a cash operating measure.
     RFC: Corporate tax and depreciation tax shield are currently disabled; see compute_fcff().
+
+    Args:
+        asset_capex_block: Asset data with capacity and cost information
+        market_passthrough: Fraction of carbon price passed through to market (default 0.5)
+        use_frozen_capacity_for_fixed_costs: If True, use frozen capacity at retirement for fixed costs
+                                              instead of actual capacity (default False)
     """
 
     logger.info("Computing operations block...")
+    if use_frozen_capacity_for_fixed_costs:
+        logger.info("Using frozen capacity at retirement for fixed cost calculations")
+    else:
+        logger.info("Using actual asset capacity for fixed cost calculations")
 
     ops_data = asset_capex_block.copy()
     ops_data["emission_factor"] = ops_data["emission_factor"].fillna(0.0)
@@ -677,24 +723,92 @@ def compute_ops_block(
     # Calculate average capacity for the year (use melted capacity)
     ops_data["K_avg"] = ops_data["asset_trajectory"]
 
-    # Production
+    # Production (always use actual capacity)
     ops_data["Q"] = ops_data["K_avg"] * ops_data["capacity_factor"] * HOURS_PER_YEAR
 
     # Fuel cost per MWh_e (for power generation)
-    # ops_data["fuel_cost_per_mwh"] = (
-    #     ops_data["fuel_price_usd_per_mwh_fuel"] / ops_data["efficiency_decimal"]
-    # )
     ops_data["fuel_cost_per_mwh"] = (
-        ops_data["fuel_price_usd_per_mwh_fuel"] * ops_data["fuel_intensity"]
+        ops_data["fuel_price_usd_per_mwh_fuel"] / ops_data["efficiency_decimal"]
     )
+    # ops_data["fuel_cost_per_mwh"] = (
+    #     ops_data["fuel_price_usd_per_mwh_fuel"] * ops_data["fuel_intensity"]
+    # )
 
     ops_data["fuel_cost_per_mwh"] = ops_data["fuel_cost_per_mwh"].fillna(0)
 
-    # Variable fuel cost
+    # Variable fuel cost (always use actual production)
     ops_data["var_cost"] = ops_data["Q"] * ops_data["fuel_cost_per_mwh"]
 
-    # Fixed O&M cost
-    ops_data["fixed_cost"] = ops_data["fom_usd_per_mw_yr"] * ops_data["K_avg"]
+    # Fixed O&M cost - use frozen capacity if toggle is enabled
+    # SAFETY: Only apply frozen capacity logic to non-baseline trajectories (latesudden)
+    # to prevent contaminating the baseline scenario with shock-scenario capacities.
+    if use_frozen_capacity_for_fixed_costs:
+        logger.info(
+            "Using constant initial capacity (from year 1) for fixed cost calculations in shock scenarios"
+        )
+
+        # Sort by keys + year to ensure we find the first year's capacity
+        # We use a stable sort to be safe, though not strictly required if keys are unique
+        sort_keys = [
+            "trajectory_type",
+            "company_id",
+            "asset_id",
+            "technology",
+            "scenario_geography",
+            "year",
+        ]
+        ops_data = ops_data.sort_values(sort_keys)
+
+        # Define grouping keys to identify unique assets within a trajectory
+        group_keys = [
+            "trajectory_type",
+            "company_id",
+            "asset_id",
+            "technology",
+            "scenario_geography",
+        ]
+
+        # Compute initial capacity: transform('first') takes the first value in the sorted group
+        ops_data["initial_capacity"] = ops_data.groupby(group_keys)["K_avg"].transform(
+            "first"
+        )
+
+        # Apply logic:
+        # 1. If technology is decreasing (in baseline or shock), use initial_capacity
+        # 2. Otherwise (increasing techs), use K_avg (actual capacity)
+        # Decreasing technologies have alignment_type in ["misaligned_high_carbon", "aligned_high_carbon"]
+        decreasing_alignment_types = ["misaligned_high_carbon", "aligned_high_carbon"]
+
+        # Check if alignment_type column exists
+        if "alignment_type" in ops_data.columns:
+            is_decreasing = ops_data["alignment_type"].isin(decreasing_alignment_types)
+        else:
+            # If alignment_type not available, log warning and apply to all technologies
+            logger.warning(
+                "alignment_type column not found. Applying constant capacity to all technologies."
+            )
+            is_decreasing = pd.Series(True, index=ops_data.index)
+
+        # Apply frozen capacity only to decreasing technologies AND only in shock scenarios
+        # We do NOT apply it to baseline, allowing baseline costs to retire with capacity (orderly transition)
+        is_shock_scenario = ops_data["trajectory_type"] != "baseline"
+        decreasing_mask = is_decreasing & is_shock_scenario
+
+        ops_data["K_for_fixed_cost"] = np.where(
+            decreasing_mask, ops_data["initial_capacity"], ops_data["K_avg"]
+        )
+
+        logger.info(
+            "Applied constant initial capacity to %s asset-year rows (decreasing techs in shock scenarios only). "
+            "Baseline and increasing techs use actual capacity.",
+            decreasing_mask.sum(),
+        )
+    else:
+        ops_data["K_for_fixed_cost"] = ops_data["K_avg"]
+
+    ops_data["fixed_cost"] = (
+        ops_data["fom_usd_per_mw_yr"] * ops_data["K_for_fixed_cost"]
+    )
 
     # Carbon cost (net of passthrough)
     ops_data["carbon_cost_net"] = (

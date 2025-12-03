@@ -27,6 +27,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                     downloaded_scenarios="scenarios_pathways",
                     all_alignment_classifications="all_alignment_classifications",
                     assets_data="companies_forecasts",
+                    frozen_capacity_at_retirement="frozen_capacity_at_retirement",
                 ),
                 outputs=dict(
                     assets_validated="_temp_assets_validated",
@@ -55,6 +56,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                 func=compute_flow_based_capex,
                 inputs=dict(
                     asset_panel_enriched="_temp_asset_panel_enriched",
+                    include_growth_capex="params:include_growth_capex",
                     include_replacement_capex="params:include_replacement_capex",
                     include_decom_costs="params:include_decom_costs",
                 ),
@@ -66,6 +68,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                 inputs=dict(
                     asset_capex_block="_temp_asset_capex_block",
                     market_passthrough="params:market_passthrough",
+                    use_frozen_capacity_for_fixed_costs="params:use_frozen_capacity_for_fixed_costs",
                 ),
                 outputs="_temp_asset_ops_block",
             ),

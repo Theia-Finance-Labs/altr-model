@@ -37,6 +37,9 @@ def filter_scenarios(
         scenarios_pathways["scenario_geography"] == "Global", "country_iso2_list"
     ] = np.nan
 
+    # NOTE: Removed WindCap transformation - keeping WindCap - Onshore and WindCap - Offshore
+    # as-is to match with asset data
+
     assert (
         target_scenario
         in scenarios_pathways[
@@ -260,13 +263,8 @@ def filter_assets(
         :,
     ]
 
-    # TODO REMOVE HARDFIX FOR NGFS
-    assets_forecasts.loc[
-        assets_forecasts["technology"].isin(
-            ["WindCap - Offshore", "WindCap - Onshore"]
-        ),
-        "technology",
-    ] = "WindCap"
+    # NOTE: Removed WindCap transformation - keeping WindCap - Onshore and WindCap - Offshore
+    # as-is to match with scenario data which has WindCap - Onshore
 
     owned_assets = companies_ownership_tree["asset_id"].unique().tolist()
     filtered_assets_forecasts = assets_forecasts.loc[

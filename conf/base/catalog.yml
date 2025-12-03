@@ -43,7 +43,7 @@ financial_averages:
 
 downloaded_scenarios:
   type: pandas.CSVDataset
-  filepath: data/05_model_input/6_final_NGFS_viable_scenarios.csv
+  filepath: data/05_model_input/4_final_AR6_gapfilled_complete.csv
 
 downloaded_assets:
   type: pandas.CSVDataset
@@ -78,6 +78,11 @@ companies_late_sudden_trajectories:
 asset_level_staggered_shock:  
   type: pandas.CSVDataset
   filepath: data/07_model_output/asset_level_staggered_shock.csv
+
+# Frozen capacity at retirement for fixed cost calculations
+frozen_capacity_at_retirement:
+  type: pandas.CSVDataset
+  filepath: data/07_model_output/frozen_capacity_at_retirement.csv
 
 
 # ================================================

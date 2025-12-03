@@ -12,6 +12,7 @@ from .nodes import (
     concatenate_staggered_shock_results,
     flag_phased_out_assets_as_retired,
     melt_asset_staggered_trajectories,
+    create_frozen_capacity_at_retirement,
 )
 
 
@@ -23,6 +24,9 @@ def create_pipeline(**kwargs) -> Pipeline:
                 inputs=dict(
                     companies_late_sudden_trajectories="companies_late_sudden_trajectories",
                     allocated_assets_to_companies="extended_companies_forecasts",
+                    assets_retirement_dates="assets_retirement_dates",
+                    apply_retirement="params:apply_retirement",
+                    alignment_year="params:alignment_year",
                 ),
                 outputs="assets_with_baseline_trajectory",
                 name="compute_asset_baselines",
@@ -96,6 +100,16 @@ def create_pipeline(**kwargs) -> Pipeline:
                     assets_staggered_late_sudden="asset_level_staggered_shock",
                 ),
                 outputs="asset_level_staggered_shock_melted",
+            ),
+            # Create frozen capacity at retirement for fixed cost calculations
+            node(
+                create_frozen_capacity_at_retirement,
+                inputs=dict(
+                    asset_level_staggered_shock="asset_level_staggered_shock",
+                    assets_retirement_dates="assets_retirement_dates",
+                ),
+                outputs="frozen_capacity_at_retirement",
+                name="create_frozen_capacity",
             ),
         ],
         tags="altrisk",
