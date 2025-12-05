@@ -297,7 +297,7 @@ def compute_asset_baseline_trajectories(
     companies_late_sudden_trajectories: pd.DataFrame,
     allocated_assets_to_companies: pd.DataFrame,
     assets_retirement_dates: pd.DataFrame = None,
-    apply_retirement: bool = False,
+    apply_retirement_baseline: bool = False,
     alignment_year: int = None,
 ) -> pd.DataFrame:
     """
@@ -327,7 +327,7 @@ def compute_asset_baseline_trajectories(
         - asset_activity, asset_age
     assets_retirement_dates : pd.DataFrame, optional
         Retirement dates for assets
-    apply_retirement : bool, optional
+    apply_retirement_baseline : bool, optional
         Whether to apply retirement zeroing to baseline trajectories
     alignment_year : int, optional
         Alignment year for retirement (retirement cannot occur before alignment_year + 1)
@@ -458,7 +458,7 @@ def compute_asset_baseline_trajectories(
 
     # Apply retirement to baseline trajectories if requested
     if (
-        apply_retirement
+        apply_retirement_baseline
         and assets_retirement_dates is not None
         and not assets_retirement_dates.empty
     ):
@@ -1180,7 +1180,7 @@ def stagger_decreasing_technologies(
     assets_retirement_dates: pd.DataFrame,
     shock_year: int,
     alignment_year: int,
-    apply_retirement: bool,
+    apply_retirement_shock: bool,
     apply_decreasing_staggered_shock: bool,
     g_k: float = 6.0,
     n_quantiles: int = 3,
@@ -1234,7 +1234,7 @@ def stagger_decreasing_technologies(
             shock_year=int(shock_year),
             assets_retirement_dates=assets_retirement_dates,
             alignment_year=int(alignment_year),
-            apply_retirement=bool(apply_retirement),
+            apply_retirement=bool(apply_retirement_shock),
             logger=logger,
         )
         return assets_df, corrections_df
@@ -1252,7 +1252,7 @@ def stagger_decreasing_technologies(
         assets_retirement_dates=assets_retirement_dates,
         shock_year=int(shock_year),
         alignment_year=int(alignment_year),
-        apply_retirement=apply_retirement,
+        apply_retirement=apply_retirement_shock,
         g_k=float(g_k),
         n_quantiles=int(n_quantiles),
         logger=logger,
