@@ -43,7 +43,7 @@ financial_averages:
 
 downloaded_scenarios:
   type: pandas.CSVDataset
-  filepath: data/05_model_input/4_final_AR6_gapfilled_complete.csv
+  filepath: data/05_model_input/downloaded_scenarios.csv
 
 downloaded_assets:
   type: pandas.CSVDataset

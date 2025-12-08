@@ -68,7 +68,8 @@ def create_pipeline(**kwargs) -> Pipeline:
                 inputs=dict(
                     asset_capex_block="_temp_asset_capex_block",
                     market_passthrough="params:market_passthrough",
-                    use_frozen_capacity_for_fixed_costs="params:use_frozen_capacity_for_fixed_costs",
+                    apply_continued_om_baseline="params:apply_continued_om_baseline",
+                    apply_continued_om_shock="params:apply_continued_om_shock",
                 ),
                 outputs="_temp_asset_ops_block",
             ),

@@ -1551,8 +1551,12 @@ def create_frozen_capacity_at_retirement(
     Create a dataframe tracking frozen capacity at retirement time for decreasing technologies.
 
     For each asset that retires:
-    - Captures its capacity at the retirement year
-    - Extends that frozen capacity constant through all years up to 2050
+    - Captures its capacity at the year BEFORE retirement (retirement_year - 1)
+    - Extends that frozen capacity constant through all years from retirement onward
+
+    Note: This creates a lookup table that is merged into asset data, but fixed cost
+    calculations in compute_ops_block() actually use first-year capacity (initial_capacity),
+    not this retirement capacity. This lookup may be used for other purposes or future features.
 
     Args:
         asset_level_staggered_shock: Wide asset-level dataframe with capacity_after_shock
@@ -1562,7 +1566,7 @@ def create_frozen_capacity_at_retirement(
         DataFrame with columns: asset_id, company_id, scenario_geography, sector,
         technology, year, frozen_capacity_at_retirement
     """
-    logger.info("Creating frozen capacity at retirement...")
+    logger.info("Creating frozen capacity lookup at retirement (for reference; fixed costs use first-year capacity)...")
 
     # Handle empty inputs
     if assets_retirement_dates is None or assets_retirement_dates.empty:

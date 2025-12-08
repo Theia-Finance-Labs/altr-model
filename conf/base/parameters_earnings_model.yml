@@ -6,6 +6,8 @@ include_growth_capex: False        # Include growth CapEx for new buildout capac
 include_replacement_capex: False  # Include CapEx for replacing retired eligible assets
 include_decom_costs: False        # Include decommissioning costs for retired assets
 
-# Frozen capacity feature - use capacity at retirement time for fixed costs
-use_frozen_capacity_for_fixed_costs: True  # If True, use frozen capacity at retirement for fixed cost calculations
+# Frozen capacity feature - use capacity at retirement time for fixed costs (continued O&M costs)
+# Similar to retirement parameters, you can control whether to apply to baseline and/or shock scenarios
+apply_continued_om_baseline: False  # Apply continued O&M costs (frozen capacity) to baseline trajectories
+apply_continued_om_shock: True      # Apply continued O&M costs (frozen capacity) to shock (late sudden) trajectories
 
