@@ -6,7 +6,7 @@
 db_assets_forecasts:
   type: ibis.TableDataset
   table_name: assets_forecasts
-  database: bertrand_marts
+  database: bertrand2_marts
   connection:
     backend: bigquery
     project_id: cloud-1in1000
@@ -15,7 +15,7 @@ db_assets_forecasts:
 plant_ownerships:
   type: ibis.TableDataset
   table_name: companies_ownership_tree
-  database: bertrand_marts
+  database: bertrand2_marts
   connection:
     backend: bigquery
     project_id: cloud-1in1000
@@ -24,7 +24,7 @@ plant_ownerships:
 db_scenarios_pathways:
   type: ibis.TableDataset
   table_name: scenarios
-  database: bertrand_marts
+  database: bertrand2_marts
   connection:
     backend: bigquery
     project_id: cloud-1in1000
@@ -45,10 +45,6 @@ downloaded_scenarios:
   type: pandas.CSVDataset
   filepath: data/05_model_input/downloaded_scenarios.csv
 
-downloaded_scenarios_ar6:
-  type: pandas.CSVDataset
-  filepath: data/05_model_input/downloaded_scenarios_ar6.csv
-
 downloaded_assets:
   type: pandas.CSVDataset
   filepath: data/05_model_input/downloaded_assets.csv
@@ -59,7 +55,11 @@ downloaded_companies:
 
 allocated_assets_to_companies:
   type: pandas.CSVDataset
-  filepath: data/06_model_output/allocated_assets_to_companies.csv
+  filepath: data/07_model_output/allocated_assets_to_companies.csv
+
+scenarios_pathways:
+  type: pandas.CSVDataset
+  filepath: data/07_model_output/scenarios_pathways_clean.csv  
 
 # ================================================
 # ================== OUTPUTS =====================
@@ -70,82 +70,20 @@ companies_npvs:
   type: pandas.CSVDataset
   filepath: data/08_reporting/companies_npvs.csv
 
-assets_data:
-  type: pandas.CSVDataset
-  filepath: data/08_reporting/assets_data.csv
-
-scenarios_data:
-  type: pandas.CSVDataset
-  filepath: data/08_reporting/scenarios_data.csv
-
-financial_data:
-  type: pandas.CSVDataset
-  filepath: data/08_reporting/financial_data.csv
-
-# For compatibility with tests expecting "companies_npvs_excel"
-companies_npvs_excel:
-  type: pandas.CSVDataset
-  filepath: data/08_reporting/companies_npvs.csv
-
 # Combined late sudden trajectories and alignment classifications
-all_late_sudden_trajectories:
+companies_late_sudden_trajectories:
   type: pandas.CSVDataset
-  filepath: data/08_reporting/all_late_sudden_trajectories.csv
-
-all_alignment_classifications:
-  type: pandas.CSVDataset
-  filepath: data/08_reporting/all_alignment_classifications.csv
+  filepath: data/07_model_output/companies_late_sudden_trajectories.csv
 
 asset_level_staggered_shock:  
   type: pandas.CSVDataset
-  filepath: data/08_reporting/asset_level_staggered_shock.csv
+  filepath: data/07_model_output/asset_level_staggered_shock.csv
 
-# ================================================
-# ======= FINANCIAL MODEL PIPELINE OUTPUTS =======
-# ================================================
-
-# Temporary internal datasets (not saved to disk)
-_temp_assets_baseline:
-  type: MemoryDataset
-
-_temp_assets_shock:
-  type: MemoryDataset
-
-_temp_assets_with_accounting_baseline:
-  type: MemoryDataset
-
-_temp_assets_with_accounting_shock:
-  type: MemoryDataset
-
-# Net profits files with baseline, shock, difference, and percentage difference columns
-assets_net_profits:
+# Frozen capacity at retirement for fixed cost calculations
+frozen_capacity_at_retirement:
   type: pandas.CSVDataset
-  filepath: data/07_model_output/assets_net_profits.csv
+  filepath: data/07_model_output/frozen_capacity_at_retirement.csv
 
-company_tech_net_profits:
-  type: pandas.CSVDataset
-  filepath: data/07_model_output/company_tech_net_profits.csv
-
-company_net_profits:
-  type: pandas.CSVDataset
-  filepath: data/07_model_output/company_net_profits.csv
-
-company_discounted_net_profits:
-  type: pandas.CSVDataset
-  filepath: data/08_reporting/company_discounted_net_profits.csv
-
-# Net profits files with NPV calculations added
-assets_net_profits_with_npv:
-  type: pandas.CSVDataset
-  filepath: data/07_model_output/assets_net_profits_with_npv.csv
-
-company_tech_net_profits_with_npv:
-  type: pandas.CSVDataset
-  filepath: data/07_model_output/company_tech_net_profits_with_npv.csv
-
-company_net_profits_with_npv:
-  type: pandas.CSVDataset
-  filepath: data/07_model_output/company_net_profits_with_npv.csv
 
 # ================================================
 # ======= EARNINGS MODEL PIPELINE OUTPUTS =======
@@ -156,19 +94,23 @@ asset_earnings:
   type: pandas.CSVDataset
   filepath: data/07_model_output/asset_earnings.csv
 
-# Company-technology level aggregated earnings
-company_technology_earnings:
-  type: pandas.CSVDataset
-  filepath: data/07_model_output/company_technology_earnings.csv
+# # Company-technology level aggregated earnings
+# company_technology_earnings:
+#   type: pandas.CSVDataset
+#   filepath: data/07_model_output/company_technology_earnings.csv
 
-# Company level aggregated earnings
-company_earnings:
-  type: pandas.CSVDataset
-  filepath: data/07_model_output/company_earnings.csv
+# # Company level aggregated earnings
+# company_earnings:
+#   type: pandas.CSVDataset
+#   filepath: data/07_model_output/company_earnings.csv
 
 # ================================================
 # ================== VALUATION MODEL OUTPUTS ===
 # ================================================
+
+yearly_npv_trajectories:
+  type: pandas.CSVDataset
+  filepath: data/07_model_output/yearly_npv_trajectories.csv
 
 asset_npv:
   type: pandas.CSVDataset
@@ -181,4 +123,35 @@ company_technology_npv:
 company_npv:
   type: pandas.CSVDataset
   filepath: data/07_model_output/company_npv.csv
+
+# ================================================
+# ================ REPORTING PIPELINE OUTPUTS ===
+# ================================================
+
+
+validation_summary:
+  type: pandas.CSVDataset
+  filepath: data/08_reporting/tables/validation_summary.csv
+
+# Compliance-ready reporting tables
+report_company_summary:
+  type: pandas.CSVDataset
+  filepath: data/08_reporting/tables/compliance_ready/company_summary.csv
+
+report_technology_summary:
+  type: pandas.CSVDataset
+  filepath: data/08_reporting/tables/compliance_ready/technology_summary.csv
+
+report_top_assets:
+  type: pandas.CSVDataset
+  filepath: data/08_reporting/tables/compliance_ready/top_assets.csv
+
+report_methodology:
+  type: pandas.CSVDataset
+  filepath: data/08_reporting/tables/compliance_ready/methodology_parameters.csv
+
+# Quality control summary
+reporting_qc_summary:
+  type: pandas.CSVDataset
+  filepath: data/08_reporting/tables/compliance_ready/reporting_qc.csv
 

@@ -32,21 +32,6 @@
         }
       },
       {
-        "name": "Kedro Run Trisk (Debug)",
-        "type": "debugpy",
-        "request": "launch",
-        "module": "kedro",
-        "args": [
-          "run",
-          "--tags=trisk"
-        ],
-        "console": "integratedTerminal",
-        "justMyCode": false,
-        "env": {
-          "PYTHONBREAKPOINT": "ipdb.set_trace"
-        }
-      },
-      {
         "name": "Kedro Download Trisk data (Debug)",
         "type": "debugpy",
         "request": "launch",

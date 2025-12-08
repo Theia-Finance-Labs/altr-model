@@ -6,10 +6,6 @@ generated using Kedro 0.19.12
 import pandas as pd
 from typing import Tuple, Union
 import numpy as np
-import matplotlib.pyplot as plt
-import os
-from pathlib import Path
-import re
 
 
 def determine_companies_technologies_alignment(
@@ -40,7 +36,7 @@ def determine_companies_technologies_alignment(
     with_activity = companies_with_trend.dropna(subset=["company_activity"])
 
     # 4) Aggregate per companyxtech and grab sums + final-year values:
-    agg = (
+    all_alignment_classifications = (
         with_activity.sort_values("year")
         .groupby(
             ["company_id", "scenario_geography", "sector", "technology", "increasing"],
@@ -67,23 +63,29 @@ def determine_companies_technologies_alignment(
                 and row["end_forecast"] <= row["end_target"]
             )
 
-    agg.loc[:, "aligned"] = agg.apply(_is_aligned, axis=1)
+    all_alignment_classifications.loc[:, "aligned"] = (
+        all_alignment_classifications.apply(_is_aligned, axis=1)
+    )
 
     # ------------------------------------------------------------------
     # 4.  split into the four requested buckets
     # ------------------------------------------------------------------
-    misaligned_high_carbon = agg.loc[
-        (~agg["aligned"]) & (~agg["increasing"])
+    misaligned_high_carbon = all_alignment_classifications.loc[
+        (~all_alignment_classifications["aligned"])
+        & (~all_alignment_classifications["increasing"])
     ].reset_index(drop=True)
-    misaligned_low_carbon = agg.loc[(~agg["aligned"]) & agg["increasing"]].reset_index(
-        drop=True
-    )
-    aligned_high_carbon = agg.loc[agg["aligned"] & (~agg["increasing"])].reset_index(
-        drop=True
-    )
-    aligned_low_carbon = agg.loc[agg["aligned"] & agg["increasing"]].reset_index(
-        drop=True
-    )
+    misaligned_low_carbon = all_alignment_classifications.loc[
+        (~all_alignment_classifications["aligned"])
+        & all_alignment_classifications["increasing"]
+    ].reset_index(drop=True)
+    aligned_high_carbon = all_alignment_classifications.loc[
+        all_alignment_classifications["aligned"]
+        & (~all_alignment_classifications["increasing"])
+    ].reset_index(drop=True)
+    aligned_low_carbon = all_alignment_classifications.loc[
+        all_alignment_classifications["aligned"]
+        & all_alignment_classifications["increasing"]
+    ].reset_index(drop=True)
 
     # ------------------------------------------------------------------
     # 5. Filter companies_trajectories for each case
@@ -119,40 +121,30 @@ def determine_companies_technologies_alignment(
         aligned_low_carbon_pairs, on=key_cols_for_filter, how="inner"
     ).copy()
 
-    return (
-        misaligned_high_carbon_companies_trajectories,
-        misaligned_low_carbon_companies_trajectories,
-        aligned_high_carbon_companies_trajectories,
-        aligned_low_carbon_companies_trajectories,
+    return dict(
+        all_alignment_classifications=all_alignment_classifications,
+        misaligned_high_carbon_companies_trajectories=misaligned_high_carbon_companies_trajectories,
+        misaligned_low_carbon_companies_trajectories=misaligned_low_carbon_companies_trajectories,
+        aligned_high_carbon_companies_trajectories=aligned_high_carbon_companies_trajectories,
+        aligned_low_carbon_companies_trajectories=aligned_low_carbon_companies_trajectories,
     )
 
 
 def late_sudden_misaligned_high_carbon_companies(
     misaligned_high_carbon_companies_trajectories: pd.DataFrame,
-    assets_retirement_dates: pd.DataFrame,
     shock_year: int,
     alignment_year: int,
 ) -> pd.DataFrame:
     """
     Late & Sudden pathway for *misaligned high-carbon* companies with *asset retirement*.
 
-        Retirement rule (permanent capacity reduction):
-      For each asset (company_id, sector, technology) that retires in year y_r with a given
-      `capacity`, subtract that capacity from the L&S pathway for all years >= y_r (cumulative
-      for multiple assets). Values are clipped to >= 0.
-
     Phase labeling:
       - Base phases: forecast / bau / transition / aligned / aligned_compensation
-      - The specific year when a retirement event occurs gets the "retirement" phase.
-      - Retirement phase remains "retirement" even when compensation is applied.
 
     Inputs
     ------
     misaligned_high_carbon_companies_trajectories : DataFrame
         Already filtered companies_trajectories for misaligned high-carbon companies
-    assets_retirement_dates : DataFrame with columns
-        ['company_id','scenario_geography','sector','technology','retirement_year','capacity']
-        capacity treated as non-negative.
     shock_year, alignment_year : int
 
     Returns
@@ -175,24 +167,6 @@ def late_sudden_misaligned_high_carbon_companies(
         ]:
             out[col] = out.get(col, pd.Series(dtype=dtype))
         return out
-
-    # -------------------- Normalize retirement table --------------------
-    retire_df = assets_retirement_dates.copy()
-
-    # Index retirement events by (company_id, sector, technology)
-    retire_key_cols = ["company_id", "scenario_geography", "sector", "technology"]
-    events_by_key = {}
-    if not retire_df.empty:
-        # Sort for deterministic application
-        retire_df = retire_df.sort_values(retire_key_cols + ["retirement_year"])
-        for key, sub in retire_df.groupby(retire_key_cols, sort=False):
-            # simple list of (year, capacity)
-            events_by_key[key] = list(
-                zip(
-                    sub["retirement_year"].tolist(),
-                    sub["capacity"].astype(float).tolist(),
-                )
-            )
 
     # -------------------- Work per company x geography x sector x technology --------------------
     group_cols = ["company_id", "scenario_geography", "sector", "technology"]
@@ -248,55 +222,7 @@ def late_sudden_misaligned_high_carbon_companies(
             ls[mask_p4] = target[mask_p4]
             phase[mask_p4] = "aligned"
 
-        # -------- Phase 4a: Apply ASSET RETIREMENT (permanent capacity reduction) --------
-        # For each event at y_r with capacity C: ls[y >= y_r] -= C (cumulative), clip >= 0.
-        # Only the retirement year gets "retirement" phase label.
-        key_ret = (
-            g["company_id"].iloc[0],
-            g["scenario_geography"].iloc[0],
-            g["sector"].iloc[0],
-            g["technology"].iloc[0],
-        )
-        events = events_by_key.get(key_ret, [])
-
-        if events:
-            retirement_years = set()  # Track which years have retirement events
-
-            # Sort events by year to apply them chronologically
-            events_sorted = sorted(events, key=lambda x: x[0])
-
-            for y_r, cap in events_sorted:
-                # Find the index for the retirement year
-                idx_retirement = np.where(years == y_r)[0]
-                if idx_retirement.size == 0:
-                    continue  # retirement year not in our data
-
-                idx_retirement = idx_retirement[0]
-
-                # Get the late sudden value at retirement year
-                ls_at_retirement = ls[idx_retirement]
-
-                if ls_at_retirement > 0:
-                    # Calculate the percentage decrease
-                    percentage_decrease = cap / ls_at_retirement
-                    # Cap the percentage to avoid negative values
-                    percentage_decrease = min(percentage_decrease, 1.0)
-
-                    # Apply this percentage decrease to all years >= y_r
-                    idx_after = np.where(years >= y_r)[0]
-                    if idx_after.size > 0:
-                        ls[idx_after] *= 1 - percentage_decrease
-
-                # Mark the retirement year
-                retirement_years.add(y_r)
-
-            # Mark only the specific retirement years as "retirement" phase
-            for y_r in retirement_years:
-                idx_exact = np.where(years == y_r)[0]
-                if idx_exact.size > 0:
-                    phase[idx_exact[0]] = "retirement"
-
-        # -------- Phase 4b: Compensation (uniform, non-positive; same logic, computed AFTER retirements) --------
+        # -------- Phase 5: Compensation  --------
         pre_mask = years <= alignment_year
         post_mask = years > alignment_year
         pre_excess = float(np.nansum(ls[pre_mask] - target[pre_mask]))
@@ -309,12 +235,7 @@ def late_sudden_misaligned_high_carbon_companies(
             comp_per_year = -compensation_volume / n_years_comp  # <= 0
             ls[post_mask] = np.maximum(ls[post_mask] + comp_per_year, 0.0)
             # Upgrade alignment labels to reflect compensation
-            # Keep retirement phase as-is, only modify aligned phases
-            phase[post_mask] = np.where(
-                phase[post_mask] == "retirement",
-                "retirement",  # Keep retirement phase unchanged
-                "aligned_compensation",
-            )
+            phase[post_mask] = "aligned_compensation"
 
         # -------- Attach outputs --------
         g["company_trajectory_latesudden"] = ls
@@ -751,11 +672,28 @@ def concatenate_late_sudden_results(
     # Concatenate all late sudden results
     if late_sudden_dfs:
         all_late_sudden = pd.concat(late_sudden_dfs, ignore_index=True)
+        all_late_sudden = all_late_sudden[
+            [
+                "company_id",
+                "company_name",
+                "scenario_geography",
+                "sector",
+                "technology",
+                "year",
+                "company_activity",
+                "company_trajectory_baseline",
+                "company_trajectory_target",
+                "company_trajectory_latesudden",
+                "late_sudden_phase",
+                "alignment_type",
+            ]
+        ]
     else:
         # Create empty dataframe with expected columns if no data
         all_late_sudden = pd.DataFrame(
             columns=[
                 "company_id",
+                "company_name",
                 "scenario_geography",
                 "sector",
                 "technology",
@@ -769,4 +707,32 @@ def concatenate_late_sudden_results(
             ]
         )
 
-    return all_late_sudden
+    all_late_sudden_melted = (
+        all_late_sudden.melt(
+            id_vars=[
+                "company_id",
+                "company_name",
+                "scenario_geography",
+                "sector",
+                "technology",
+                "year",
+                "late_sudden_phase",
+                "alignment_type",
+            ],
+            value_vars=[
+                "company_trajectory_latesudden",
+                "company_trajectory_baseline",
+                "company_trajectory_target",
+            ],
+            var_name="variable",
+            value_name="company_trajectory",
+        )
+        .assign(
+            trajectory_type=lambda df: df["variable"].str.replace(
+                "company_trajectory_", "", regex=False
+            )
+        )
+        .drop(columns="variable")
+        .reset_index(drop=True)
+    )
+    return all_late_sudden_melted

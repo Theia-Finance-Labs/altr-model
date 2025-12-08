@@ -7,17 +7,20 @@ from kedro.pipeline import node, Pipeline, pipeline  # noqa
 from .nodes import (
     check_input_parameters,
     filter_scenarios,
+    apply_ccs_suffix,
     filter_assets,
     filter_companies,
     assign_scenario_geographies_to_assets,
     allocate_assets_to_companies,
     determine_increasing_or_decreasing_techs,
     determine_lifetime_per_technology,
-    determine_assets_retirement_dates,
+    interpolate_scenarios_annually,
+    scale_electricity_price,
 )
 
 
 def create_pipeline(**kwargs) -> Pipeline:
+    """Create the inputs processing pipeline."""
     return pipeline(
         [
             node(
@@ -35,6 +38,19 @@ def create_pipeline(**kwargs) -> Pipeline:
                     target_scenario="params:target_scenario",
                     baseline_scenario="params:baseline_scenario",
                 ),
+                outputs="scenarios_pathways_filtered",
+            ),
+            node(
+                func=interpolate_scenarios_annually,
+                inputs=dict(scenarios_pathways="scenarios_pathways_filtered"),
+                outputs="scenarios_pathways_interpolated",
+            ),
+            node(
+                func=scale_electricity_price,
+                inputs=dict(
+                    scenarios_pathways="scenarios_pathways_interpolated",
+                    theta="params:theta_capex_recovery",
+                ),
                 outputs="scenarios_pathways",
             ),
             node(
@@ -42,14 +58,25 @@ def create_pipeline(**kwargs) -> Pipeline:
                 inputs=dict(
                     companies_ownership_tree="downloaded_companies",
                     company_ids="params:company_ids",
+                    ownership_type="params:ownership_type",
                 ),
                 outputs="companies_ownership_tree",
             ),
             node(
-                func=filter_assets,
+                func=apply_ccs_suffix,
                 inputs=dict(
                     assets_forecasts="downloaded_assets",
                     companies_ownership_tree="companies_ownership_tree",
+                    scenarios_pathways="scenarios_pathways",
+                    ccs_on="params:ccs_on",
+                ),
+                outputs=["assets_forecasts_ccs", "companies_ownership_tree_ccs"],
+            ),
+            node(
+                func=filter_assets,
+                inputs=dict(
+                    assets_forecasts="assets_forecasts_ccs",
+                    companies_ownership_tree="companies_ownership_tree_ccs",
                     scenarios_pathways="scenarios_pathways",
                     max_forecast_horizon="params:max_forecast_horizon",
                 ),
@@ -67,7 +94,8 @@ def create_pipeline(**kwargs) -> Pipeline:
                 func=allocate_assets_to_companies,
                 inputs=dict(
                     assets_forecasts="assets_forecasts_with_scenario_geographies",
-                    companies_ownership_tree="companies_ownership_tree",
+                    companies_ownership_tree="companies_ownership_tree_ccs",
+                    scenarios_pathways="scenarios_pathways",
                 ),
                 outputs="allocated_assets_to_companies",
             ),
@@ -80,15 +108,6 @@ def create_pipeline(**kwargs) -> Pipeline:
                 determine_lifetime_per_technology,
                 inputs=dict(scenarios_pathways="scenarios_pathways"),
                 outputs="lifetime_per_technology",
-            ),
-            node(
-                determine_assets_retirement_dates,
-                inputs=dict(
-                    assets_forecasts="allocated_assets_to_companies",
-                    lifetime_per_technology="lifetime_per_technology",
-                    scenarios_pathways="scenarios_pathways",
-                ),
-                outputs="assets_retirement_dates",
             ),
         ],
         tags=["altrisk", "trisk"],

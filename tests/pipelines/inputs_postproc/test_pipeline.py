@@ -1,5 +1,5 @@
 """
-This is a boilerplate test file for pipeline 'layer2'
+This is a boilerplate test file for pipeline 'inputs_postproc'
 generated using Kedro 0.19.12.
 Please add your pipeline tests here.
 

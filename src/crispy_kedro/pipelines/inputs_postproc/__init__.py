@@ -1,5 +1,5 @@
 """
-This is a boilerplate pipeline 'inputs_processing'
+This is a boilerplate pipeline 'inputs_postproc'
 generated using Kedro 0.19.12
 """
 
