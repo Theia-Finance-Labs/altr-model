@@ -40,18 +40,16 @@ def filter_scenarios(
     # NOTE: Removed WindCap transformation - keeping WindCap - Onshore and WindCap - Offshore
     # as-is to match with asset data
 
+    # Bypassing scenario_type column for filtering - determining baseline/target on the fly
+    # based on the baseline_scenario and target_scenario parameters. This is more practical
+    # than relying on the scenario_type column which can be heavy to maintain. However, we
+    # still set the scenario_type column to the proper values because it's used elsewhere.
     assert (
-        target_scenario
-        in scenarios_pathways[
-            scenarios_pathways["scenario_type"] == "target"
-        ].scenario.unique()
-    ), "Target scenario not found in scenarios pathways"
+        target_scenario in scenarios_pathways.scenario.unique()
+    ), f"Target scenario '{target_scenario}' not found in scenarios pathways"
     assert (
-        baseline_scenario
-        in scenarios_pathways[
-            scenarios_pathways["scenario_type"] == "baseline"
-        ].scenario.unique()
-    ), "Baseline scenario not found in scenarios pathways"
+        baseline_scenario in scenarios_pathways.scenario.unique()
+    ), f"Baseline scenario '{baseline_scenario}' not found in scenarios pathways"
 
     baseline_geographies = set(
         scenarios_pathways[scenarios_pathways["scenario"] == baseline_scenario][
@@ -125,6 +123,14 @@ def filter_scenarios(
     ].reset_index(drop=True)
 
     scenarios_pathways_filtered = scenarios_pathways_filtered.reset_index(drop=True)
+
+    # Set scenario_type column on the fly based on which scenario is baseline and which is target
+    scenarios_pathways_filtered.loc[
+        scenarios_pathways_filtered["scenario"] == baseline_scenario, "scenario_type"
+    ] = "baseline"
+    scenarios_pathways_filtered.loc[
+        scenarios_pathways_filtered["scenario"] == target_scenario, "scenario_type"
+    ] = "target"
 
     scenarios_pathways_filtered.loc[:, "scenario_pathway"] = (
         scenarios_pathways_filtered.loc[:, "scenario_pathway"].astype(float)
