@@ -187,7 +187,7 @@ cat(sprintf("After ownership filter: %s rows, %s unique assets\n",
             nrow(assets_filtered), n_distinct(assets_filtered$asset_id)))
 
 assets_summary <- rbind(assets_summary, data.frame(
-  Step = "2",
+  Step = "1",
   Description = "Remove assets without valid company ownership",
   Assets_Remaining = curr_count,
   Assets_Removed = prev_count - curr_count,
@@ -218,7 +218,7 @@ cat(sprintf("After sector/technology filter: %s rows, %s unique assets\n",
             nrow(assets_filtered), n_distinct(assets_filtered$asset_id)))
 
 assets_summary <- rbind(assets_summary, data.frame(
-  Step = "3",
+  Step = "2",
   Description = "Remove sector/tech not in scenario (Coal/Coal, Oil&Gas/Oil, etc.)",
   Assets_Remaining = curr_count,
   Assets_Removed = prev_count - curr_count,
@@ -247,47 +247,17 @@ cat(sprintf("After geography filter: %s rows, %s unique assets\n",
             nrow(assets_filtered), n_distinct(assets_filtered$asset_id)))
 
 assets_summary <- rbind(assets_summary, data.frame(
-  Step = "4",
+  Step = "3",
   Description = "Remove countries not covered by scenario",
   Assets_Remaining = curr_count,
   Assets_Removed = prev_count - curr_count,
   Rows_Remaining = nrow(assets_filtered)
 ))
 
-# Filter 5: Keep only assets with at least SOME rows in the forecast period
-# First, identify which assets have at least one row in the period
-assets_in_period <- assets_filtered %>%
-  filter(
-    production_year >= scenario_start_year,
-    production_year <= forecast_end_year
-  ) %>%
-  distinct(asset_id) %>%
-  pull(asset_id)
-
-cat(sprintf("\nAssets with at least one row in %s-%s: %s\n", 
-            scenario_start_year, forecast_end_year, length(assets_in_period)))
-
-# Keep all rows for assets that have at least one row in the period
-prev_count <- n_distinct(assets_filtered$asset_id)
-assets_filtered <- assets_filtered %>%
-  filter(asset_id %in% assets_in_period)
-
-curr_count <- n_distinct(assets_filtered$asset_id)
-cat(sprintf("After production year filter: %s rows, %s unique assets\n", 
-            nrow(assets_filtered), n_distinct(assets_filtered$asset_id)))
-
-assets_summary <- rbind(assets_summary, data.frame(
-  Step = "5",
-  Description = sprintf("Remove assets with no rows in %s-%s period", scenario_start_year, forecast_end_year),
-  Assets_Remaining = curr_count,
-  Assets_Removed = prev_count - curr_count,
-  Rows_Remaining = nrow(assets_filtered)
-))
-
 # ==============================================================================
-# FILTER 6: Remove assets with invalid NPV potential
+# FILTER 4: Remove assets with invalid NPV potential
 # ==============================================================================
-cat("\n=== FILTER 6: Removing assets with invalid NPV potential ===\n")
+cat("\n=== FILTER 4: Removing assets with invalid NPV potential ===\n")
 cat("These filters prevent NaN/Zero NPV in model results\n\n")
 
 # Rule 1: Remove assets with ALL capacity = 0 or NA
@@ -354,7 +324,7 @@ cat(sprintf("Removed: %s assets (%.1f%%)\n\n",
 
 # Add sub-steps for invalid NPV filter
 assets_summary <- rbind(assets_summary, data.frame(
-  Step = "6.1",
+  Step = "3a",
   Description = sprintf("  - All capacity = 0 or NA: %s assets", length(assets_all_zero)),
   Assets_Remaining = curr_count,
   Assets_Removed = length(assets_all_zero),
@@ -362,7 +332,7 @@ assets_summary <- rbind(assets_summary, data.frame(
 ))
 
 assets_summary <- rbind(assets_summary, data.frame(
-  Step = "6.2",
+  Step = "3b",
   Description = sprintf("  - Capacity = 0 in %s-%s: %s assets", scenario_start_year, forecast_end_year, length(assets_in_window)),
   Assets_Remaining = curr_count,
   Assets_Removed = length(assets_in_window),
@@ -370,23 +340,7 @@ assets_summary <- rbind(assets_summary, data.frame(
 ))
 
 assets_summary <- rbind(assets_summary, data.frame(
-  Step = "6.2b",
-  Description = sprintf("  - Capacity = 0 in baseline year (%s): %s assets", scenario_start_year, length(assets_zero_in_baseline)),
-  Assets_Remaining = curr_count,
-  Assets_Removed = length(assets_zero_in_baseline),
-  Rows_Remaining = nrow(assets_filtered)
-))
-
-assets_summary <- rbind(assets_summary, data.frame(
-  Step = "6.3",
-  Description = sprintf("  - Multi-fuel/hybrid: %s assets (DISABLED - keeping these)", length(unique(multi_fuel_assets))),
-  Assets_Remaining = curr_count,
-  Assets_Removed = length(unique(multi_fuel_assets)),
-  Rows_Remaining = nrow(assets_filtered)
-))
-
-assets_summary <- rbind(assets_summary, data.frame(
-  Step = "6",
+  Step = "4",
   Description = sprintf("Remove invalid NPV potential: %s assets total", length(assets_to_remove)),
   Assets_Remaining = curr_count,
   Assets_Removed = assets_before_npv_filter - curr_count,
@@ -394,9 +348,9 @@ assets_summary <- rbind(assets_summary, data.frame(
 ))
 
 # ==============================================================================
-# FILTER 7: Remove assets known to be filtered by pipeline
+# FILTER 5: Remove assets known to be filtered by pipeline
 # ==============================================================================
-cat("\n=== FILTER 7: Removing assets known to be filtered by pipeline ===\n")
+cat("\n=== FILTER 5: Removing assets known to be filtered by pipeline ===\n")
 blocklist_file <- "data/05_model_input/assets_filtered_by_pipeline.csv"
 
 if (file.exists(blocklist_file)) {
@@ -416,14 +370,14 @@ if (file.exists(blocklist_file)) {
   cat(sprintf("Removed: %s assets\n", removed_count))
   
   assets_summary <- rbind(assets_summary, data.frame(
-    Step = "7",
+    Step = "5",
     Description = sprintf("Remove pipeline-filtered assets (blocklist)"),
     Assets_Remaining = curr_count,
     Assets_Removed = removed_count,
     Rows_Remaining = nrow(assets_filtered)
   ))
 } else {
-  cat("No blocklist file found. Skipping Filter 7.\n")
+  cat("No blocklist file found. Skipping Filter 5.\n")
 }
 
 # ==============================================================================
@@ -637,7 +591,7 @@ subStepStyle <- createStyle(
   fontColour = "#666666",
   fgFill = "#F2F2F2"
 )
-sub_rows <- which(grepl("^6\\.", assets_summary_final$Step))
+sub_rows <- which(grepl("^3[a-z]", assets_summary_final$Step))
 if (length(sub_rows) > 0) {
   addStyle(wb, "Assets", subStepStyle, rows = sub_rows + 1, cols = 1:7, gridExpand = TRUE)
 }
