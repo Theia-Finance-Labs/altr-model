@@ -17,7 +17,7 @@ def create_pipeline(**kwargs) -> Pipeline:
         [
             node(
                 aggregate_assets_to_company_level,
-                inputs=dict(assets_forecasts="companies_forecasts"),
+                inputs=dict(assets_forecasts="allocated_assets_to_companies"),
                 outputs="companies_technology_forecasts",
             ),
             node(

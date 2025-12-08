@@ -1,130 +1,101 @@
-# Crispy Kedro - Climate Risk Financial Analysis Pipeline
+# crispy-kedro
 
 [![Powered by Kedro](https://img.shields.io/badge/powered_by-kedro-ffc900?logo=kedro)](https://kedro.org)
 
-A climate risk financial analysis pipeline that performs transition risk analysis by modeling the financial impact of climate scenarios on companies and their assets in the energy sector.
+## Overview
 
-## Installation
+This is your new Kedro project, which was generated using `kedro 0.19.12`.
 
-### 1. Create a Virtual Environment with Python 3.10
+Take a look at the [Kedro documentation](https://docs.kedro.org) to get started.
 
-The project requires Python 3.10 (3.11+ is not supported due to dependency constraints).
+## Rules and guidelines
 
-```bash
-# Using pyenv (recommended)
-pyenv install 3.10.15
-pyenv local 3.10.15
+In order to get the best out of the template:
 
-# Or using venv with Python 3.10
-python3.10 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+* Don't remove any lines from the `.gitignore` file we provide
+* Make sure your results can be reproduced by following a data engineering convention
+* Don't commit data to your repository
+* Don't commit any credentials or your local configuration to your repository. Keep all your credentials and local configuration in `conf/local/`
+
+## How to install dependencies
+
+Declare any dependencies in `requirements.txt` for `pip` installation.
+
+To install them, run:
+
+```
+pip install -r requirements.txt
 ```
 
-### 2. Install Dependencies with Poetry
+## How to run your Kedro pipeline
 
-```bash
-# Install Poetry if you don't have it
-curl -sSL https://install.python-poetry.org | python3 -
+You can run your Kedro project with:
 
-# Install project dependencies
-poetry install
-
-# Activate the Poetry shell
-poetry shell
+```
+kedro run
 ```
 
-## Running the Pipeline
+## How to test your Kedro project
 
-### Step 1: Download Input Data
+Have a look at the file `src/tests/test_run.py` for instructions on how to write your tests. You can run your tests as follows:
 
-If you have GCP credentials for BigQuery:
-
-```bash
-kedro run --tags=download_inputs
+```
+pytest
 ```
 
-If you **don't have GCP credentials**, manually place these files in the `data/05_model_input/` folder:
-- `downloaded_assets.csv`
-- `downloaded_scenarios.csv`
-- `downloaded_companies.csv`
+You can configure the coverage threshold in your project's `pyproject.toml` file under the `[tool.coverage.report]` section.
 
-### Step 2: Run the Model
 
-#### Option A: Using Kedro CLI
+## Project dependencies
 
-Run the model with basic configuration from `conf/base/`:
+To see and update the dependency requirements for your project use `requirements.txt`. You can install the project requirements with `pip install -r requirements.txt`.
 
-```bash
-# Get results only
-kedro run --tags=altrisk
+[Further information about project dependencies](https://docs.kedro.org/en/stable/kedro_project_setup/dependencies.html#project-specific-dependencies)
 
-# Get results with plots and reporting
-kedro run --tags=altrisk,reporting
+## How to work with Kedro and notebooks
+
+> Note: Using `kedro jupyter` or `kedro ipython` to run your notebook provides these variables in scope: `context`, 'session', `catalog`, and `pipelines`.
+>
+> Jupyter, JupyterLab, and IPython are already included in the project requirements by default, so once you have run `pip install -r requirements.txt` you will not need to take any extra steps before you use them.
+
+### Jupyter
+To use Jupyter notebooks in your Kedro project, you need to install Jupyter:
+
+```
+pip install jupyter
 ```
 
-The basic configuration includes company selection and other parameters defined in the `conf/base/` folder.
+After installing Jupyter, you can start a local notebook server:
 
-#### Option B: Using VS Code Debug Configurations
-
-Use the pre-configured debug settings in `.vscode/launch.json`:
-
-1. **Kedro Run AltRisk with reporting (Debug)**: Runs with `--tags=altrisk,reporting` (results + plots)
-2. **Kedro Run AltRisk (Debug)**: Runs with `--tags=altrisk` (results only)
-3. **Kedro Download Trisk data (Debug)**: Runs with `--tags=download_inputs` (data download)
-
-#### Option C: Using Jupyter Notebook for Batch Processing
-
-Use `notebooks/generate_results.ipynb` to:
-- Generate batches of results with parameter overriding
-- Run with or without plots
-- Currently configured to run over all companies (not just the selection in `conf/base/`)
-
-## Code Structure
-
-The main pipeline code is located in `src/crispy_kedro/pipelines/`. Each pipeline is in its own folder:
-
-- `download_inputs/`: Downloads data from BigQuery
-- `inputs_processing/`: Filters and processes input data
-- `inputs_postproc/`: Final data preparation
-- `create_baseline_and_target_trajectories/`: Creates production trajectories
-- `create_late_sudden_trajectories/`: Models delayed policy scenarios
-- `distribute_impacts_to_asset_level/`: Applies staggered shock methodology
-- `earnings_model/`: Calculates asset-level earnings
-- `valuation_model/`: Converts earnings to NPV using DCF
-- `reporting/`: Generates outputs and visualizations
-
-Each pipeline folder contains:
-- `nodes.py`: The actual data processing functions
-- `pipeline.py`: Pipeline definition and node connections
-
-For more information on Kedro pipelines and project structure, see the [Kedro documentation](https://docs.kedro.org).
-
-## Configuration
-
-The pipeline uses configuration files in the `conf/base/` folder, which includes:
-- Company selection
-- Scenario parameters
-- Valuation parameters
-- Other model settings
-
-You can override these parameters when using the Jupyter notebook approach.
-
-## Outputs
-
-Results are saved in the `data/` directory:
-- `data/07_model_output/`: Model results (NPV, earnings, etc.)
-- `data/08_reporting/`: Charts and reports (when using `reporting` tag)
-
-## Visualization
-
-Explore the pipeline structure interactively:
-
-```bash
-kedro viz
+```
+kedro jupyter notebook
 ```
 
-This opens a web interface showing the pipeline flow, data lineage, and dependencies.
+### JupyterLab
+To use JupyterLab, you need to install it:
 
-## License
+```
+pip install jupyterlab
+```
 
-This project is licensed under the terms specified in the LICENSE file.
+You can also start JupyterLab:
+
+```
+kedro jupyter lab
+```
+
+### IPython
+And if you want to run an IPython session:
+
+```
+kedro ipython
+```
+
+### How to ignore notebook output cells in `git`
+To automatically strip out all output cell contents before committing to `git`, you can use tools like [`nbstripout`](https://github.com/kynan/nbstripout). For example, you can add a hook in `.git/config` with `nbstripout --install`. This will run `nbstripout` before anything is committed to `git`.
+
+> *Note:* Your output cells will be retained locally.
+
+## Package your Kedro project
+
+[Further information about building project documentation and packaging your project](https://docs.kedro.org/en/stable/tutorial/package_a_project.html)

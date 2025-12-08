@@ -41,6 +41,9 @@ financial_averages:
 # ================== OUTPUTS =====================
 # ================================================
 
+assets_data:
+  type: pandas.CSVDataset
+  filepath: data/08_reporting/assets_data.csv
 
 scenarios_data:
   type: pandas.CSVDataset
