@@ -1138,8 +1138,8 @@ def compute_capacity_flows(asset_panel: pd.DataFrame) -> pd.DataFrame:
     # 3. Replacement flows (2% of existing installed capacity annually for real assets)
     # Routine capital maintenance/refurbishment (1-3% of replacement cost per year
     # is the standard utility benchmark — EPRI, Lazard LCOE methodology).
-    # Applied regardless of capacity growth/decline.
-    replacement_mask = ~data.get("is_synthetic", pd.Series(False, index=data.index))
+    # Excludes retiring assets (already charged decom costs).
+    replacement_mask = is_real & ~retirement_mask
     if replacement_mask.any():
         replacement_data = data[replacement_mask].copy()
         replacement_data["capex_indicator"] = "roll_over_cap"
@@ -1204,7 +1204,7 @@ def compute_flow_based_capex(
     capex_data = compute_capacity_flows(asset_panel_enriched)
 
     # NOTE: Flow identity validation disabled because it's based on flawed assumptions:
-    # - Roll-over flows are intentionally only 5% of capacity changes (replacement rate)
+    # - Roll-over flows are 2% of installed capacity annually (EPRI/Lazard benchmark)
     # - The validation expects flows to fully explain capacity trajectories, which they don't by design
     # - The flows themselves are correct and properly used in CapEx calculations
     # validate_capacity_flow_identity(capex_data)
