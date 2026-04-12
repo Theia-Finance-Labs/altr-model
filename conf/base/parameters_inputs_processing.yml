@@ -14,8 +14,11 @@
 # target_scenario: "AR6_REMIND-MAgPIE 2.1-4.3_DeepElec_SSP2_ HighRE_Budg900"
 # baseline_scenario: "AR6_IMACLIM 1.1_ADVANCE_NoPolicy_WP6"
 # target_scenario: "AR6_IMACLIM 1.1_ADVANCE_INDC_WP6"
-baseline_scenario: "AR6_AIM/CGE 2.2_EN_NPi2020_1200f"
-target_scenario: "AR6_AIM/CGE 2.2_EN_NPi2020_900f"
+# baseline_scenario: "AR6_AIM/CGE 2.2_EN_NPi2020_1200f"
+# target_scenario: "AR6_AIM/CGE 2.2_EN_NPi2020_900f"
+# Note: filter_scenarios prepends "AR6_<provider>_" automatically
+baseline_scenario: "AR6_WITCH 5.0_CO_CurPol"
+target_scenario: "AR6_WITCH 5.0_EN_NPi2020_500"
 
 
 max_forecast_horizon: 5
@@ -28,35 +31,8 @@ ownership_type: "direct"
 ccs_on: False
 
 
-company_ids:
-  - CN_8600108312240451561
-  - CP_1512176126791706747
-  # big greentech owners
-  - CN_6660639238798673502
-  - CN_6660639238798673502
-  - CN_5719632086864744401
-  # big carbontech owners
-  - CN_8600108312240451561
-  - CN_7548398708980274705
-  - CN_5252218731344992786
-  # random other owners with 10-20 assets
-  - CN_8249155112555313068
-  - CP_7671368023139165011
-  - CN_7263620466430749129
-  - CP_5133603177600074280
-  - CP_1405113695717703383
-  - CN_7237425157254272056
-  # random other owners with <10 assets
-  - CN_1325960156574879189
-  - CN_8258543408338880789
-  - CN_4206272115616897750
-  - CN_413233497131578182
-  - CP_2845696436723078206
-  - CN_6870637186458717950
-  - CN_1465642096900403277
-  - CN_4903484062166566625
-  - CP_4899418540238054262
-  - CP_1564781859061095794
+# Empty list = all companies (no filter)
+company_ids: []
 
 
   # - CP_2858814912747331014

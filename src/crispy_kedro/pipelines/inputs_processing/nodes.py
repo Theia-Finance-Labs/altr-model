@@ -26,12 +26,15 @@ def filter_scenarios(
 
     # Standardize scenario naming
     # TODO: remove after integration of scenario data in DBT
-    scenarios_pathways["scenario"] = (
-        "AR6_"
-        + scenarios_pathways["scenario_provider"].astype(str).str.strip()
-        + "_"
-        + scenarios_pathways["scenario"].astype(str).str.strip()
-    )
+    # Only add prefix to rows that don't already have it (idempotent)
+    needs_prefix = ~scenarios_pathways["scenario"].astype(str).str.startswith("AR6_")
+    if needs_prefix.any():
+        scenarios_pathways.loc[needs_prefix, "scenario"] = (
+            "AR6_"
+            + scenarios_pathways.loc[needs_prefix, "scenario_provider"].astype(str).str.strip()
+            + "_"
+            + scenarios_pathways.loc[needs_prefix, "scenario"].astype(str).str.strip()
+        )
 
     scenarios_pathways.loc[
         scenarios_pathways["scenario_geography"] == "Global", "country_iso2_list"
@@ -142,13 +145,37 @@ def filter_companies(
     ownership_type: str,
 ) -> pd.DataFrame:
 
-    # TODO : remove with logic to handle multi-level ownerships,
-    # and/or fix in the data when owner=parent ie 1 company id matches 2 owewrnships levels
-    companies_owners = companies_ownership_tree[
-        companies_ownership_tree["ownership_type"] == ownership_type
-    ]
+    # Filter by ownership type/level.
+    # The BigQuery schema changed: 'ownership_type' (str: "direct"/"indirect")
+    # was replaced by 'ownership_level' (int: 1=direct, 2+=indirect).
+    # Handle both schemas gracefully.
+    if "ownership_type" in companies_ownership_tree.columns:
+        companies_owners = companies_ownership_tree[
+            companies_ownership_tree["ownership_type"] == ownership_type
+        ]
+    elif "ownership_level" in companies_ownership_tree.columns:
+        # Map ownership_type string to level: "direct" → 1, "indirect" → 2+
+        level = 1 if ownership_type == "direct" else 2
+        if ownership_type == "direct":
+            companies_owners = companies_ownership_tree[
+                companies_ownership_tree["ownership_level"] == level
+            ]
+        else:
+            companies_owners = companies_ownership_tree[
+                companies_ownership_tree["ownership_level"] >= level
+            ]
+        logger.info(
+            "Using ownership_level=%s for ownership_type='%s' (%s rows)",
+            level, ownership_type, len(companies_owners),
+        )
+    else:
+        logger.warning(
+            "Neither 'ownership_type' nor 'ownership_level' found in companies data. "
+            "Using all rows."
+        )
+        companies_owners = companies_ownership_tree
 
-    # TODO : fix in dbt
+    # Rename production_year → year for downstream consistency
     companies_owners = companies_owners.rename(columns={"production_year": "year"})
 
     if company_ids:
@@ -157,6 +184,32 @@ def filter_companies(
         ].reset_index(drop=True)
     else:
         filtered_companies_ownership_tree = companies_owners
+
+    # Consolidate multiple ownership paths through different subsidiaries.
+    # The new BigQuery schema has one row per (asset, company, year, child_company),
+    # so the same parent company can appear multiple times for the same asset-year.
+    # Sum ownership_percentage across paths to get the parent's total ownership.
+    group_keys = ["asset_id", "company_id", "company_name", "year"]
+    if "ownership_level" in filtered_companies_ownership_tree.columns:
+        group_keys.append("ownership_level")
+    elif "ownership_type" in filtered_companies_ownership_tree.columns:
+        group_keys.append("ownership_type")
+
+    available_keys = [
+        k for k in group_keys if k in filtered_companies_ownership_tree.columns
+    ]
+    pre_count = len(filtered_companies_ownership_tree)
+    filtered_companies_ownership_tree = (
+        filtered_companies_ownership_tree.groupby(available_keys, as_index=False)
+        .agg(ownership_percentage=("ownership_percentage", "sum"))
+    )
+    post_count = len(filtered_companies_ownership_tree)
+    if pre_count != post_count:
+        logger.info(
+            "Consolidated %s ownership paths → %s unique (asset, company, year) rows",
+            pre_count,
+            post_count,
+        )
 
     return filtered_companies_ownership_tree
 
@@ -200,27 +253,23 @@ def apply_ccs_suffix(
     ccs_technologies_mask_assets = assets_forecasts["technology"].isin(
         ["BiomassCap", "CoalCap", "GasCap", "OilCap"]
     )
-    ccs_technologies_mask_companies = companies_ownership_tree["technology"].isin(
-        ["BiomassCap", "CoalCap", "GasCap", "OilCap"]
+    # Apply CCS suffix to assets
+    suffix = " - w/ CCS" if ccs_on else " - w/o CCS"
+    assets_forecasts.loc[ccs_technologies_mask_assets, "technology"] = (
+        assets_forecasts.loc[ccs_technologies_mask_assets, "technology"] + suffix
     )
-    if ccs_on:
-        assets_forecasts.loc[ccs_technologies_mask_assets, "technology"] = (
-            assets_forecasts.loc[ccs_technologies_mask_assets, "technology"]
-            + " - w/ CCS"
+
+    # Apply CCS suffix to companies if technology column exists
+    # (newer BigQuery schema may not include technology on the ownership table)
+    if "technology" in companies_ownership_tree.columns:
+        ccs_technologies_mask_companies = companies_ownership_tree["technology"].isin(
+            ["BiomassCap", "CoalCap", "GasCap", "OilCap"]
         )
         companies_ownership_tree.loc[ccs_technologies_mask_companies, "technology"] = (
             companies_ownership_tree.loc[ccs_technologies_mask_companies, "technology"]
-            + " - w/ CCS"
+            + suffix
         )
-    else:
-        assets_forecasts.loc[ccs_technologies_mask_assets, "technology"] = (
-            assets_forecasts.loc[ccs_technologies_mask_assets, "technology"]
-            + " - w/o CCS"
-        )
-        companies_ownership_tree.loc[ccs_technologies_mask_companies, "technology"] = (
-            companies_ownership_tree.loc[ccs_technologies_mask_companies, "technology"]
-            + " - w/o CCS"
-        )
+
     return assets_forecasts, companies_ownership_tree
 
 
@@ -455,11 +504,20 @@ def allocate_assets_to_companies(
     # Prepare companies data
     companies_prepared = companies_ownership_tree.copy()
 
-    # Merge assets with ownership data on asset_id, sector, technology, and year
+    # Merge assets with ownership data.
+    # The join keys depend on which columns exist in the companies table.
+    # Newer BigQuery schema only has: asset_id, company_id, company_name,
+    # ownership_level, production_year, ownership_percentage.
+    possible_keys = ["asset_id", "sector", "technology", "year"]
+    actual_keys = [k for k in possible_keys if k in companies_prepared.columns]
+    if not actual_keys:
+        raise ValueError("No common columns between assets and companies for merge")
+    logger.info("Merging assets with companies on: %s", actual_keys)
+
     merged_data = pd.merge(
         assets_prepared,
         companies_prepared,
-        on=["asset_id", "sector", "technology", "year"],
+        on=actual_keys,
         how="inner",
     )
 
@@ -755,3 +813,126 @@ def scale_electricity_price(
     # return df
 
     return scenarios_pathways
+
+
+def inject_carbon_prices(
+    scenarios_pathways: pd.DataFrame,
+    ar6_carbon_prices: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Inject carbon prices from the AR6 scenario database into the scenario pathways.
+
+    Carbon price treatment depends on the IAM:
+    - IAMs that report explicit carbon prices (e.g., WITCH 5.0): these are merged
+      directly. The ALTR earnings model applies them as a DIFFERENTIAL carbon cost
+      (excess above the marginal generator's emission factor) to avoid double-counting
+      with the AR6 electricity price, which already includes carbon effects per the
+      IAMC variable template.
+    - IAMs that do NOT report carbon prices (e.g., AIM/CGE 2.2): carbon_price stays
+      at 0. Their electricity prices already embed carbon effects through general
+      equilibrium dynamics (CGE models capture fuel price shifts, capital composition
+      changes, and demand response endogenously).
+
+    Parameters
+    ----------
+    scenarios_pathways : pd.DataFrame
+        Scenario data with columns including scenario, scenario_geography, year,
+        and carbon_price_usd_per_tco2 (possibly all NaN).
+    ar6_carbon_prices : pd.DataFrame
+        AR6 scenario database extract with columns: scenario_provider, scenario,
+        scenario_geography, scenario_year, carbon_price_usd_per_tco2.
+
+    Returns
+    -------
+    pd.DataFrame
+        scenarios_pathways with carbon_price_usd_per_tco2 populated where available.
+    """
+    df = scenarios_pathways.copy()
+
+    # Ensure column exists
+    if "carbon_price_usd_per_tco2" not in df.columns:
+        df["carbon_price_usd_per_tco2"] = np.nan
+
+    # Check if carbon prices are already populated
+    existing_cp = df["carbon_price_usd_per_tco2"].notna().sum()
+    if existing_cp > 0:
+        logger.info(
+            "Carbon prices already populated for %s/%s rows (%.1f%%) — skipping injection",
+            existing_cp, len(df), 100 * existing_cp / len(df),
+        )
+        return df
+
+    # Extract matching carbon prices from AR6 database
+    ar6_cp = ar6_carbon_prices.copy()
+    if "scenario_year" in ar6_cp.columns:
+        ar6_cp = ar6_cp.rename(columns={"scenario_year": "year"})
+
+    # Deduplicate: take mean carbon price per (scenario_provider, scenario, geography, year)
+    # across technologies (carbon price is technology-independent)
+    cp_lookup = (
+        ar6_cp[ar6_cp["carbon_price_usd_per_tco2"].notna()]
+        .groupby(["scenario_provider", "scenario", "scenario_geography", "year"])[
+            "carbon_price_usd_per_tco2"
+        ]
+        .mean()
+        .reset_index()
+    )
+
+    if cp_lookup.empty:
+        logger.warning("No carbon prices found in AR6 reference data")
+        df["carbon_price_usd_per_tco2"] = 0.0
+        return df
+
+    # Build composite scenario key to match pathways format: "AR6_<provider>_<scenario>"
+    cp_lookup["scenario_key"] = (
+        "AR6_" + cp_lookup["scenario_provider"] + "_" + cp_lookup["scenario"]
+    )
+
+    cp_for_merge = cp_lookup[
+        ["scenario_key", "scenario_geography", "year", "carbon_price_usd_per_tco2"]
+    ].rename(
+        columns={
+            "scenario_key": "scenario",
+            "carbon_price_usd_per_tco2": "_ar6_carbon_price",
+        }
+    )
+
+    df = df.merge(
+        cp_for_merge,
+        on=["scenario", "scenario_geography", "year"],
+        how="left",
+    )
+
+    # Fill carbon_price from AR6 data where available
+    injected = df["_ar6_carbon_price"].notna().sum()
+    df["carbon_price_usd_per_tco2"] = df["_ar6_carbon_price"].fillna(0.0)
+    df = df.drop(columns=["_ar6_carbon_price"])
+
+    logger.info(
+        "Carbon price injection: %s/%s rows populated from AR6 data (%.1f%%)",
+        injected,
+        len(df),
+        100 * injected / len(df) if len(df) > 0 else 0,
+    )
+
+    # Log summary by scenario
+    for scen in df["scenario"].unique():
+        sub = df[df["scenario"] == scen]
+        cp = sub["carbon_price_usd_per_tco2"]
+        nonzero = (cp > 0).sum()
+        if nonzero > 0:
+            logger.info(
+                "  %s: %s/%s rows with carbon price, mean=$%.0f/tCO2, max=$%.0f/tCO2",
+                scen,
+                nonzero,
+                len(sub),
+                cp[cp > 0].mean(),
+                cp.max(),
+            )
+        else:
+            logger.info(
+                "  %s: no carbon prices (price signal carries transition effect)",
+                scen,
+            )
+
+    return df

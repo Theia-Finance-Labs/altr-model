@@ -1,13 +1,152 @@
 # Earnings model parameters
-market_passthrough: 0  # 0.5 => 50% carbon price passthrough to market prices
+market_passthrough: 0  # 0 => firm absorbs all differential carbon cost (conservative/stress test)
+
+# ==================================================================================
+# MCPR (Marginal Cost Price Ratio) Adjustment
+# ==================================================================================
+# In wholesale electricity markets, all generators receive the same clearing price
+# set by the marginal (most expensive dispatched) plant. IAM scenarios report
+# technology-specific "prices" approximating LCOE, not market clearing prices.
+# This adjustment derives a reference market clearing price and applies value factors.
+#
+# References:
+#   - Hirth (2013), "The Market Value of Variable Renewables," Energy Economics 38:218-236
+#   - Halttunen et al. (2022), "Global Assessment of the Merit-Order Effect," Nature Energy 7:1154-1164
+#   - Ueckerdt et al. (2013), "System LCOE," Energy 63:61-75
+#   - Borenstein, Bushnell & Wolak (2000), J. Industrial Economics 48(2):197-223
+# ==================================================================================
+enable_mcpr: True                    # Enable/disable the MCPR price adjustment
+mcpr_method: "marginal_technology"   # Method: "marginal_technology" (max price among dispatchables)
+mcpr_markup_factor: 1.0              # Additional markup over marginal cost (1.0 = no extra markup)
+
+# Region-specific VRE value factors (Hirth 2013; Halttunen et al. 2022; S&P Global 2025)
+# Three tiers based on VRE penetration and market structure:
+#   Tier 1 (>20% VRE): EU, PAC_OECD — aggressive cannibalization, lower VF
+#   Tier 2 (8-20% VRE): USA, China, India, Japan, LatAm — moderate, current defaults
+#   Tier 3 (<8% VRE): Middle East, Africa, Indonesia, Ref Econ — near 1.0
+#
+# When enable_regional_mcpr_vf is False, uniform global defaults are used (backward-compatible).
+# When True, geography-specific value factors from mcpr_regional_value_factors are applied.
+# Dynamic capture ratios (Hirth 2013; Halttunen et al. 2022)
+# When True, VRE value factors are computed as a function of VRE capacity share
+# per (geography, year, scenario_type), replacing the static defaults above.
+# This is a universal market mechanism applied consistently across all IAMs:
+#   Solar PV:      VF = max(1.10 - 1.5 × vre_share, 0.40)
+#   Wind Onshore:  VF = max(1.05 - 0.8 × vre_share, 0.50)
+#   Wind Offshore: VF = max(1.07 - 0.7 × vre_share, 0.55)
+#   Solar CSP:     VF = max(1.05 - 0.3 × vre_share, 0.80)
+#   Dispatchable:  VF = 1.0
+# Overrides static VFs AND regional VFs when enabled.
+enable_dynamic_capture_ratios: False
+
+enable_regional_mcpr_vf: False
+
+mcpr_regional_value_factors:
+  # Tier 1: High VRE (>20%) — strong cannibalization observed empirically
+  R10EUROPE:
+    "SolarCap - PV": 0.75
+    "WindCap - Onshore": 0.87
+    "WindCap - Offshore": 0.90
+  "OECD & EU (R5)":
+    "SolarCap - PV": 0.80
+    "WindCap - Onshore": 0.88
+    "WindCap - Offshore": 0.91
+  R10PAC_OECD:
+    "SolarCap - PV": 0.80
+    "WindCap - Onshore": 0.88
+    "WindCap - Offshore": 0.91
+  EU:
+    "SolarCap - PV": 0.75
+    "WindCap - Onshore": 0.87
+    "WindCap - Offshore": 0.90
+
+  # Tier 2: Moderate VRE (8-20%) — current defaults appropriate
+  R10NORTH_AM:
+    "SolarCap - PV": 0.82
+    "WindCap - Onshore": 0.90
+    "WindCap - Offshore": 0.92
+  USA:
+    "SolarCap - PV": 0.82
+    "WindCap - Onshore": 0.90
+    "WindCap - Offshore": 0.92
+  CHN:
+    "SolarCap - PV": 0.85
+    "WindCap - Onshore": 0.90
+    "WindCap - Offshore": 0.92
+  "R10CHINA+":
+    "SolarCap - PV": 0.85
+    "WindCap - Onshore": 0.90
+    "WindCap - Offshore": 0.92
+  IND:
+    "SolarCap - PV": 0.90
+    "WindCap - Onshore": 0.93
+    "WindCap - Offshore": 0.95
+  "R10INDIA+":
+    "SolarCap - PV": 0.90
+    "WindCap - Onshore": 0.93
+    "WindCap - Offshore": 0.95
+  JPN:
+    "SolarCap - PV": 0.88
+    "WindCap - Onshore": 0.92
+    "WindCap - Offshore": 0.93
+  R10LATIN_AM:
+    "SolarCap - PV": 0.90
+    "WindCap - Onshore": 0.93
+    "WindCap - Offshore": 0.95
+  BRA:
+    "SolarCap - PV": 0.90
+    "WindCap - Onshore": 0.93
+    "WindCap - Offshore": 0.95
+
+  # Tier 3: Low VRE (<8%) — minimal cannibalization, VF approaches 1.0
+  R10MIDDLE_EAST:
+    "SolarCap - PV": 0.97
+    "WindCap - Onshore": 0.98
+    "WindCap - Offshore": 0.98
+  R10AFRICA:
+    "SolarCap - PV": 0.95
+    "WindCap - Onshore": 0.97
+    "WindCap - Offshore": 0.97
+  ZAF:
+    "SolarCap - PV": 0.93
+    "WindCap - Onshore": 0.95
+    "WindCap - Offshore": 0.96
+  IDN:
+    "SolarCap - PV": 0.95
+    "WindCap - Onshore": 0.97
+    "WindCap - Offshore": 0.97
+  R10REST_ASIA:
+    "SolarCap - PV": 0.93
+    "WindCap - Onshore": 0.95
+    "WindCap - Offshore": 0.96
+  R10REF_ECON:
+    "SolarCap - PV": 0.97
+    "WindCap - Onshore": 0.98
+    "WindCap - Offshore": 0.98
+  RUS:
+    "SolarCap - PV": 0.97
+    "WindCap - Onshore": 0.98
+    "WindCap - Offshore": 0.98
+
+# Price ramp (RC4 fix): blend baseline->target prices over [shock_year, alignment_year]
+# instead of hard-switching at shock_year. Eliminates near-term price windfall where
+# target prices are 30-50% higher than baseline at shock year.
+price_ramp: True  # RC4 fix: blend baseline->target prices over [shock_year, alignment_year]
 
 # Cost element switches for earnings model
-include_growth_capex: False        # Include growth CapEx for new buildout capacity
-include_replacement_capex: False  # Include CapEx for replacing retired eligible assets
-include_decom_costs: False        # Include decommissioning costs for retired assets
+include_growth_capex: False        # OFF: IAM O&M already bundles annualized capital costs (REMIND/WITCH/POLES)
+include_replacement_capex: True    # Include CapEx for replacing retired eligible assets
+include_decom_costs: True          # Include decommissioning costs for retired assets
 
-# Frozen capacity feature - use capacity at retirement time for fixed costs (continued O&M costs)
-# Similar to retirement parameters, you can control whether to apply to baseline and/or shock scenarios
-apply_continued_om_baseline: False  # Apply continued O&M costs (frozen capacity) to baseline trajectories
-apply_continued_om_shock: True      # Apply continued O&M costs (frozen capacity) to shock (late sudden) trajectories
+# Frozen capacity feature - continued O&M costs on stranded capacity
+apply_continued_om_baseline: False  # Apply continued O&M costs to baseline trajectories
+apply_continued_om_shock: True      # Apply continued O&M costs to shock trajectories
 
+# Dynamic marginal emission factor (RC5 fix)
+# When True, marginal_EF declines over time proportional to VRE capacity share,
+# modeling the merit order evolution where renewables displace fossils from the
+# marginal position. This causes gas/coal to face increasing differential carbon
+# costs as the carbon rent from high-EF marginal generators disappears.
+# Formula: marginal_ef(t) = marginal_ef_static * (1 - vre_share(t))^2
+# Quadratic decay: gas starts paying at ~34% VRE (linear would be 56%).
+dynamic_marginal_ef: True  # RC5 fix: marginal EF declines with VRE share, gas faces rising carbon costs

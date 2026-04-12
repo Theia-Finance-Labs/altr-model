@@ -15,6 +15,12 @@ def apply_reduce_granularity_from_asset_to_company_level(
     reduce_granularity_from_asset_to_company_level: bool,
 ) -> pd.DataFrame:
     if reduce_granularity_from_asset_to_company_level:
+        # Determine ownership column name (schema-dependent)
+        ownership_col = (
+            "ownership_type"
+            if "ownership_type" in assets_forecasts.columns
+            else "ownership_level"
+        )
         companies_forecasts = (
             assets_forecasts.groupby(
                 [
@@ -24,7 +30,7 @@ def apply_reduce_granularity_from_asset_to_company_level(
                     "sector",
                     "technology",
                     "year",
-                    "ownership_type",
+                    ownership_col,
                     "capacity_unit",
                 ],
             )

@@ -16,6 +16,7 @@ from .nodes import (
     determine_lifetime_per_technology,
     interpolate_scenarios_annually,
     scale_electricity_price,
+    inject_carbon_prices,
 )
 
 
@@ -50,6 +51,18 @@ def create_pipeline(**kwargs) -> Pipeline:
                 inputs=dict(
                     scenarios_pathways="scenarios_pathways_interpolated",
                     theta="params:theta_capex_recovery",
+                ),
+                outputs="scenarios_pathways_scaled",
+            ),
+            # Inject carbon prices from the AR6 scenario database.
+            # For IAMs with explicit carbon prices (WITCH): merged directly.
+            # For IAMs without (AIM/CGE): stays at $0 — price signal carries the effect.
+            # See ALTR_NPV_Direction_Fix_Research.md for the full rationale.
+            node(
+                func=inject_carbon_prices,
+                inputs=dict(
+                    scenarios_pathways="scenarios_pathways_scaled",
+                    ar6_carbon_prices="ar6_carbon_prices",
                 ),
                 outputs="scenarios_pathways",
             ),
