@@ -17,8 +17,8 @@
 # baseline_scenario: "AR6_AIM/CGE 2.2_EN_NPi2020_1200f"
 # target_scenario: "AR6_AIM/CGE 2.2_EN_NPi2020_900f"
 # Note: filter_scenarios prepends "AR6_<provider>_" automatically
-baseline_scenario: "AR6_WITCH 5.0_CO_CurPol"
-target_scenario: "AR6_WITCH 5.0_EN_NPi2020_500"
+baseline_scenario: "AR6_REMIND-MAgPIE 2.1-4.2_EN_NPi2020_3000"
+target_scenario: "AR6_REMIND-MAgPIE 2.1-4.2_EN_NPi2020_500"
 
 
 max_forecast_horizon: 5

@@ -641,6 +641,7 @@ def interpolate_scenarios_annually(scenarios_pathways: pd.DataFrame) -> pd.DataF
         "scenario_pathway",
         "scenario_capacity_factor",
         "lifetime_years",
+        "carbon_price_usd_per_tco2",
     ]
     existing_numeric_cols = [
         col for col in numeric_cols if col in scenarios_pathways.columns

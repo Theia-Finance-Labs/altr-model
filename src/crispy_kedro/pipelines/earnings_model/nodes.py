@@ -517,10 +517,20 @@ def apply_mcpr_adjustment(
         resolved_mode = mcpr_mode
         logger.info("MCPR mode='%s' (explicitly set)", resolved_mode)
 
+    # carbon_explicit mode requires full_ef carbon cost method to work correctly.
+    # The MCPR node cannot enforce this (carbon_cost_method lives in compute_ops_block),
+    # but we can warn if the pairing is likely wrong.
+    if resolved_mode == "carbon_explicit":
+        logger.info(
+            "MCPR carbon_explicit mode: ensure carbon_cost_method='full_ef' in "
+            "earnings config for correct asymmetric fossil penalty."
+        )
+
     logger.info(
-        "Applying MCPR adjustment (method=%s, markup=%.2f)",
+        "Applying MCPR adjustment (method=%s, markup=%.2f, mode=%s)",
         mcpr_method,
         mcpr_markup_factor,
+        resolved_mode,
     )
 
     surfaces = scenario_surfaces.copy()
@@ -759,12 +769,17 @@ def apply_mcpr_adjustment(
                 )
                 surfaces["vre_share"] = surfaces["vre_share"].fillna(0.0)
 
-            # VRE share at the earliest year per geography (proxy for shock year baseline)
-            shock_year_vre = (
-                surfaces.groupby("scenario_geography")["vre_share"]
-                .transform("first")
+            # VRE share at the earliest year per geography as baseline for delta.
+            # Use the actual minimum-year VRE share (robust to row ordering).
+            vre_baseline = (
+                surfaces
+                .loc[surfaces.groupby("scenario_geography")["year"].idxmin()]
+                .set_index("scenario_geography")["vre_share"]
+                .rename("_vre_baseline")
             )
-            delta_vre = (surfaces["vre_share"] - shock_year_vre).clip(lower=0.0)
+            surfaces = surfaces.join(vre_baseline, on="scenario_geography")
+            delta_vre = (surfaces["vre_share"] - surfaces["_vre_baseline"]).clip(lower=0.0)
+            surfaces = surfaces.drop(columns=["_vre_baseline"])
 
             # Decline factor: (1 - alpha * delta_vre_pct)
             # delta_vre is fraction [0,1]; alpha is per percentage point, so * 100
