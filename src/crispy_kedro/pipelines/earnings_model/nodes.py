@@ -433,6 +433,9 @@ def apply_mcpr_adjustment(
     enable_dynamic_capture_ratios: bool = False,
     scenario_vre_share: pd.DataFrame = None,
     mcpr_floor_at_iam_price: bool = True,
+    mcpr_mode: str = "auto",
+    mcpr_merit_order_alpha: float = 0.006,
+    mcpr_merit_order_floor: float = 0.5,
 ) -> pd.DataFrame:
     """
     Apply Marginal Cost Price Ratio (MCPR) adjustment to scenario surfaces.
@@ -493,6 +496,26 @@ def apply_mcpr_adjustment(
         # Still need marginal_emission_factor for differential carbon cost
         scenario_surfaces["marginal_emission_factor"] = 0.0
         return scenario_surfaces
+
+    # ── MCPR v2: Mode selection ──────────────────────────────────────────
+    if mcpr_mode == "auto":
+        target_rows = scenario_surfaces[
+            scenario_surfaces["scenario_type"] == "target"
+        ] if "scenario_type" in scenario_surfaces.columns else scenario_surfaces
+        cp_col = "carbon_price_usd_per_tco2"
+        if cp_col in target_rows.columns:
+            cp_coverage = (target_rows[cp_col].fillna(0) > 0).mean()
+        else:
+            cp_coverage = 0.0
+        resolved_mode = "carbon_explicit" if cp_coverage > 0.5 else "merit_order_decline"
+        logger.info(
+            "MCPR mode=auto: carbon price coverage=%.1f%% → resolved to '%s'",
+            cp_coverage * 100,
+            resolved_mode,
+        )
+    else:
+        resolved_mode = mcpr_mode
+        logger.info("MCPR mode='%s' (explicitly set)", resolved_mode)
 
     logger.info(
         "Applying MCPR adjustment (method=%s, markup=%.2f)",
@@ -724,6 +747,47 @@ def apply_mcpr_adjustment(
         surfaces["mcpr_adjusted_price"] = (
             surfaces["mcpr_reference_price"] * surfaces["mcpr_value_factor"]
         )
+
+        # ── MCPR v2: Merit order decline (Cevik & Ninomiya 2022) ─────────
+        if resolved_mode == "merit_order_decline" and scenario_vre_share is not None:
+            merge_cols = ["scenario_geography", "year"]
+            if "vre_share" not in surfaces.columns:
+                surfaces = surfaces.merge(
+                    scenario_vre_share[merge_cols + ["vre_share"]],
+                    on=merge_cols,
+                    how="left",
+                )
+                surfaces["vre_share"] = surfaces["vre_share"].fillna(0.0)
+
+            # VRE share at the earliest year per geography (proxy for shock year baseline)
+            shock_year_vre = (
+                surfaces.groupby("scenario_geography")["vre_share"]
+                .transform("first")
+            )
+            delta_vre = (surfaces["vre_share"] - shock_year_vre).clip(lower=0.0)
+
+            # Decline factor: (1 - alpha * delta_vre_pct)
+            # delta_vre is fraction [0,1]; alpha is per percentage point, so * 100
+            decline_factor = (1 - mcpr_merit_order_alpha * delta_vre * 100).clip(
+                lower=mcpr_merit_order_floor
+            )
+
+            surfaces["mcpr_adjusted_price"] = (
+                surfaces["mcpr_adjusted_price"] * decline_factor
+            )
+
+            logger.info(
+                "Merit order decline applied: alpha=%.4f, floor=%.2f, "
+                "VRE delta range [%.1f%%, %.1f%%], price decline range [%.1f%%, %.1f%%]",
+                mcpr_merit_order_alpha,
+                mcpr_merit_order_floor,
+                delta_vre.min() * 100,
+                delta_vre.max() * 100,
+                (1 - decline_factor.max()) * 100,
+                (1 - decline_factor.min()) * 100,
+            )
+
+            surfaces = surfaces.drop(columns=["vre_share"], errors="ignore")
 
         # Replace the power price with adjusted price.
         has_reference = surfaces["mcpr_reference_price"].notna()
@@ -1299,6 +1363,7 @@ def compute_ops_block(
     apply_continued_om_shock: bool = True,
     dynamic_marginal_ef: bool = False,
     scenario_vre_share: pd.DataFrame = None,
+    carbon_cost_method: str = "differential_ef",
 ) -> pd.DataFrame:
     """
     Node 8: Compute operations block (production, costs, revenue, EBITDA).
@@ -1317,6 +1382,14 @@ def compute_ops_block(
             evolution: as renewables displace fossils from the marginal position,
             the carbon rent that gas/coal enjoy disappears, and their differential
             carbon cost rises. When False, uses the static marginal_EF from MCPR.
+        carbon_cost_method: How to compute carbon cost. Options:
+            - "differential_ef" (default): carbon cost = Q × cp × max(EF - marginal_EF, 0).
+              Assumes IAM electricity prices embed marginal generator's carbon cost.
+              Appropriate for IAMs where prices fully reflect carbon (e.g., AIM/CGE).
+            - "full_ef": carbon cost = Q × cp × EF.
+              Uses the technology's full emission factor. Appropriate for IAMs where
+              prices minimally embed carbon cost (e.g., WITCH, where C1→C7 price
+              spread is only $9/MWh despite $722/tCO2 carbon price difference).
     """
 
     logger.info("Computing operations block...")
@@ -1445,15 +1518,34 @@ def compute_ops_block(
     # AR6 scenario prices (Price|Secondary Energy|Electricity) INCLUDE the effect
     # of carbon pricing via general equilibrium / merit order (per IAMC template:
     # "Prices should include the effect of carbon prices").
-    # The embedded carbon cost reflects the MARGINAL generator's emission factor.
-    # Technologies with higher emissions than the marginal generator face an
-    # EXCESS carbon cost not captured in the price. Technologies with lower
-    # emissions (including renewables at EF=0) already benefit through the
-    # inflated price — no additional credit is given (to avoid double-counting).
-    marginal_ef_static = ops_data.get(
-        "marginal_emission_factor", pd.Series(0.0, index=ops_data.index)
-    )
-    marginal_ef_static = pd.to_numeric(marginal_ef_static, errors="coerce").fillna(0.0)
+    # Carbon cost method determines how emission factors are applied:
+    #
+    # "differential_ef" (default): Uses excess EF above the marginal generator.
+    #   Rationale: IAM prices embed marginal generator's carbon cost, so only the
+    #   EXCESS is an additional cost. Avoids double-counting for IAMs like AIM/CGE
+    #   where C1→C7 price spread ($64/MWh) reflects full carbon embedding.
+    #
+    # "full_ef": Uses each technology's full emission factor.
+    #   Rationale: For IAMs like WITCH where prices minimally embed carbon (C1→C7
+    #   spread is only $9/MWh despite $722/tCO2 difference), there is effectively
+    #   nothing to double-count. Using full EF correctly penalises all fossil
+    #   technologies including gas (which otherwise pays ~$0 as marginal generator).
+    if carbon_cost_method == "full_ef":
+        marginal_ef_static = pd.Series(0.0, index=ops_data.index)
+        logger.info(
+            "Carbon cost method: full_ef — using full emission factor "
+            "(marginal_EF set to 0). All fossil technologies pay full carbon cost."
+        )
+    else:
+        marginal_ef_static = ops_data.get(
+            "marginal_emission_factor", pd.Series(0.0, index=ops_data.index)
+        )
+        marginal_ef_static = pd.to_numeric(marginal_ef_static, errors="coerce").fillna(0.0)
+        logger.info(
+            "Carbon cost method: differential_ef — using excess EF above "
+            "marginal generator (mean marginal_EF=%.4f).",
+            marginal_ef_static.mean(),
+        )
 
     if dynamic_marginal_ef:
         # Dynamic marginal_EF: as VRE capacity share grows, the marginal generator

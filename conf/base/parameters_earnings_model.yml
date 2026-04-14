@@ -18,6 +18,12 @@ market_passthrough: 0  # 0 => firm absorbs all differential carbon cost (conserv
 enable_mcpr: True                    # Enable/disable the MCPR price adjustment
 mcpr_method: "marginal_technology"   # Method: "marginal_technology" (max price among dispatchables)
 mcpr_markup_factor: 1.0              # Additional markup over marginal cost (1.0 = no extra markup)
+mcpr_mode: "auto"                    # "auto" | "carbon_explicit" | "merit_order_decline"
+                                     #   auto: selects mode based on carbon price coverage in scenario data
+                                     #   carbon_explicit: forces full_ef carbon cost (for IAMs with carbon prices)
+                                     #   merit_order_decline: clearing price declines with VRE share (for IAMs without)
+mcpr_merit_order_alpha: 0.006        # Merit order price elasticity: -0.6% per 1pp VRE share (IMF WP 2022/220)
+mcpr_merit_order_floor: 0.5          # Min clearing price as fraction of original (scarcity rents floor)
 
 # Region-specific VRE value factors (Hirth 2013; Halttunen et al. 2022; S&P Global 2025)
 # Three tiers based on VRE penetration and market structure:
@@ -150,3 +156,20 @@ apply_continued_om_shock: True      # Apply continued O&M costs to shock traject
 # Formula: marginal_ef(t) = marginal_ef_static * (1 - vre_share(t))^2
 # Quadratic decay: gas starts paying at ~34% VRE (linear would be 56%).
 dynamic_marginal_ef: True  # RC5 fix: marginal EF declines with VRE share, gas faces rising carbon costs
+
+# Carbon cost method: how emission factors are applied to compute carbon costs.
+#
+#   "differential_ef" — carbon_cost = Q × cp × max(EF - marginal_EF, 0) × (1 - passthrough)
+#     Assumes IAM electricity prices embed the marginal generator's carbon cost.
+#     Appropriate for IAMs where prices reflect carbon (e.g., AIM/CGE: $64/MWh C1→C7 spread).
+#     Gas (as marginal generator) pays ~$0 differential carbon cost.
+#
+#   "full_ef" — carbon_cost = Q × cp × EF × (1 - passthrough)
+#     Uses each technology's full emission factor. Appropriate for IAMs where
+#     prices minimally embed carbon (e.g., WITCH: only $9/MWh C1→C7 spread
+#     despite $722/tCO2 carbon price difference). Eliminates the gas free-ride.
+#
+# For WITCH 5.0 scenarios: use "full_ef" (empirically justified — prices are near-flat
+# across stringencies, so there is no embedded carbon to double-count).
+# For AIM/CGE scenarios: use "differential_ef" (prices already capture carbon effects).
+carbon_cost_method: "full_ef"
