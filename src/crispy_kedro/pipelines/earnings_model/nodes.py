@@ -753,12 +753,11 @@ def apply_mcpr_adjustment(
             )
             surfaces.loc[unmapped, "mcpr_value_factor"] = 1.0
 
-        # Calculate adjusted price: reference_price × value_factor
-        surfaces["mcpr_adjusted_price"] = (
-            surfaces["mcpr_reference_price"] * surfaces["mcpr_value_factor"]
-        )
-
         # ── MCPR v2: Merit order decline (Cevik & Ninomiya 2022) ─────────
+        # Apply BEFORE value factors so the clearing price itself falls.
+        # This ensures: (1) the floor at IAM price doesn't negate the decline,
+        # (2) all techs see a lower clearing price (fossils included, correctly),
+        # (3) VRE value factors compound on top of the already-declined price.
         if resolved_mode == "merit_order_decline" and scenario_vre_share is not None:
             merge_cols = ["scenario_geography", "year"]
             if "vre_share" not in surfaces.columns:
@@ -769,15 +768,17 @@ def apply_mcpr_adjustment(
                 )
                 surfaces["vre_share"] = surfaces["vre_share"].fillna(0.0)
 
-            # VRE share at the earliest year per geography as baseline for delta.
-            # Use the actual minimum-year VRE share (robust to row ordering).
+            # VRE share at the earliest year per geography × scenario_type.
+            # Use actual minimum-year VRE share (robust to row ordering and
+            # mixed baseline/target rows).
+            group_cols_vre = ["scenario_geography", "scenario_type"] if "scenario_type" in surfaces.columns else ["scenario_geography"]
             vre_baseline = (
                 surfaces
-                .loc[surfaces.groupby("scenario_geography")["year"].idxmin()]
-                .set_index("scenario_geography")["vre_share"]
+                .loc[surfaces.groupby(group_cols_vre)["year"].idxmin()]
+                .set_index(group_cols_vre)["vre_share"]
                 .rename("_vre_baseline")
             )
-            surfaces = surfaces.join(vre_baseline, on="scenario_geography")
+            surfaces = surfaces.join(vre_baseline, on=group_cols_vre)
             delta_vre = (surfaces["vre_share"] - surfaces["_vre_baseline"]).clip(lower=0.0)
             surfaces = surfaces.drop(columns=["_vre_baseline"])
 
@@ -787,12 +788,13 @@ def apply_mcpr_adjustment(
                 lower=mcpr_merit_order_floor
             )
 
-            surfaces["mcpr_adjusted_price"] = (
-                surfaces["mcpr_adjusted_price"] * decline_factor
+            # Apply decline to the REFERENCE clearing price, not the adjusted price.
+            surfaces["mcpr_reference_price"] = (
+                surfaces["mcpr_reference_price"] * decline_factor
             )
 
             logger.info(
-                "Merit order decline applied: alpha=%.4f, floor=%.2f, "
+                "Merit order decline applied to clearing price: alpha=%.4f, floor=%.2f, "
                 "VRE delta range [%.1f%%, %.1f%%], price decline range [%.1f%%, %.1f%%]",
                 mcpr_merit_order_alpha,
                 mcpr_merit_order_floor,
@@ -803,6 +805,11 @@ def apply_mcpr_adjustment(
             )
 
             surfaces = surfaces.drop(columns=["vre_share"], errors="ignore")
+
+        # Calculate adjusted price: (possibly declined) reference_price × value_factor
+        surfaces["mcpr_adjusted_price"] = (
+            surfaces["mcpr_reference_price"] * surfaces["mcpr_value_factor"]
+        )
 
         # Replace the power price with adjusted price.
         has_reference = surfaces["mcpr_reference_price"].notna()
