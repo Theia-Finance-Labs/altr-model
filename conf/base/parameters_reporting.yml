@@ -1,4 +1,5 @@
 plot_staggered_shock_use_log_scale: False
+plot_staggered_shock_show_shock_absorption: False
 
 # Reporting pipeline parameters
 reporting:

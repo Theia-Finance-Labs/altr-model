@@ -409,20 +409,21 @@ def plot_staggered_shock(
     annotate_asset_ages: bool = True,
     max_residual_annotations: int = 30,
     use_log_scale: bool = True,
+    show_shock_absorption: bool = False,
 ):
     """
     For each unique (scenario_geography, company_id, technology) in late_sudden_trajectories, save:
-      1) Company L&S trajectory (original and adjusted) vs. post-shock asset forecasts
-      2) Asset ages and shock absorption visualization
+      1) Company L&S trajectory (original and optionally adjusted) vs. post-shock asset forecasts
+      2) Asset ages and optionally shock absorption visualization
 
     Notes
     -----
     - Uses 'scenario_geography' at all times (geo-aware).
-    - Shows company late sudden trajectory original and adjusted
+    - Shows company late sudden trajectory original (always) and adjusted (when show_shock_absorption=True)
     - Shows post-shock asset forecasts (asset-level late sudden)
     - Shows sum of assets after shock allocation
     - Annotates assets with ages
-    - Shows bar plots of shock absorption/residuals based on adjusted trajectory
+    - Shows bar plots of shock absorption/residuals based on adjusted trajectory (when show_shock_absorption=True)
     - Can optionally include synthetic assets (is_synthetic==True) or drop them.
     - Expects late_sudden_trajectories (melted) to include: ['company_id','company_name','scenario_geography','technology','year','trajectory_type','company_trajectory', 'late_sudden_phase','alignment_type'] with trajectory_type in { 'latesudden_original','latesudden_adjusted','latesudden' }.
     - Expects asset_level_df (melted) to include: ['asset_id','company_id','company_name','scenario_geography','technology','year','asset_age','is_synthetic','late_sudden_phase','alignment_type','trajectory_type','asset_trajectory'] with trajectory_type in { 'baseline','latesudden' }.
@@ -430,6 +431,7 @@ def plot_staggered_shock(
       the threshold max_individual_postshock_assets to keep figure saving fast.
     - Residual annotations are also capped via max_residual_annotations to avoid thousands of text artists.
     - Axis scale can be toggled with `use_log_scale`.
+    - Shock absorption analysis (adjusted trajectory and residual bar plot) can be toggled with `show_shock_absorption`.
     """
 
     # Clean up existing directory if it exists
@@ -666,16 +668,20 @@ def plot_staggered_shock(
             except Exception:
                 pass
 
-            # Create the plot with subplots: main plot + bar plot
-            fig = plt.figure(figsize=(14, 10))
-            gs = gridspec.GridSpec(2, 1, height_ratios=[3, 1], hspace=0.3)
+            # Create the plot with subplots: main plot + (optionally) bar plot
+            if show_shock_absorption:
+                fig = plt.figure(figsize=(14, 10))
+                gs = gridspec.GridSpec(2, 1, height_ratios=[3, 1], hspace=0.3)
+            else:
+                fig = plt.figure(figsize=(14, 8))
+                gs = gridspec.GridSpec(1, 1)
             # Reserve space on the right for legends so we do not need bbox_inches='tight'
             fig.subplots_adjust(right=0.78)
 
             # Main trajectory plot
             ax1 = fig.add_subplot(gs[0])
 
-            # Company L&S trajectories (original and adjusted)
+            # Company L&S trajectories (original)
             ax1.plot(
                 years,
                 company_vals_original,
@@ -685,15 +691,18 @@ def plot_staggered_shock(
                 alpha=0.8,
                 linestyle="-",
             )
-            ax1.plot(
-                years,
-                company_vals_adjusted,
-                lw=3.0,
-                label="Company L&S Trajectory (Adjusted)",
-                color="darkred",
-                alpha=0.8,
-                linestyle="--",
-            )
+
+            # Company L&S trajectories (adjusted) - only shown when shock absorption is enabled
+            if show_shock_absorption:
+                ax1.plot(
+                    years,
+                    company_vals_adjusted,
+                    lw=3.0,
+                    label="Company L&S Trajectory (Adjusted)",
+                    color="darkred",
+                    alpha=0.8,
+                    linestyle="--",
+                )
 
             if not aset.empty:
                 # aggregate sums for post-shock from melted 'latesudden'
@@ -805,7 +814,9 @@ def plot_staggered_shock(
             # Apply y-axis scaling (log or linear) with safe bounds and reasonable ticks
             if use_log_scale:
                 try:
-                    candidates = [company_vals_original, company_vals_adjusted]
+                    candidates = [company_vals_original]
+                    if show_shock_absorption:
+                        candidates.append(company_vals_adjusted)
                     if "aset_year" in locals() and not aset_year.empty:
                         candidates.append(
                             aset_year["total_after"].to_numpy(dtype=float)
@@ -882,7 +893,9 @@ def plot_staggered_shock(
             else:
                 # Linear scale with safe bounds and simple grid
                 try:
-                    candidates = [company_vals_original, company_vals_adjusted]
+                    candidates = [company_vals_original]
+                    if show_shock_absorption:
+                        candidates.append(company_vals_adjusted)
                     if "aset_year" in locals() and not aset_year.empty:
                         candidates.append(
                             aset_year["total_after"].to_numpy(dtype=float)
@@ -908,75 +921,76 @@ def plot_staggered_shock(
                 except Exception:
                     ax1.set_yscale("linear")
 
-            # Shock absorption bar plot
-            ax2 = fig.add_subplot(gs[1])
+            # Shock absorption bar plot - only shown when shock absorption is enabled
+            if show_shock_absorption:
+                ax2 = fig.add_subplot(gs[1])
 
-            if not aset.empty:
-                residuals = _calculate_shock_residuals(comp, aset, years)
+                if not aset.empty:
+                    residuals = _calculate_shock_residuals(comp, aset, years)
 
-                # Create bars, with positive and negative values in different colors
-                pos_residuals = [max(0, r) for r in residuals]
-                neg_residuals = [min(0, r) for r in residuals]
+                    # Create bars, with positive and negative values in different colors
+                    pos_residuals = [max(0, r) for r in residuals]
+                    neg_residuals = [min(0, r) for r in residuals]
 
-                bar_width = 0.6
-                ax2.bar(
-                    years,
-                    pos_residuals,
-                    bar_width,
-                    label="Unabsorbed shock",
-                    color="orange",
-                    alpha=0.7,
-                )
-                ax2.bar(
-                    years,
-                    neg_residuals,
-                    bar_width,
-                    label="Over-absorbed shock",
-                    color="purple",
-                    alpha=0.7,
-                )
+                    bar_width = 0.6
+                    ax2.bar(
+                        years,
+                        pos_residuals,
+                        bar_width,
+                        label="Unabsorbed shock",
+                        color="orange",
+                        alpha=0.7,
+                    )
+                    ax2.bar(
+                        years,
+                        neg_residuals,
+                        bar_width,
+                        label="Over-absorbed shock",
+                        color="purple",
+                        alpha=0.7,
+                    )
 
-                ax2.axhline(0, linestyle="-", color="black", alpha=0.3)
-                ax2.set_xlabel("Year")
-                ax2.set_ylabel("Shock Residual")
-                ax2.set_title("Shock Absorption Analysis")
-                ax2.legend(framealpha=0.9, fancybox=False, shadow=False)
+                    ax2.axhline(0, linestyle="-", color="black", alpha=0.3)
+                    ax2.set_xlabel("Year")
+                    ax2.set_ylabel("Shock Residual")
+                    ax2.set_title("Shock Absorption Analysis")
+                    ax2.legend(framealpha=0.9, fancybox=False, shadow=False)
 
-                # Add text annotations for a limited number of largest residuals by magnitude
-                try:
-                    # Pick indices of top-K absolute residuals
-                    abs_res = np.abs(np.array(residuals, dtype=float))
-                    if np.isfinite(abs_res).any():
-                        top_k = int(min(max_residual_annotations, len(abs_res)))
-                        top_idx = np.argpartition(abs_res, -top_k)[-top_k:]
-                        for idx in top_idx:
-                            r = residuals[idx]
-                            if not np.isfinite(r) or abs(r) <= 0:
-                                continue
-                            yr = int(years[idx])
-                            ax2.text(
-                                yr,
-                                r,
-                                f"{r:.2e}",
-                                ha="center",
-                                va="bottom" if r > 0 else "top",
-                                fontsize=8,
-                                alpha=0.8,
-                            )
-                except Exception:
-                    pass
-            else:
-                ax2.text(
-                    0.5,
-                    0.5,
-                    "No shock allocation data available",
-                    transform=ax2.transAxes,
-                    ha="center",
-                    va="center",
-                    fontsize=12,
-                    alpha=0.6,
-                )
-                ax2.set_xlim(years[0], years[-1])
+                    # Add text annotations for a limited number of largest residuals by magnitude
+                    try:
+                        # Pick indices of top-K absolute residuals
+                        abs_res = np.abs(np.array(residuals, dtype=float))
+                        if np.isfinite(abs_res).any():
+                            top_k = int(min(max_residual_annotations, len(abs_res)))
+                            top_idx = np.argpartition(abs_res, -top_k)[-top_k:]
+                            for idx in top_idx:
+                                r = residuals[idx]
+                                if not np.isfinite(r) or abs(r) <= 0:
+                                    continue
+                                yr = int(years[idx])
+                                ax2.text(
+                                    yr,
+                                    r,
+                                    f"{r:.2e}",
+                                    ha="center",
+                                    va="bottom" if r > 0 else "top",
+                                    fontsize=8,
+                                    alpha=0.8,
+                                )
+                    except Exception:
+                        pass
+                else:
+                    ax2.text(
+                        0.5,
+                        0.5,
+                        "No shock allocation data available",
+                        transform=ax2.transAxes,
+                        ha="center",
+                        va="center",
+                        fontsize=12,
+                        alpha=0.6,
+                    )
+                    ax2.set_xlim(years[0], years[-1])
 
             # Overlay late-sudden phases across both subplots and add a dedicated legend on the main subplot
             phase_legend_elements = []
@@ -1038,8 +1052,11 @@ def plot_staggered_shock(
                 for phase_val, start_year, end_year in phase_spans:
                     if pd.notna(phase_val) and phase_val != "":
                         color = phase_colors.get(phase_val, "#333333")
-                        # Background spans on both axes
-                        for ax in (ax1, ax2):
+                        # Background spans on axes (ax1 always, ax2 only if shock absorption is enabled)
+                        axes_to_span = [ax1]
+                        if show_shock_absorption:
+                            axes_to_span.append(ax2)
+                        for ax in axes_to_span:
                             ax.axvspan(
                                 start_year, end_year, alpha=0.12, color=color, zorder=0
                             )
