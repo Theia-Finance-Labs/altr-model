@@ -32,5 +32,10 @@ RUN poetry config virtualenvs.create false \
 # Expose Kedro Viz port
 EXPOSE 4141
 
-# Launch Kedro Viz
-ENTRYPOINT ["kedro", "viz", "--host", "0.0.0.0", "--port", "4141", "--no-browser"]
+# Run as non-root for security (port 4141 is unprivileged).
+USER nobody
+
+# Launch Kedro Viz in lite mode so startup does not import project pipeline
+# modules (avoids heavy matplotlib/seaborn import chains and Cloud Run startup
+# health-check timeouts).
+ENTRYPOINT ["kedro", "viz", "run", "--host", "0.0.0.0", "--port", "4141", "--no-browser", "--lite"]
