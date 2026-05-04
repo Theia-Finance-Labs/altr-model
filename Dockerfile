@@ -32,5 +32,10 @@ RUN poetry config virtualenvs.create false \
 # Expose Kedro Viz port
 EXPOSE 4141
 
-# Launch Kedro Viz
-ENTRYPOINT ["kedro", "viz", "--host", "0.0.0.0", "--port", "4141", "--no-browser"]
+# Run as non-root for security (port 4141 is unprivileged).
+USER nobody
+
+# Launch Kedro Viz in --lite mode so startup does not instantiate catalog
+# datasets (the catalog has ibis.TableDataset BigQuery entries that block the
+# Cloud Run PORT=4141 health check during boot).
+ENTRYPOINT ["kedro", "viz", "run", "--lite", "--host", "0.0.0.0", "--port", "4141", "--no-browser"]
