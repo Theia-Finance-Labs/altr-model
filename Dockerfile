@@ -32,5 +32,8 @@ RUN poetry config virtualenvs.create false \
 # Expose Kedro Viz port
 EXPOSE 4141
 
-# Launch Kedro Viz
-ENTRYPOINT ["kedro", "viz", "--host", "0.0.0.0", "--port", "4141", "--no-browser"]
+# Launch Kedro Viz by calling run_server directly so uvicorn blocks as PID 1.
+# The `kedro viz` CLI spawns the server via multiprocessing and exits once the
+# child reports ready, which kills the container before Cloud Run detects the
+# listening port.
+ENTRYPOINT ["python", "-c", "import os; from kedro_viz.server import run_server; run_server(host='0.0.0.0', port=int(os.environ.get('PORT', '4141')))"]
