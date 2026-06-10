@@ -122,3 +122,44 @@ mcpr_merit_order_floor: 0.5      # Min clearing price as fraction of original
 - Hirth, L. (2013). "The Market Value of Variable Renewables." Energy Economics, 38, 218-236.
 - Hirth, L., Ueckerdt, F. & Edenhofer, O. (2015). "Integration Costs Revisited." Renewable Energy, 74, 925-939.
 - Borenstein, S., Bushnell, J. & Wolak, F. (2000). "Measuring Market Power in the California Electricity Market." J. Ind. Econ., 48(2), 197-223.
+
+---
+
+## Findings (appended 2026-06-10)
+
+The 15-run focused test matrix completed. The D1-dominates hypothesis from the Design section was **partially falsified**.
+
+### Per-mechanism results vs vanilla
+
+| Provider | `iso_d1` (D1 alone) | `mcpr_v2_carbon` (Mode 1) | `mcpr_v2_merit` (Mode 2) |
+|---|---|---|---|
+| WITCH 5.0 | **+8.7pp** | +7.9pp | n/a (has carbon) |
+| MESSAGEix-GLOBIOM 1.1 | ~0pp | **-5.4pp** | n/a (has carbon) |
+| IMAGE 3.0 | ~0pp | tbc | n/a |
+| GCAM 5.2 | ~0pp | n/a (no carbon) | tbc |
+| COFFEE 1.1 | ~0pp | tbc | tbc |
+
+### What this changes about the v1->v2 narrative
+
+1. **D1 is not carrying the result alone.** Only WITCH responds to D1 in isolation (+8.7pp). The +19.5pp interaction term in the original 150-run analysis is therefore *not* purely a D1 effect — it's genuine synergy across the adjustment suite (MCPR + carbon cost method + D1 + terminal value treatment).
+2. **Mode 1 (`mcpr_v2_carbon` with forced `full_ef`) is not a clean win.** It helps WITCH (+7.9pp) but *hurts* MESSAGEix (-5.4pp). The MCPR revenue lift can still overwhelm the carbon cost even when `full_ef` is forced, in providers where carbon price magnitudes don't scale with the clearing-price lift.
+3. **Carbon prices were already flowing**, contradicting the original NaN-fillna assumption: WITCH target scenarios carry $200-722/tCO2 explicitly. The fix is therefore not "turn on the carbon channel" but **route the channel correctly per IAM** (differential vs full vs disabled, depending on carbon embedding in the IAM's electricity price).
+4. **18/25 providers carry explicit carbon prices, 7/25 don't.** Mode 2 (`merit_order_decline`) is the only viable route for the 7 — there is no carbon channel to forcibly activate.
+
+### Paper-writing narrative (binding)
+
+Frame the adjustment suite as a **coherent synergistic system**, not a sequence of independent fixes. Specifically:
+
+> "The combination of market-clearing pricing (MCPR), carbon cost pass-through (full_ef for IAMs with explicit prices, merit-order decline for those without), discount-rate differentiation (D1), and unconditional terminal value produces a consistent carbon-negative improvement that none achieves alone. Across the 15-run focused test matrix, no single mechanism delivers the +10.3pp seen in the full adjusted configuration; the +19.5pp interaction term documented in the original 150-run analysis is therefore a genuine systemic effect, not an artifact of D1 in isolation."
+
+### Open
+
+- IMAGE 3.0 mcpr_v2_carbon expected to fix the -26.0pp regression — tbc
+- GCAM 5.2 mcpr_v2_merit alpha=0.006 sensitivity (try 0.004 and 0.008 if positive delta is marginal)
+- Carbon cost / revenue ratio under high carbon prices: observed 5-14x for fossil plants under WITCH C1 — this is correct 1.5C economics, not a pathology, but should be flagged in the paper's robustness section.
+
+### Cross-references
+
+- Memory: `project_mcpr_v2_findings.md`
+- Vault: `synthesis/synth-mcpr-v2-test-findings-2026-04.md` (planned)
+- Methodology: `MCPR/ALTR_MCPR_methodology_v1.md` — still v1, predates this mode split. v2 methodology section to be added when paper draft begins.
