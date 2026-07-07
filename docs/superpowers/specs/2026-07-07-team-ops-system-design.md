@@ -6,11 +6,25 @@
 
 ## 1. Purpose
 
-The Theia-Finance-Labs team (6 people: Jakub, Bertrand, Antonio, Max, Soenke, Jakob) repeatedly drops ticket hygiene on GitHub Projects, keeps documentation scattered across Google Docs, local files, and two tangled Dropbox roots, and works in silos coordinated only through Jakub's bilaterals. Evidence: newest crispy-kedro issue activity 2025-09-09, zero milestones, four unowned org boards.
+The Theia-Finance-Labs team (7 people — roles below) repeatedly drops ticket hygiene on GitHub Projects, keeps documentation scattered across Google Docs, local files, and two tangled Dropbox roots, and works in silos coordinated only through Jakub's bilaterals. Evidence: newest crispy-kedro issue activity 2025-09-09, zero milestones, four unowned org boards.
 
 `theia-ops` is an internal product that makes the system maintain itself: every recorded meeting automatically becomes board updates, a team-readable digest, and archived documentation. Humans decide; the pipeline does the bookkeeping.
 
 Starting scope: transaction cost minimizer (crispy-kedro). Designed from day one to expand to all ~30 org repos/projects.
+
+## 1b. Team & roles
+
+| Person | Role | System relevance |
+|---|---|---|
+| Jakub | PM for all projects/research, research manager, fundraising, methodology developer | Current PM and sole pipeline operator (v1) |
+| Soenke | Finance & general admin manager | **Takes over PM duties and this system from Jakub — handover-readiness (runbook, no Jakub-specific hardcoding) is a design requirement** |
+| Bertrand | Data engineer; ultimate owner of technical development; TCM backend + database | **First commenter on any new technical development** — pipeline labels technical issues and requests his review |
+| Max (Maxim) | Data engineer | Secondary technical contributor |
+| Antonio | Methodology-oriented, less technical | Contributes his own tools + methodology work |
+| Kevin | Methodology & academic lead (non-coding) | Papers/research; primary audience of the future Research Brainstorm meeting |
+| Jakob | CEO; strategic head, finance/organisation; owner of scenario-based tools | Strategic oversight, occasional project input |
+
+Bilaterals remain the five listed in §4 (Kevin engages via Sprint Planning and Research Brainstorm).
 
 ## 2. Decision log (choices made during design)
 
@@ -80,7 +94,7 @@ One Claude API call per note, meeting-type-specific prompt, strict JSON schema:
 }
 ```
 
-`pipeline/config/team.yaml` maps spoken names → GitHub handles and registers projects (slug, repo(s), Dropbox path, board Project-field value).
+`pipeline/config/team.yaml` maps spoken names → GitHub handles + roles and registers projects (slug, repo(s), Dropbox path, board Project-field value). Review-routing rule: issues the extractor classifies as technical get a `technical` label and a review request to Bertrand (per his first-commenter mandate).
 
 Idempotency: every created issue carries `<!-- granola:<note-id> -->`; the pipeline searches for the marker before writing. Re-running any note produces zero duplicates.
 
@@ -149,6 +163,14 @@ theia-ops/
 3. **Week 2 — Wiring:** dispatcher, Doc + Dropbox writers, secrets; first live meeting end-to-end.
 4. **Week 3 — Team onboarding:** present at Monday planning; teach speaking conventions; digest ritual starts.
 5. **Week 4+ — Dropbox migration + org expansion** (AGENTS.md + board conventions to other repos).
+
+## 10b. Implementation strategy (model usage & review gates)
+
+Per Jakub's directive (2026-07-07):
+- **Planning:** Fable (main session) writes the implementation plan via the writing-plans skill.
+- **Implementation:** Opus subagents execute the plan tasks (`model: opus`).
+- **Review gates:** each rollout phase/section must pass a Santa-style adversarial review gate (ecc:santa-method, single-reviewer variant) with **one Fable reviewer** before the next phase begins.
+- **Handover:** `docs/setup/` includes a runbook written for Soenke (non-developer PM successor); nothing in the pipeline may assume Jakub-specific paths or accounts beyond the documented dispatcher.
 
 ## 11. Success criteria
 
