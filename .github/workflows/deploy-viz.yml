@@ -48,6 +48,14 @@ jobs:
 
       - name: Deploy Cloud Run Service
         run: |
+          # The kedro-viz image imports a heavy scientific-Python stack
+          # (kedro-viz + pandas + numpy + matplotlib + seaborn + ibis[bigquery])
+          # at startup. On Cloud Run's default 512Mi it is OOM-killed before it
+          # can bind PORT, which surfaces as "container failed to start and
+          # listen on the port". Allocate adequate memory and boost CPU during
+          # startup so the container boots within the health-check window.
           gcloud run services update kedro-viz \
             --image=${IMAGE_BASE}:${GIT_SHA} \
-            --region=${REGION}
+            --region=${REGION} \
+            --memory=2Gi \
+            --cpu-boost
