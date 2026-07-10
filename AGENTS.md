@@ -4,7 +4,7 @@
 Kedro pipeline for CRISPY climate risk / transaction cost minimizer (TCM) modelling.
 
 ## Team context
-Board: Theia Team Board (org project). Issues carry Status/Priority/Sprint/Project fields.
+Board: Theia Team Board (org project #5). Issues carry Status/Priority/Size/Product/Project/Review/Sprint fields; TCM issues carry Product=`TCM`.
 Conventions: theia-ops/docs/operating-manual.md. Technical review: Bertrand first.
 
 ## Layout
