@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ALTR Model Updates — State, Fixes, and Open Decisions (Brief v1)</title>
+<style>
+  :root{
+    --bg:#0e1216; --panel:#171d24; --panel2:#1c232b; --ink:#e9e7e2; --dim:#9aa3ad;
+    --accent:#e8604c; --green:#5fb57d; --amber:#d9a441; --line:#2a323b;
+    --mono:"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--ink);
+    font:16px/1.65 -apple-system,"Segoe UI",Helvetica,Arial,sans-serif;
+    padding:4rem 1.5rem 6rem}
+  main{max-width:60rem;margin:0 auto}
+  h1{font-size:2.4rem;line-height:1.15;letter-spacing:-.02em}
+  .meta{color:var(--dim);font-family:var(--mono);font-size:.85rem;margin:.8rem 0 2.6rem;
+    padding-bottom:1.4rem;border-bottom:1px solid var(--line)}
+  h2{font-size:1.5rem;letter-spacing:-.01em;margin:2.8rem 0 1rem;
+    padding-top:1.6rem;border-top:1px solid var(--line)}
+  h2 .n{color:var(--accent);font-family:var(--mono);font-size:1.05rem;margin-right:.6rem}
+  h3{font-size:1.02rem;color:var(--amber);margin:1.6rem 0 .5rem}
+  p{margin:.7rem 0;max-width:56rem}
+  ol,ul{margin:.6rem 0 .6rem 1.4rem}li{margin:.4rem 0;max-width:56rem}
+  strong{color:#fff;font-weight:650}
+  em{color:var(--ink);font-style:italic}
+  .dim{color:var(--dim)}
+  .num{font-family:var(--mono)}
+  code{font-family:var(--mono);font-size:.88em;color:var(--amber);
+    background:var(--panel);padding:.08em .35em;border-radius:4px}
+  table{border-collapse:collapse;width:100%;margin:1.3rem 0;font-size:.9rem;
+    background:var(--panel);border-radius:8px;overflow:hidden}
+  th,td{text-align:left;padding:.7rem .85rem;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--dim);font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;
+    background:var(--panel2)}
+  tr:last-child td{border-bottom:none}
+  td .fix{color:#fff;font-weight:600}
+  .pos{color:var(--green)}.neg{color:var(--accent)}.warn{color:var(--amber)}
+  .callout{background:var(--panel);border-left:3px solid var(--accent);
+    border-radius:0 8px 8px 0;padding:1rem 1.2rem;margin:1.4rem 0}
+  .callout h3{margin-top:0}
+  .decide th:nth-child(1){width:3.2rem}
+  .decide th:nth-child(4),.decide td:nth-child(4){color:var(--green)}
+  .rec{color:var(--green)}
+  .foot{margin-top:3rem;padding-top:1.4rem;border-top:1px solid var(--line);
+    color:var(--dim);font-size:.82rem}
+  a{color:var(--accent)}
+  @media print{
+    :root{--bg:#fff;--panel:#f4f5f7;--panel2:#eceef1;--ink:#1a1f26;--dim:#5b6570;--line:#d5dae0}
+    *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    body{padding:1.5rem}
+  }
+</style>
+</head>
+<body>
+<main>
+
+  <h1>ALTR Model Updates<br>State, Fixes, and Open Decisions</h1>
+  <p class="meta">Brief v1 · 2026-07-08 · model version <span style="color:var(--amber)">7b7546a</span> · companion to altr_improvements_Deck_v2 (pptx / pdf / html)</p>
+
+  <h2><span class="n">1</span>Where we stood before the changes</h2>
+  <p>The starting point was TRISK's net-profit block transplanted onto asset-level data. Net profit was revenue minus a per-MWh cost, scaled by a market-data profit margin, discounted with a flat rate and a Gordon-growth terminal value. Four structural problems:</p>
+  <ol>
+    <li><strong>Earnings, not cash.</strong> No CapEx, no replacement cycles, no decommissioning — the model valued an accounting construct that ignored the investment dynamics that dominate capital-intensive power economics.</li>
+    <li><strong>Unreliable margin data.</strong> Net profit margins came from Refinitiv Eikon — gap-filled averages that don't survive contact with asset-level granularity.</li>
+    <li><strong>A valuation layer that couldn't tell brown from green.</strong> One discount rate for everything; the only risk differentiation was a flat scenario premium (7% baseline / 8% shock) that punished green assets in the shock exactly as hard as coal. Terminal value assumed every asset — including a coal plant in a below-2°C world — grows at 2% forever.</li>
+    <li><strong>Scenario prices that don't clear markets.</strong> AR6 electricity prices are LCOE-derived and technology-differentiated. Some technologies were perpetually loss-making <em>in the baseline</em> — before any shock was applied.</li>
+  </ol>
+  <p>The first ALTR FCFF implementation inherited additional problems of its own: decommissioning was recorded as <strong>positive</strong> scrap income (retirement paid the company), retiring assets were double-charged (decommissioning <em>and</em> replacement CapEx in the same year), and new-build CapEx double-counted capital costs already bundled inside IAM O&amp;M series.</p>
+
+  <h2><span class="n">2</span>Where the data stood before the changes</h2>
+  <ul>
+    <li><strong>Direction paradoxes everywhere.</strong> Only ~<span class="num neg">52%</span> of carbontech cases showed the expected negative valuation shock — a coin flip. Roughly <span class="num">1,258</span> company-technology-geography cells had the wrong sign.</li>
+    <li><strong>"Only one scenario worked."</strong> Across the AR6 provider set, only one scenario produced expected shock directions for major geographies — the observation that appeared as "why this is bad" (slide 11 of the original deck).</li>
+    <li><strong>Baseline negativity.</strong> Perpetually negative baseline NPVs for some technologies made shock measurement meaningless for those assets.</li>
+    <li><strong>Silent computation risks.</strong> VRE baseline calculation depended on DataFrame ordering (wrong results on unsorted input); the merit-order price decline could be silently negated by the price floor.</li>
+  </ul>
+
+  <h2><span class="n">3</span>What we did — fix by fix, tracked against the original deck</h2>
+  <table>
+    <tr><th>Fix (commit)</th><th>What changed</th><th>Original deck slide it corrects</th><th>Effect on data</th></tr>
+    <tr>
+      <td><span class="fix">NPV direction fixes</span><br><code>056d1f6</code></td>
+      <td>Decom sign → cost; tech discount spreads (brown +100bps / green −50bps, both scenarios 7%); stranding-aware 3-tier terminal value (TV=0 after 3 loss years; 10-yr annuity for declining fossil); terminal FCFF normalized over 3 years; terminal growth split 0% fossil / 2% green</td>
+      <td>Slide 8 claimed "no difference from TRISK except discount rates, 7%/8%, 2% growth for all" — every element of that sentence is now different</td>
+      <td>Decom sign alone: carbontech expected-negative <span class="num">52%</span> → <span class="num pos">67%</span> — the single largest direction lever</td>
+    </tr>
+    <tr>
+      <td><span class="fix">Retiring-asset CapEx exclusion</span><br><code>31596a0</code></td>
+      <td>Assets being decommissioned no longer also charged replacement CapEx in the same year</td>
+      <td>Slide 7's rollover/decommission story (which also had the decom sign backwards)</td>
+      <td>Removes double-charging that overstated retirement losses</td>
+    </tr>
+    <tr>
+      <td><span class="fix">MCPR v2 two-mode pricing</span><br><code>49efb56</code></td>
+      <td><code>carbon_explicit</code> (gas-anchored clearing price + full_ef carbon) and <code>merit_order_decline</code> (price falls with VRE share, IMF elasticity); auto-detection by carbon-price coverage</td>
+      <td><span class="neg">Absent from the original deck entirely</span> — the largest omitted update</td>
+      <td>Addresses the baseline-negativity problem at its source (prices)</td>
+    </tr>
+    <tr>
+      <td><span class="fix">VRE baseline + pairing guard</span><br><code>5ecdca6</code></td>
+      <td>Order-independent min-year VRE lookup; runtime warning when carbon_explicit runs without full_ef</td>
+      <td>Absent</td>
+      <td>Kills a silent wrong-results path; guards the double-counting decision tree</td>
+    </tr>
+    <tr>
+      <td><span class="fix">Merit decline to clearing price</span><br><code>7b7546a</code></td>
+      <td>Decline applied before value factors (floor can't negate it); all techs decline equally; VRE delta no longer mixes baseline/target rows</td>
+      <td>Absent</td>
+      <td>Merit-order mechanism now does what the methodology says</td>
+    </tr>
+  </table>
+
+  <div class="callout">
+    <h3>Where the data stands now</h3>
+    <p style="margin-top:.3rem">Post-fix April batch, 5 providers × 3 configs: all runs pass end-to-end (<span class="num pos">5/5</span> providers — COFFEE, GCAM, IMAGE, MESSAGEix-GLOBIOM, WITCH); ~<span class="num">78.5%</span> of carbontech cases show the expected negative shock; ~<span class="num">85.6%</span> of greentech cases the expected positive one. Residual wrong-direction cases remain; gas is the known borderline. <strong>These figures predate a canonical re-analysis — see decision OP1.</strong></p>
+  </div>
+
+  <h3>Practice changes that came with the fixes</h3>
+  <ul>
+    <li><strong>Config is the source of truth.</strong> Every stale number in the original deck traced to reading Python function signatures instead of <code>conf/base/*.yml</code>. All documents now cite config and a model version stamp.</li>
+    <li><strong>Overclaims are banned.</strong> "Restores direction in every scenario" is replaced everywhere by "large majority, residual cases remain, gas is the open item."</li>
+    <li><strong>MCPR is two-track.</strong> Internal headline config <code>mcpr_v2_merit</code>; externally framed as an exploratory adjustment pending a methods paper (per review consensus).</li>
+    <li><strong>Honest proxies.</strong> Age-based retirement is described as a proxy for intensity/priority — never as economic optimization.</li>
+  </ul>
+
+  <h2><span class="n">4</span>Decision points to continue development</h2>
+  <p class="dim">Already decided (2026-07-06, recorded in the plan of record): tech-level risk premium · provider-conditional new-build CapEx · decom as net cost · two-track MCPR · analyze existing results before re-running · fix deck (done — v2 delivered) · keep age proxy with caveat.</p>
+  <p><strong>Open now — your call on each:</strong></p>
+  <table class="decide">
+    <tr><th>#</th><th>Decision</th><th>Options</th><th>Recommendation</th></tr>
+    <tr><td class="num">OP1</td><td>Acceptance threshold for the direction matrix (the "does it work" gate)</td><td>≥90% expected-sign per provider×config, gas exempted / ≥85% / no hard gate, trend-only</td><td>≥90% with gas documented as exception; below it, the config fails the gate</td></tr>
+    <tr><td class="num">OP2</td><td>Canonical paradox bookkeeping — the artifacts disagree (1,258 pre-fix vs 772/775 post-decom vs 1,412 in one commit message vs 803 "best")</td><td>Pick one definition (which universe of cells, which configs) and rebuild the count once</td><td>Define cell = company×tech×geo per provider×config at HEAD; rebuild from <code>comparison_results/</code>; retire all older counts</td></tr>
+    <tr><td class="num">OP3</td><td>Is gas-positive a paradox or an accepted outcome?</td><td>(a) paradox — must trend negative; (b) accepted merit-order winner in some pathways; (c) geography-dependent expectation</td><td>(c) — define expected gas direction per scenario family, not globally</td></tr>
+    <tr><td class="num">OP4</td><td>Sequencing: direction matrix vs CapEx audit</td><td>Matrix first (evidence base), audit second / parallel</td><td>Matrix first — it's the regression gate every later change needs</td></tr>
+    <tr><td class="num">OP5</td><td>Tech-specific decom ratios — when?</td><td>Now / after matrix / only if matrix flags decom-sensitive cells</td><td>After matrix; let the data say whether the flat 50% distorts</td></tr>
+    <tr><td class="num">OP6</td><td>MCPR methods paper — commission now or wait for AR7/NGFS (expected H2 2026)?</td><td>Now (owns the narrative) / wait (risk: scenarios may moot it) / short position note now, full paper after AR7</td><td>Position note now, full paper decision after AR7/NGFS lands</td></tr>
+    <tr><td class="num">OP7</td><td>Merton PD / credit-risk layer — in scope for this development cycle?</td><td>Yes (restores TRISK parity) / defer until valuation layer is validated</td><td>Defer until the matrix gate passes twice in a row</td></tr>
+    <tr><td class="num">OP8</td><td>Deck v2 sign-off — approve for presentation after your read-through?</td><td>Approve as-is / revise per feedback / regenerate figures after OP1 matrix</td><td>Hold external use until OP1 numbers land; internal use now</td></tr>
+  </table>
+
+  <div class="callout">
+    <p style="margin:0"><strong>Immediate next step once you answer OP1–OP4:</strong> build the canonical direction-expectation matrix from <code>workspace/comparison_results/</code> (zero compute — data is on disk) and re-stamp the results slide with fresh numbers.</p>
+  </div>
+
+  <p class="foot"><em>Sources:</em> adversarial deck review (11 claims verified against code/config), commits <code>056d1f6</code>–<code>7b7546a</code>, April batch logs, plan of record <code>docs/superpowers/plans/2026-07-06-altr-reconciliation-and-effectiveness-plan.md</code>.</p>
+
+</main>
+</body>
+</html>
