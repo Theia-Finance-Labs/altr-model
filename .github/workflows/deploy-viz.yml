@@ -48,6 +48,14 @@ jobs:
 
       - name: Deploy Cloud Run Service
         run: |
+          # kedro-viz imports the whole project at startup (pandas, pyarrow,
+          # matplotlib/seaborn, ibis+bigquery, kedro-viz/fastapi) before it can
+          # bind PORT=4141. Under Cloud Run's default 512Mi + throttled startup
+          # CPU this exceeds the health-check timeout, so the revision fails with
+          # "container failed to start and listen on the port". Give it memory
+          # headroom and startup CPU boost so it comes up in time.
           gcloud run services update kedro-viz \
             --image=${IMAGE_BASE}:${GIT_SHA} \
-            --region=${REGION}
+            --region=${REGION} \
+            --memory=2Gi \
+            --cpu-boost
