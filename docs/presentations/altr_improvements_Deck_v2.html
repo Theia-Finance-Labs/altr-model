@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ALTR — What Changed and Why (v2, model 7b7546a)</title>
+<style>
+  :root{
+    --bg:#101418; --panel:#1a2027; --ink:#e8e6e1; --dim:#9aa3ad;
+    --accent:#e8604c; --green:#5fb57d; --amber:#d9a441; --line:#2c343d;
+    --mono:"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-snap-type:y mandatory}
+  body{background:var(--bg);color:var(--ink);font:16px/1.55 -apple-system,"Segoe UI",Helvetica,Arial,sans-serif}
+  section{min-height:100vh;scroll-snap-align:start;display:flex;flex-direction:column;
+    justify-content:center;padding:6vh 9vw;border-bottom:1px solid var(--line);position:relative}
+  h1{font-size:3.2rem;line-height:1.1;letter-spacing:-.02em}
+  h2{font-size:2.1rem;line-height:1.15;letter-spacing:-.01em;margin-bottom:1.4rem}
+  h2 .k{color:var(--accent);font-family:var(--mono);font-size:1rem;display:block;margin-bottom:.6rem;letter-spacing:.08em}
+  p.lead{font-size:1.25rem;max-width:52rem;color:var(--ink)}
+  .dim{color:var(--dim)}
+  .num{font-family:var(--mono)}
+  .grid{display:grid;gap:1rem;margin-top:1.6rem}
+  .g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:repeat(3,1fr)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:1.1rem 1.25rem}
+  .card h3{font-size:.8rem;text-transform:uppercase;letter-spacing:.1em;color:var(--dim);margin-bottom:.5rem}
+  .big{font-size:2.4rem;font-weight:700;font-family:var(--mono);letter-spacing:-.02em}
+  .pos{color:var(--green)}.neg{color:var(--accent)}.warn{color:var(--amber)}
+  table{border-collapse:collapse;width:100%;margin-top:1.4rem;font-size:.95rem}
+  th,td{text-align:left;padding:.55rem .8rem;border-bottom:1px solid var(--line)}
+  th{color:var(--dim);font-size:.75rem;text-transform:uppercase;letter-spacing:.09em}
+  .notes{margin-top:auto;padding-top:1.2rem;font-size:.82rem;color:var(--dim);max-width:60rem;border-top:1px dashed var(--line)}
+  .notes b{color:var(--ink);font-weight:600}
+  .tag{position:absolute;top:2.2rem;right:9vw;font-family:var(--mono);font-size:.75rem;color:var(--dim)}
+  .bar{height:22px;border-radius:5px;background:var(--line);overflow:hidden;margin:.35rem 0 .8rem}
+  .bar i{display:block;height:100%}
+  .lbl{display:flex;justify-content:space-between;font-size:.85rem;color:var(--dim)}
+  ul{margin:.8rem 0 0 1.2rem}li{margin:.45rem 0;max-width:50rem}
+  .flow{display:flex;gap:.6rem;flex-wrap:wrap;margin-top:1.4rem;font-family:var(--mono);font-size:.85rem}
+  .flow span{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:.5rem .8rem}
+  .flow em{color:var(--dim);align-self:center;font-style:normal}
+  code{font-family:var(--mono);font-size:.9em;color:var(--amber)}
+  @media print{
+    @page{size:13.33in 7.5in;margin:0}
+    *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    section{min-height:7.5in;height:7.5in;page-break-after:always;overflow:hidden}
+  }
+</style>
+</head>
+<body>
+
+<!-- 1 · TITLE -->
+<section>
+  <span class="tag">01 / 13</span>
+  <h1>ALTR: what changed,<br>and why it had to</h1>
+  <p class="lead" style="margin-top:1.4rem">From accounting profits to asset-level free cash flow —
+  the model updates, the evidence behind each one, and what comes next.</p>
+  <p class="dim num" style="margin-top:2rem">Facts as of model version 7b7546a · defaults cited from runtime config (conf/base)</p>
+  <div class="notes"><b>Note:</b> ALTR (Asset-Level Transition Risk) is our next-generation model, an intentional rebrand from TRISK to own the IP narrative. Everything quantitative in this deck is version-stamped — no figures from memory.</div>
+</section>
+
+<!-- 2 · PROBLEM -->
+<section>
+  <span class="tag">02 / 13</span>
+  <h2><span class="k">THE PROBLEM</span>TRISK values earnings. Markets value cash.</h2>
+  <p class="lead">TRISK's net-profit block is revenue minus a per-MWh cost, discounted. It is an
+  earnings construct — not the cash a firm can distribute.</p>
+  <div class="grid g3">
+    <div class="card"><h3>No investment</h3>No CapEx, no replacement, no decommissioning — the cycles that drive power-sector cash flows.</div>
+    <div class="card"><h3>Fragile margin data</h3>Net profit margins from Refinitiv Eikon: gap-filled averages, unreliable at asset level.</div>
+    <div class="card"><h3>Everything scales with output</h3>All costs production-proportional. Fixed O&amp;M on a stranded plant? Invisible.</div>
+  </div>
+  <div class="notes"><b>Say:</b> valuation practice (FCFF/FCFE) is explicit — use free cash flows, not accounting profits or EBITDA alone. Using earnings double-counts or ignores parts of the cash-flow stream. This is the motivation for every change that follows.</div>
+</section>
+
+<!-- 3 · WHAT WE BUILT -->
+<section>
+  <span class="tag">03 / 13</span>
+  <h2><span class="k">WHAT WE BUILT</span>Asset-level free cash flow, bottom-up</h2>
+  <p class="lead">Each firm is the sum of its physical plants — location, capacity, age, emission
+  factor. AR6 trajectories hit each asset; cash flows aggregate up.</p>
+  <div class="flow">
+    <span>Revenue = Q × price</span><em>−</em>
+    <span>Fuel = Q × fuel/η</span><em>−</em>
+    <span>Fixed O&amp;M = K × fom</span><em>−</em>
+    <span>Carbon (net of passthrough)</span><em>=</em>
+    <span><b>EBITDA</b></span><em>−</em>
+    <span>CapEx streams</span><em>=</em>
+    <span><b>FCFF → DCF → NPV</b></span>
+  </div>
+  <p class="dim" style="margin-top:1.2rem">Output: valuation shock = ΔNPV between below-2°C shock and current-policies baseline. Q = production volume (MWh), K = capacity (MW).</p>
+  <div class="notes"><b>Say:</b> no corporate tax, no depreciation, no working capital — deliberately excluded; we don't have that accounting data at asset level and say so. The published paper's claim that asset-level data lowers estimated transition cost by ~7% is kept as the paper's claim, not generalized.</div>
+</section>
+
+<!-- 4 · CAPEX ARCHITECTURE -->
+<section>
+  <span class="tag">04 / 13</span>
+  <h2><span class="k">CHANGE 1 · INVESTMENT</span>Three CapEx streams — two on, one deliberately off</h2>
+  <table>
+    <tr><th>Stream</th><th>Rule</th><th>Default</th><th>Why</th></tr>
+    <tr><td>Replacement</td><td class="num">2% of installed MW / year</td><td class="pos">ON</td><td>EPRI / Lazard utility maintenance benchmark; retiring assets excluded</td></tr>
+    <tr><td>Decommissioning</td><td class="num">50% of CapEx/MW at retirement</td><td class="pos">ON</td><td>Demolition, remediation, site restoration</td></tr>
+    <tr><td>New-build</td><td class="num">ΔK⁺ × CapEx/MW</td><td class="warn">OFF</td><td>IAM O&amp;M (REMIND, WITCH, POLES) already bundles annualized capital — including it double-counts</td></tr>
+  </table>
+  <div class="notes"><b>Say:</b> new-build OFF is a choice, not an omission. Turning it on with AR6 O&amp;M data charges green builders twice and skews results against exactly the assets that should win. A provider-level audit (future work) decides where it can be safely enabled.</div>
+</section>
+
+<!-- 5 · DECOM SIGN -->
+<section>
+  <span class="tag">05 / 13</span>
+  <h2><span class="k">CHANGE 2 · RETIREMENT ECONOMICS</span>Decommissioning is a cost, not a payday</h2>
+  <p class="lead">Early versions treated retirement as positive scrap income. Real plant retirement
+  is a net cash outflow. Fixing the sign was the single largest direction lever we found.</p>
+  <div style="max-width:44rem;margin-top:1.6rem">
+    <div class="lbl"><span>Carbontech with expected negative shock — before fix</span><span class="num">52%</span></div>
+    <div class="bar"><i style="width:52%;background:var(--dim)"></i></div>
+    <div class="lbl"><span>After sign fix</span><span class="num pos">67%</span></div>
+    <div class="bar"><i style="width:67%;background:var(--green)"></i></div>
+  </div>
+  <div class="notes"><b>Say:</b> a stranded coal plant has no salvage market; what it has is demolition and site-remediation liabilities (ARO-style). Charging 50% of CapEx/MW as an outflow is crude but directionally right — technology-specific ratios are queued as future work.</div>
+</section>
+
+<!-- 6 · VALUATION -->
+<section>
+  <span class="tag">06 / 13</span>
+  <h2><span class="k">CHANGE 3 · VALUATION</span>Four upgrades beyond the discount rate</h2>
+  <div class="grid g2">
+    <div class="card"><h3>1 · Technology risk spreads</h3>Carbontech <span class="num neg">+100bps</span>, green <span class="num pos">−50bps</span>, both scenarios at 7%. Bolton &amp; Kacperczyk carbon premium; Shell 2024 discloses a 150bps O&amp;G-vs-renewables spread.</div>
+    <div class="card"><h3>2 · Stranding-aware terminal value</h3>3 loss-making final years → <span class="num">TV = 0</span>. Profitable-but-declining fossil → 10-year annuity, not perpetuity. Green → standard perpetuity. (Gourdel 2024 abandonment logic.)</div>
+    <div class="card"><h3>3 · Terminal cash flow normalization</h3>Average of last <span class="num">3 years</span>, not the final year — one CapEx spike can no longer erase a terminal value. (Damodaran / McKinsey practice.)</div>
+    <div class="card"><h3>4 · Split terminal growth</h3>Fossil <span class="num">0%</span>, green <span class="num">2%</span>. At r=7%, flat 2% growth means a <span class="num">20.4×</span> terminal multiple vs <span class="num">14.6×</span> at 0% — a ~28% overvaluation of declining assets.</div>
+  </div>
+  <div class="notes"><b>Say:</b> the old design put the risk premium on the <i>scenario</i> (8% shock rate). That punished green winners in the shock too — one cause of wrong-direction results. Moving the premium onto the <i>technology</i> is what the carbon-premium literature actually measures.</div>
+</section>
+
+<!-- 7 · CARBON COST -->
+<section>
+  <span class="tag">07 / 13</span>
+  <h2><span class="k">CHANGE 4 · CARBON COST</span>Two modes, because IAMs disagree about prices</h2>
+  <p class="lead">Carbon cost = production volume × carbon price × emission factor × (1 − passthrough).
+  The question is <i>which</i> emission factor — and that depends on the scenario.</p>
+  <div class="grid g2">
+    <div class="card"><h3>full_ef — default</h3>Every tonne pays. Used when carbon costs are <b>not</b> already inside the scenario's electricity prices.</div>
+    <div class="card"><h3>differential_ef</h3>Only emissions above the marginal generator pay. Used when prices already embed carbon — avoids double-counting.</div>
+  </div>
+  <p class="dim" style="margin-top:1.2rem">Auto-detection picks the mode from the scenario's carbon-price coverage. Passthrough default 0 — the firm absorbs the full cost (conservative stress-test stance).</p>
+  <div class="notes"><b>Say:</b> the double-counting risk was raised in review as "we need a decision tree" — this <i>is</i> the decision tree, shipped and guarded by a runtime warning when modes are mismatched. Note: cost scales with volume (MWh), not capacity.</div>
+</section>
+
+<!-- 8 · MCPR PROBLEM -->
+<section>
+  <span class="tag">08 / 13</span>
+  <h2><span class="k">CHANGE 5 · PRICES</span>IAM electricity prices don't clear markets</h2>
+  <p class="lead">AR6 prices are LCOE-derived and technology-differentiated — every technology sees
+  its own price. Real markets clear at one price set by the marginal generator.</p>
+  <ul>
+    <li>Consequence: perpetually negative NPVs for some technologies <i>in the baseline</i> — before any shock is applied.</li>
+    <li>A model whose baseline says "this plant never made money" cannot measure a transition shock against it.</li>
+  </ul>
+  <div class="notes"><b>Say:</b> this is the deepest data problem we have with AR6, and it motivated the MCPR layer on the next slide. It is a property of the scenarios, not of our pipeline.</div>
+</section>
+
+<!-- 9 · MCPR V2 -->
+<section>
+  <span class="tag">09 / 13</span>
+  <h2><span class="k">CHANGE 5 · PRICES</span>MCPR v2 — a clearing-price adjustment layer</h2>
+  <div class="grid g2">
+    <div class="card"><h3>carbon_explicit</h3>For scenarios with explicit carbon prices: gas-anchored clearing price, technology value factors, paired with full_ef carbon costing.</div>
+    <div class="card"><h3>merit_order_decline</h3>Clearing price declines with renewable penetration (IMF elasticity). Decline applied to the clearing price <i>before</i> value factors — a price floor can't silently negate it.</div>
+  </div>
+  <p class="lead" style="margin-top:1.4rem">Status — <b>two-track</b>: internal working configuration, validated on
+  <span class="num">5 / 5</span> IAM providers. Externally: an exploratory adjustment pending a methods paper and engineering review.</p>
+  <div class="notes"><b>Say:</b> review consensus was "intuitive but heroic assumptions — explore as a paper." We agree, and we frame it that way externally. Providers validated: COFFEE, GCAM, IMAGE, MESSAGEix-GLOBIOM, WITCH. If AR7/NGFS publish usable clearing prices (expected H2 2026), MCPR becomes validation, not dependency.</div>
+</section>
+
+<!-- 10 · RETIREMENT ORDER -->
+<section>
+  <span class="tag">10 / 13</span>
+  <h2><span class="k">CHANGE 6 · SEQUENCING</span>Retirement by age — a proxy, stated honestly</h2>
+  <p class="lead">Companies retire their oldest assets first in the model. Age proxies carbon
+  intensity and retirement priority. It does <b>not</b> claim economic optimization.</p>
+  <ul>
+    <li>Older plants are typically less efficient and dirtier — the intensity proxy holds.</li>
+    <li>But a young inefficient plant can be less economic than an old efficient one — so we don't claim the economics.</li>
+    <li>Stranding still happens where it should: the valuation layer zeroes the terminal value of persistently loss-making assets, whatever their age.</li>
+  </ul>
+  <div class="notes"><b>Say:</b> upgrade path is plant-level intensity from Climate Trace or AR6 efficiency-by-vintage data (future work). Until then, external claims stay at "age as proxy" — this caveat came out of the deep-dive review and we adopt it.</div>
+</section>
+
+<!-- 11 · RESULTS -->
+<section>
+  <span class="tag">11 / 13</span>
+  <h2><span class="k">DOES IT WORK</span>Direction restored in the large majority — not all</h2>
+  <div class="grid g3">
+    <div class="card"><h3>Pipeline</h3><div class="big pos">5 / 5</div>IAM providers run end-to-end, validation OK</div>
+    <div class="card"><h3>Carbontech</h3><div class="big num">78.5%</div>of cases show the expected negative shock</div>
+    <div class="card"><h3>Greentech</h3><div class="big num">85.6%</div>of cases show the expected positive direction</div>
+  </div>
+  <ul style="margin-top:1.6rem">
+    <li>Residual wrong-direction cases remain — we do not claim "every scenario."</li>
+    <li>Gas is the known borderline: merit-order winner in some pathways, carbon loser in others.</li>
+  </ul>
+  <div class="notes"><b>Say:</b> figures are from the post-fix April batch on 5 providers × 3 configurations. A canonical direction-expectation matrix rebuilt from those results is the next deliverable and will replace these numbers if they move.</div>
+</section>
+
+<!-- 12 · FUTURE -->
+<section>
+  <span class="tag">12 / 13</span>
+  <h2><span class="k">WHAT'S NEXT</span>Future improvements</h2>
+  <table>
+    <tr><th>#</th><th>Improvement</th><th>Unlocks</th></tr>
+    <tr><td class="num">1</td><td>Provider-level CapEx audit — which IAM O&amp;M series bundle capital?</td><td>Safe re-enabling of new-build CapEx per provider</td></tr>
+    <tr><td class="num">2</td><td>Technology-specific decommissioning ratios (coal ≠ gas ≠ wind)</td><td>Defensible retirement cost magnitudes</td></tr>
+    <tr><td class="num">3</td><td>Retirement proxy upgrade: Climate Trace / AR6 plant-level intensity</td><td>Replaces age-as-proxy caveat with data</td></tr>
+    <tr><td class="num">4</td><td>AR7 / NGFS reassessment (expected H2 2026)</td><td>Possible retirement of MCPR as a dependency</td></tr>
+    <tr><td class="num">5</td><td>Canonical direction-expectation matrix as a regression gate</td><td>Every model change tested against expected signs</td></tr>
+    <tr><td class="num">6</td><td>Credit-risk layer: Merton PD on top of NPV</td><td>Restores TRISK's PD output at asset-level quality</td></tr>
+    <tr><td class="num">7</td><td>MCPR methods paper with engineering input</td><td>Peaker vs baseload dynamics; external credibility</td></tr>
+  </table>
+  <div class="notes"><b>Say:</b> items 1–3 are decided and queued; 4 is a trigger we monitor; 5 is the immediate next deliverable; 6–7 are the research track.</div>
+</section>
+
+<!-- 13 · CLOSE -->
+<section>
+  <span class="tag">13 / 13</span>
+  <h2><span class="k">SUMMARY</span>One sentence per change</h2>
+  <ul style="font-size:1.15rem">
+    <li>Cash flows, not accounting profits — because markets price cash.</li>
+    <li>CapEx made explicit; new-build off until double-counting is ruled out.</li>
+    <li>Retirement costs money — and fixing that sign fixed the most directions.</li>
+    <li>Risk premium moved from scenario to technology — where the evidence is.</li>
+    <li>Declining assets stop growing forever: 0% fossil growth, stranding-aware terminal value.</li>
+    <li>Carbon costs auto-detect double-counting; prices get a clearing-price layer, honestly labeled exploratory.</li>
+  </ul>
+  <p class="dim num" style="margin-top:2rem">Model 7b7546a · plan of record: docs/superpowers/plans/2026-07-06-altr-reconciliation-and-effectiveness-plan.md</p>
+  <div class="notes"><b>Note:</b> speaker detail lives in these footers on every slide. Print to PDF works (one slide per page).</div>
+</section>
+
+</body>
+</html>

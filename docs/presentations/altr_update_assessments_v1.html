@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ALTR Update Assessments — Per-Update Differential Impact (v1)</title>
+<style>
+  :root{--bg:#ffffff;--panel:#f5f6f8;--panel2:#eceef1;--ink:#1a1f26;--dim:#5b6570;
+    --accent:#c2402e;--green:#2e7d4f;--amber:#8a6100;--line:#d8dde3;
+    --mono:"SF Mono",Menlo,Consolas,monospace}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--ink);font:16px/1.65 -apple-system,"Segoe UI",Helvetica,Arial,sans-serif;padding:4rem 1.5rem 6rem}
+  main{max-width:62rem;margin:0 auto}
+  h1{font-size:2.3rem;line-height:1.15;letter-spacing:-.02em}
+  .meta{color:var(--dim);font-family:var(--mono);font-size:.85rem;margin:.8rem 0 2.4rem;padding-bottom:1.4rem;border-bottom:1px solid var(--line)}
+  h2{font-size:1.45rem;margin:2.6rem 0 .9rem;padding-top:1.5rem;border-top:1px solid var(--line)}
+  h2 .n{color:var(--accent);font-family:var(--mono);font-size:1rem;margin-right:.6rem}
+  h3{font-size:1rem;color:var(--amber);margin:1.3rem 0 .4rem}
+  p{margin:.65rem 0;max-width:58rem}
+  ul,ol{margin:.5rem 0 .5rem 1.4rem}li{margin:.35rem 0;max-width:58rem}
+  strong{color:#000;font-weight:650}
+  .dim{color:var(--dim)}.num{font-family:var(--mono)}
+  code{font-family:var(--mono);font-size:.88em;color:var(--amber);background:var(--panel);padding:.08em .35em;border-radius:4px}
+  table{border-collapse:collapse;width:100%;margin:1.1rem 0;font-size:.88rem;background:var(--panel);border-radius:8px;overflow:hidden}
+  th,td{text-align:left;padding:.55rem .75rem;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--dim);font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;background:var(--panel2)}
+  tr:last-child td{border-bottom:none}
+  td.r,th.r{text-align:right}
+  .pos{color:var(--green)}.neg{color:var(--accent)}.warn{color:var(--amber)}
+  .callout{background:var(--panel);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;padding:1rem 1.2rem;margin:1.3rem 0}
+  .upd{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:1.3rem 1.5rem;margin:1.6rem 0}
+  .upd h2{border:none;padding-top:0;margin-top:0}
+  .upd table{background:var(--panel2)}
+  .upd th{background:#e4e8ec}
+  .lbl{display:inline-block;font-family:var(--mono);font-size:.72rem;color:var(--dim);background:var(--panel2);border-radius:4px;padding:.15em .5em;margin-right:.4em}
+  .foot{margin-top:3rem;padding-top:1.4rem;border-top:1px solid var(--line);color:var(--dim);font-size:.82rem}
+  @media print{:root{--bg:#fff;--panel:#f4f5f7;--panel2:#eceef1;--ink:#1a1f26;--dim:#5b6570;--line:#d5dae0}
+    *{-webkit-print-color-adjust:exact;print-color-adjust:exact}body{padding:1.5rem}}
+</style>
+</head>
+<body>
+<main>
+
+<h1>ALTR Update Assessments<br>Every change since December 2025, with its measured impact</h1>
+
+<h2><span class="n">1</span>The model as we left it in December 2025</h2>
+<p>By December the big architectural rework was done: ALTR valued a firm as the sum of its physical power plants. For every asset, each year, in a baseline and a shock scenario:</p>
+<p style="font-family:var(--mono);font-size:.92rem;background:var(--panel);padding:.8rem 1rem;border-radius:8px;max-width:58rem">
+EBITDA = revenue (volume × price) − fuel − fixed O&amp;M − carbon cost<br>
+FCFF&nbsp;&nbsp;&nbsp;= EBITDA − CapEx (replacement + new-build + decommissioning)<br>
+NPV&nbsp;&nbsp;&nbsp;&nbsp;= discounted FCFF + terminal value&nbsp;&nbsp;→&nbsp;&nbsp;shock = ΔNPV baseline vs shock
+</p>
+<p><strong>What actually drives results</strong>, in order of force: (1) the scenario <strong>production trajectories</strong> — how much each asset runs in baseline vs shock; (2) <strong>electricity prices</strong> from the AR6 scenario; (3) the <strong>carbon tax</strong> on emissions; (4) the <strong>discount rate and terminal value</strong>, which translate the cash-flow path into a valuation — and because the terminal value is ~15–20× final-year cash flow, whatever happens in the last modeled years dominates the NPV.</p>
+<p><strong>The December settings</strong> that matter for everything below: one flat discount rate (7%) for all assets in both scenarios; 2% perpetual terminal growth for every technology — coal plants included; terminal value always a perpetuity; decommissioning recorded as <em>positive scrap income</em>; and electricity prices taken raw from the IAM scenarios.</p>
+
+<h2><span class="n">2</span>The inconsistency problem</h2>
+<p>A transition stress test has an economically expected direction: under a below-2°C shock, fossil assets should lose value (negative ΔNPV) and renewables should hold or gain (positive ΔNPV). The December model routinely violated this:</p>
+<ul>
+  <li><strong>Oil was backwards.</strong> Only <span class="num neg">28.8%</span> of oil company-technology cells showed the expected negative shock — 71% of oil assets appeared to <em>benefit</em> from climate transition. Gas sat at 65%; only coal behaved (92%).</li>
+  <li><strong>Averaged across all 25 usable providers, carbontech direction was 68.5%</strong> — and on partial-equilibrium providers (COFFEE, GCAM) it was a coin flip (~51–52%).</li>
+  <li><strong>Baselines were broken before any shock.</strong> AR6 electricity prices are LCOE-derived and technology-differentiated, not market-clearing — some technologies were perpetually loss-making in the <em>baseline</em>, so a shock against that baseline measured nothing.</li>
+  <li><strong>The valuation couldn't tell brown from green.</strong> Flat discounting and uniform 2% perpetual growth valued a declining coal plant with the same machinery as a growing solar farm — at r=7%, g=2% vs g=0% is a 20.4× vs 14.6× terminal multiple, so the uniform assumption overvalued declining fossil by ~28% at the terminal.</li>
+  <li><strong>Retirement paid.</strong> With decommissioning as scrap income, retiring early in a shock <em>added</em> cash — muting exactly the losses the test is supposed to measure.</li>
+</ul>
+<p>The updates below are the response. Each one is described with its source and intuition, and — where an isolation run exists — its measured differential impact on direction accuracy.</p>
+
+<h2><span class="n">3</span>Why we could not run "all" AR6 scenarios</h2>
+<p>The AR6 database holds over a thousand scenario submissions, but the model has hard input requirements, and each requirement cuts the usable set:</p>
+<ol>
+  <li><strong>A matched pair.</strong> Every run needs a baseline-like scenario (current policies / no policy) <em>and</em> a target-like scenario (~500&nbsp;Gt carbon budget or net-zero) <em>from the same provider</em> — e.g. <code>EN_NoPolicy</code> vs <code>EN_NPi2020_500</code>. Pairing is automated (<code>discover_scenario_pairs.py</code>) with scored heuristics.</li>
+  <li><strong>Power-sector variables.</strong> The pair must carry capacity/production trajectories, electricity prices, and ideally carbon prices for the power technologies we hold assets in (wind coverage is tracked explicitly).</li>
+  <li><strong>Overlapping geographies and enough data.</strong> Baseline and target must share regions (the model filters to common geographies), and providers under ~500 rows per scenario are dropped.</li>
+</ol>
+<p>After those filters, <strong>25 providers</strong> survive — that is the "all scenarios" universe, and the April isolation study ran every one of them (125 runs). The <strong>MCPR v2 batch used only 5 of the 25</strong> (COFFEE, GCAM 5.2, IMAGE 3.0, MESSAGEix-GLOBIOM, WITCH) for a different reason: each pipeline run takes 5–8 minutes, and MCPR v2 was in an edit-run-fix loop where a full 25-provider × 3-config sweep (~8 hours) per iteration was not practical. The 5 were chosen to span IAM philosophies (partial-equilibrium, energy-system, hybrid). The full-provider rerun is the queued canonical rebuild (decision OP2).</p>
+
+<div class="upd">
+<h2><span class="n">U1</span>Technology-differentiated discount spreads (D1)</h2>
+<p><span class="lbl">commit 056d1f6</span><span class="lbl">config iso_d1</span></p>
+<p><strong>The issue.</strong> The December model discounted every asset at the same flat 7% — a coal plant and a solar farm carried identical risk pricing. Markets demonstrably price carbon exposure into the cost of capital, so a flat rate systematically overvalued brown assets relative to green ones, muting or flipping the very shocks the test is supposed to measure.</p>
+<p><strong>What changed.</strong> Carbontech assets discounted at +100bps over the 7% base rate, greentech at −50bps, in both baseline and shock. Replaces the flat single rate that priced coal and solar risk identically.</p>
+<p><strong>Source &amp; intuition.</strong> Bolton &amp; Kacperczyk's carbon premium (high-emission firms face ~1.5–2.5% higher equity returns → ~60–150bps WACC spread); Shell's 2024 annual report discloses 7.5% O&amp;G vs 6.0% renewables. The risk premium is a property of the <em>technology</em>, not the scenario.</p>
+<div class="callout">
+<p><strong>Why higher returns mean a higher discount rate.</strong> A higher expected return is compensation, and compensation is a discount rate. If investors will only hold a coal utility when it pays them 2% per year more than a comparable renewables firm, then by definition they are discounting the coal firm's future cash flows at a higher rate. Expected return and cost of equity are the same number seen from two sides — the investor's reward is the company's cost of capital.</p>
+</div>
+<p><strong>Differential impact</strong> (iso_d1 vs vanilla, carbontech expected-negative %):</p>
+<table>
+  <tr><th>Provider</th><th class="r">vanilla</th><th class="r">iso_d1</th><th class="r">Δ (pp)</th></tr>
+  <tr><td>WITCH 5.0</td><td class="r num">75.3*</td><td class="r num">84.1</td><td class="r num pos">+8.8</td></tr>
+  <tr><td>MESSAGEix-GLOBIOM 1.1</td><td class="r num">85.3</td><td class="r num">87.4</td><td class="r num pos">+2.1</td></tr>
+  <tr><td>IMAGE 3.0</td><td class="r num">93.6</td><td class="r num">94.0</td><td class="r num pos">+0.4</td></tr>
+  <tr><td>COFFEE 1.1</td><td class="r num">52.8</td><td class="r num">53.0</td><td class="r num pos">+0.2</td></tr>
+  <tr><td>GCAM 5.2</td><td class="r num">52.2</td><td class="r num">52.0</td><td class="r num">−0.2</td></tr>
+</table>
+<p>Greentech also improves (e.g. COFFEE 86.2→91.3% positive). Modest alone — but the isolation study identifies D1 as <strong>the prime candidate behind the +19.5pp average interaction term</strong> (§9): it is the component that converts MCPR's revenue lift into a net brown penalty.</p>
+<h3>Extended impact — pooled across the 5 providers (vanilla → iso_d1)</h3>
+<table>
+  <tr><th>Class</th><th class="r">Baseline NPV&gt;0</th><th class="r">Shock NPV&gt;0</th><th class="r">Expected direction</th><th class="r">Median ΔNPV</th></tr>
+  <tr><td>High-carbon</td><td class="r num">57.5 → 58.2%</td><td class="r num">37.5 → 36.2%</td><td class="r num pos">70.5 → 72.8%</td><td class="r num pos">−55.8 → −60.4%</td></tr>
+  <tr><td>Low-carbon</td><td class="r num">97.9 → 97.9%</td><td class="r num">98.7 → 98.7%</td><td class="r num pos">89.3 → 90.4%</td><td class="r num pos">+90.4 → +97.3%</td></tr>
+</table>
+<p class="dim" style="font-size:.85rem">How to read these (same format in every box): Baseline/Shock NPV&gt;0 = share of cells with a viable (positive-NPV) business in each scenario; Median ΔNPV = the typical shock size ((shock−baseline)/|baseline|) — for high-carbon, more negative = harsher shock, and the change vs vanilla is the update's effect on shock severity (the "difference of the difference"). Regional expected-direction, carbon: Advanced 66.6→70.0 · China 77.8→78.3 · Middle East 48.2→50.2. Green Middle East improves 93.4→97.8.</p>
+</div>
+
+<div class="upd">
+<h2><span class="n">U2</span>Terminal-value package: stranding-aware TV, 3-yr normalization, 0%/2% growth split</h2>
+<p><span class="lbl">commit 056d1f6</span><span class="lbl">config iso_stranding_tv (partial)</span></p>
+<p><strong>The issue.</strong> Terminal value is ~15–20× final-year cash flow, so it dominates every NPV — and the December model gave every asset, declining coal included, a perpetuity growing at 2% off the raw final modeled year. Any distortion in that single year (a CapEx spike, one bad year) was capitalized forever, and fossil assets were implicitly assumed to operate and grow without end in a below-2°C world. Note the asymmetry: a bad year in the <em>middle</em> of the horizon costs only its own discounted cash flow, and an asset retiring mid-horizon correctly loses its terminal value (its final-year cash flow is ~0). The multiplier bug bites only when a one-off — a retirement wave, a decom charge, a CapEx spike — lands in the <em>anchor</em> year, where it gets turned into a phantom perpetual cost; transition scenarios concentrate exactly such events in the 2040s.</p>
+<p><strong>What changed.</strong> Three-tier terminal value: 3 consecutive loss-making final years → TV=0 (stranded); profitable-but-declining fossil → 10-year finite annuity; green → Gordon perpetuity. Terminal cash flow averaged over the last 3 years instead of final-year-only. Terminal growth split: fossil 0%, green 2%.</p>
+<p><strong>Source &amp; intuition.</strong> Gourdel (2024) real-options abandonment logic; Damodaran/McKinsey normalization practice (one CapEx spike shouldn't erase a perpetuity); declining fossil assets have finite economic lives.</p>
+<p><strong>Differential impact</strong> (stranding TV isolated, carbontech Δpp vs vanilla — selected from the 25-provider study):</p>
+<table>
+  <tr><th>Provider</th><th class="r">Δ (pp)</th><th>Provider</th><th class="r">Δ (pp)</th></tr>
+  <tr><td>GEM-E3 V2021</td><td class="r num pos">+5.0</td><td>GCAM 5.2</td><td class="r num">−1.0</td></tr>
+  <tr><td>COFFEE 1.1</td><td class="r num pos">+1.0</td><td>IMACLIM 1.1</td><td class="r num">−1.4</td></tr>
+  <tr><td>AIM/CGE 2.2</td><td class="r num">−0.5</td><td>GCAM-PR 5.3</td><td class="r num neg">−3.4</td></tr>
+  <tr><td colspan="2"><strong>25-provider average</strong></td><td colspan="2" class="r num"><strong>+0.6</strong> (range −3.4 to +5.0)</td></tr>
+</table>
+<p>Near-zero alone — most fossil cells aren't loss-making for 3 consecutive terminal years until the pricing and discount changes push them there. Normalization and the growth split were <strong>not isolated</strong>; their effect sits inside the interaction term. Honest gap to state.</p>
+<h3>Extended impact — pooled across the 5 providers (vanilla → iso_stranding_tv)</h3>
+<table>
+  <tr><th>Class</th><th class="r">Baseline NPV&gt;0</th><th class="r">Shock NPV&gt;0</th><th class="r">Expected direction</th><th class="r">Median ΔNPV</th></tr>
+  <tr><td>High-carbon</td><td class="r num">57.5 → 58.5%</td><td class="r num">37.5 → 37.9%</td><td class="r num pos">70.5 → 71.1%</td><td class="r num">−55.8 → −54.0%</td></tr>
+  <tr><td>Low-carbon</td><td class="r num">97.9 → 97.9%</td><td class="r num">98.7 → 98.8%</td><td class="r num pos">89.3 → 90.0%</td><td class="r num">+90.4 → +88.5%</td></tr>
+</table>
+<p class="dim" style="font-size:.85rem">Regional expected-direction, carbon: Advanced 66.6→68.9 · China 77.8→74.3 (a regression — stranding bites Chinese coal baselines too) · Middle East 48.2→46.5.</p>
+</div>
+
+<div class="upd">
+<h2><span class="n">U3</span>Retirement economics: decommissioning sign + no double-charging</h2>
+<p><span class="lbl">commits 056d1f6, 31596a0</span><span class="lbl">not in the 125-run matrix</span></p>
+<p><strong>The issue.</strong> Retirement economics were backwards twice over: retiring an asset <em>paid</em> the company (decommissioning was booked as scrap income), while the same retiring asset was still being charged replacement CapEx in its final year. Early retirement in a shock scenario — the central mechanism of transition risk — was being rewarded on one line and double-charged on another.</p>
+<p><strong>What changed.</strong> Decommissioning flipped from positive scrap income to a real cash <em>cost</em> (50% of CapEx/MW — demolition, remediation); retiring assets no longer also pay replacement CapEx in the same year (the 2% annual rollover applies to operating assets only).</p>
+<p><strong>Source &amp; intuition.</strong> A stranded plant has no salvage market — it has ARO-style liabilities. EPRI/Lazard benchmark for the 2% maintenance rollover. Code review caught the double-charge.</p>
+<p><strong>Differential impact</strong> (dedicated pre-study analysis, earlier cell universe):</p>
+<table>
+  <tr><th>Metric</th><th class="r">Before fix</th><th class="r">After fix</th><th class="r">Δ (pp)</th></tr>
+  <tr><td>Carbontech expected-negative %</td><td class="r num">52</td><td class="r num pos">67</td><td class="r num pos">+15</td></tr>
+</table>
+<p>The single largest lever found in that phase. It entered the code before the study's <code>vanilla</code> was frozen, so it is embedded in <em>all</em> five study configs and was never re-isolated. Flag: the 52→67 figure and the 68.5→78.5 headline use different cell universes — do not chain them.</p>
+<p class="dim" style="font-size:.85rem">Extended metrics not computable for this update: it entered before the study's <code>vanilla</code> was frozen, so no stored config isolates it — its effect is embedded in every column of every other table.</p>
+</div>
+
+<div class="upd">
+<h2><span class="n">U4</span>Dynamic emission factor</h2>
+<p><span class="lbl">commit 056d1f6</span><span class="lbl">config iso_dynamic_ef</span></p>
+<p><strong>The issue.</strong> A fixed emission factor freezes each asset's carbon intensity at its starting value even as the scenario's grid decarbonizes around it. That misstates carbon costs in the later decades of the horizon — exactly when scenario carbon prices are at their highest and the cost matters most.</p>
+<p><strong>What changed.</strong> Emission factor evolves with the scenario's technology mix rather than staying fixed at the asset's initial value.</p>
+<p><strong>Differential impact:</strong></p>
+<table>
+  <tr><th>Scope</th><th class="r">Δ carbontech (pp)</th><th class="r">Δ greentech (pp)</th></tr>
+  <tr><td>All 25 providers, isolated</td><td class="r num">0.0</td><td class="r num">0.0</td></tr>
+</table>
+<p>Exactly zero everywhere, by design: an EF adjustment only matters once carbon-pricing mechanisms bind. Its effect lives entirely inside the combined config — keep it, but never present it as a standalone improvement.</p>
+<p class="dim" style="font-size:.85rem">Extended impact: identical to vanilla on every metric — baseline/shock viability, direction, median ΔNPV — and in every region. Zero isolated effect, as designed.</p>
+</div>
+
+<div class="upd">
+<h2><span class="n">U5</span>Full-EF carbon costing mode</h2>
+<p><span class="lbl">config iso_full_ef</span></p>
+<p><strong>The issue.</strong> The original carbon-cost formula charged only emissions <em>above</em> the marginal generator's — which means the marginal technology itself, gas, paid no carbon cost at all. That is defensible when carbon costs are already embedded in the scenario's electricity prices, but in scenarios where they are not, it lets the most exposed bridge fuel escape carbon costs entirely.</p>
+<p><strong>What changed.</strong> Two carbon-cost modes: <code>full_ef</code> (every tonne pays — current default) vs <code>differential_ef</code> (only emissions above the marginal generator pay; for scenarios whose prices already embed carbon).</p>
+<p><strong>Differential impact</strong> (iso_full_ef vs vanilla, carbontech expected-negative %):</p>
+<table>
+  <tr><th>Provider</th><th class="r">vanilla</th><th class="r">iso_full_ef</th><th class="r">Δ (pp)</th></tr>
+  <tr><td>WITCH 5.0</td><td class="r num">75.3*</td><td class="r num">83.4</td><td class="r num pos">+8.1*</td></tr>
+  <tr><td>COFFEE 1.1</td><td class="r num">52.8</td><td class="r num">52.8</td><td class="r num">0.0</td></tr>
+  <tr><td>GCAM 5.2</td><td class="r num">52.2</td><td class="r num">52.2</td><td class="r num">0.0</td></tr>
+  <tr><td>IMAGE 3.0</td><td class="r num">93.6</td><td class="r num">93.6</td><td class="r num">0.0</td></tr>
+  <tr><td>MESSAGEix-GLOBIOM 1.1</td><td class="r num">85.3</td><td class="r num">85.3</td><td class="r num">0.0</td></tr>
+</table>
+<p>Its real role is correctness — preventing carbon double-counting — rather than direction improvement; the auto-detection guard (U7) decides when it applies. (*WITCH vintage caveat, §9.)</p>
+<h3>Extended impact — pooled across the 5 providers (vanilla → iso_full_ef)</h3>
+<table>
+  <tr><th>Class</th><th class="r">Baseline NPV&gt;0</th><th class="r">Shock NPV&gt;0</th><th class="r">Expected direction</th><th class="r">Median ΔNPV</th></tr>
+  <tr><td>High-carbon</td><td class="r num">57.5 → 57.5%</td><td class="r num">37.5 → 35.4%</td><td class="r num pos">70.5 → 72.2%</td><td class="r num pos">−55.8 → −62.0%</td></tr>
+  <tr><td>Low-carbon</td><td class="r num">97.9 → 97.9%</td><td class="r num">98.7 → 98.7%</td><td class="r num">89.3 → 89.3%</td><td class="r num">+90.4 → +90.4%</td></tr>
+</table>
+<p class="dim" style="font-size:.85rem">Charging gas its full emission factor deepens the typical carbon shock (−55.8→−62.0%) without touching baselines or green assets. Regional carbon direction: Advanced 66.6→69.0 · China 77.8→78.1 · Middle East 48.2→48.7.</p>
+</div>
+
+<div class="upd">
+<h2><span class="n">U6</span>MCPR v1 — market-clearing price floor</h2>
+<p><span class="lbl">pre-existing, retuned in 056d1f6</span><span class="lbl">config iso_mcpr</span></p>
+<p><strong>The issue.</strong> AR6 scenarios report a separate LCOE-like price per technology instead of one market-clearing price, and against those prices some technologies never make money even in the baseline. A stress test needs a viable baseline business to destroy — you cannot measure a transition shock on an asset the model says was never profitable to begin with.</p>
+<p><strong>What changed.</strong> Lifts technology-differentiated (LCOE-like) IAM electricity prices toward a market-clearing level anchored on the marginal (gas) generator, with technology value factors.</p>
+<p><strong>Source &amp; intuition.</strong> Real markets clear at one price set by the marginal generator; AR6 prices don't, leaving some technologies perpetually loss-making in the baseline (§2). The floor restores a viable baseline to shock against.</p>
+<p><strong>Differential impact — the MCPR paradox</strong> (isolated, carbontech Δpp vs vanilla):</p>
+<table>
+  <tr><th>Worst affected</th><th class="r">Δ (pp)</th><th>Best affected</th><th class="r">Δ (pp)</th></tr>
+  <tr><td>MESSAGEix-GLOBIOM 1.1</td><td class="r num neg">−41.8</td><td>TIAM-ECN 1.1</td><td class="r num pos">+7.2</td></tr>
+  <tr><td>IMAGE 3.0</td><td class="r num neg">−39.4</td><td>GEM-E3 V2021</td><td class="r num pos">+4.2</td></tr>
+  <tr><td>REMIND-Buildings 2.0</td><td class="r num neg">−25.1</td><td>COFFEE 1.1</td><td class="r num pos">+0.5</td></tr>
+  <tr><td>WITCH 5.0</td><td class="r num neg">−23.4</td><td>GCAM family</td><td class="r num">0.0</td></tr>
+  <tr><td colspan="2"><strong>24-provider average</strong></td><td colspan="2" class="r num neg"><strong>−9.8</strong> (negative in 16 of 24)</td></tr>
+</table>
+<p>Why it hurts alone: for IAMs already reporting near-equilibrium prices (REMIND, MESSAGEix, IMAGE), the floor <em>raises fossil revenues</em>, flipping NPV changes positive. In combination with D1 spreads and the terminal package the suite still delivers <span class="num pos">+10.3pp</span> average — the interaction term repays the isolated damage. <strong>Key message: the adjustments are a system, not additive parts.</strong></p>
+<h3>Extended impact — pooled across the 5 providers (vanilla → iso_mcpr)</h3>
+<table>
+  <tr><th>Class</th><th class="r">Baseline NPV&gt;0</th><th class="r">Shock NPV&gt;0</th><th class="r">Expected direction</th><th class="r">Median ΔNPV</th></tr>
+  <tr><td>High-carbon</td><td class="r num">57.5 → 57.6%</td><td class="r num warn">37.5 → 57.1%</td><td class="r num neg">70.5 → 46.0%</td><td class="r num neg">−55.8 → +1.6%</td></tr>
+  <tr><td>Low-carbon</td><td class="r num">97.9 → 97.9%</td><td class="r num">98.7 → 98.7%</td><td class="r num pos">89.3 → 90.0%</td><td class="r num pos">+90.4 → +98.0%</td></tr>
+</table>
+<p class="dim" style="font-size:.85rem">The mechanism is visible in the columns: baseline viability is untouched (57.5→57.6%) but <em>shock</em> viability jumps from 37.5% to 57.1% — the price floor rescues fossil assets precisely in the shock scenario, wiping out the typical shock (median ΔNPV −55.8% → +1.6%). Regional carbon direction: Advanced 66.6→42.1 · China 77.8→63.6 · <strong>Middle East 48.2→2.7</strong> — the oil/gas-heavy region is where the revenue floor does the most damage.</p>
+</div>
+
+<div class="upd">
+<h2><span class="n">U7</span>MCPR v2 — carbon_explicit mode with auto-detection</h2>
+<p><span class="lbl">commits 49efb56, 5ecdca6</span><span class="lbl">config mcpr_v2_carbon</span></p>
+<p><strong>The issue.</strong> IAM providers are inconsistent about carbon: some embed carbon costs inside their electricity prices, others report explicit carbon prices alongside. Treating both kinds the same either double-counts carbon (charged in the price <em>and</em> as a cost) or omits it entirely — and picking the treatment by hand for every provider doesn't scale and invites silent errors, one of which (order-dependent VRE baselines) was already in the code.</p>
+<p><strong>What changed.</strong> For scenarios with explicit carbon prices: gas-anchored clearing price paired with <code>full_ef</code> costing; auto-detection selects the mode from carbon-price coverage; a runtime warning guards the pairing; the VRE baseline was made order-independent (a silent wrong-results bug).</p>
+<p><strong>Source &amp; intuition.</strong> The review meeting asked for "a decision tree to detect and avoid carbon double-counting" — this is that decision tree, shipped.</p>
+<p><strong>Differential impact</strong> (mcpr_v2_carbon vs vanilla, carbontech expected-negative %):</p>
+<table>
+  <tr><th>Provider</th><th class="r">vanilla</th><th class="r">mcpr_v2_carbon</th><th class="r">Δ (pp)</th></tr>
+  <tr><td>COFFEE 1.1</td><td class="r num">52.8</td><td class="r num">53.3</td><td class="r num pos">+0.5</td></tr>
+  <tr><td>GCAM 5.2</td><td class="r num">52.2</td><td class="r num">52.2</td><td class="r num">0.0</td></tr>
+  <tr><td>IMAGE 3.0</td><td class="r num">93.6</td><td class="r num">93.6</td><td class="r num">0.0</td></tr>
+  <tr><td>MESSAGEix-GLOBIOM 1.1</td><td class="r num">85.3</td><td class="r num">79.8</td><td class="r num neg">−5.5</td></tr>
+  <tr><td>WITCH 5.0</td><td class="r num">75.3*</td><td class="r num">83.4</td><td class="r num pos">+8.1*</td></tr>
+</table>
+<p>Direction roughly preserved while the pricing becomes internally coherent — acceptable for a correctness-driven change. Greentech unchanged.</p>
+<h3>Extended impact — pooled across the 5 providers (vanilla → mcpr_v2_carbon)</h3>
+<table>
+  <tr><th>Class</th><th class="r">Baseline NPV&gt;0</th><th class="r">Shock NPV&gt;0</th><th class="r">Expected direction</th><th class="r">Median ΔNPV</th></tr>
+  <tr><td>High-carbon</td><td class="r num">57.5 → 57.6%</td><td class="r num">37.5 → 35.4%</td><td class="r num pos">70.5 → 71.1%</td><td class="r num pos">−55.8 → −64.2%</td></tr>
+  <tr><td>Low-carbon</td><td class="r num">97.9 → 97.9%</td><td class="r num">98.7 → 98.7%</td><td class="r num pos">89.3 → 90.0%</td><td class="r num pos">+90.4 → +98.0%</td></tr>
+</table>
+<p class="dim" style="font-size:.85rem">Direction held, and the typical carbon shock actually deepens (−55.8→−64.2%) — coherent pricing without the U8 pathology. Regional carbon direction: Advanced 66.6→68.2 · China 77.8→74.5 · Middle East 48.2→52.7 (the only pricing config that <em>improves</em> the Middle East).</p>
+</div>
+
+<div class="upd" style="border-color:var(--accent)">
+<h2><span class="n">U8</span>MCPR v2 — merit_order_decline mode <span class="neg">(new finding: direction collapse)</span></h2>
+<p><span class="lbl">commits 49efb56, 7b7546a</span><span class="lbl">config mcpr_v2_merit</span></p>
+<p><strong>The issue.</strong> For scenarios <em>without</em> explicit carbon prices, the model still needs a price mechanism that reflects the transition — and a static clearing price misses the best-documented one: as zero-marginal-cost renewables grow, they push the clearing price down (the merit-order effect). Without it, fossil revenues in high-renewable futures are overstated.</p>
+<p><strong>What changed.</strong> Clearing price declines with renewable penetration (IMF elasticity), applied to the clearing price <em>before</em> value factors so the price floor cannot silently negate it (the 7b7546a fix).</p>
+<p><strong>Source &amp; intuition.</strong> Merit-order effect: zero-marginal-cost renewables push clearing prices down as their share grows.</p>
+<p><strong>Differential impact — this config damages direction accuracy</strong> (mcpr_v2_merit vs vanilla, carbontech expected-negative %):</p>
+<table>
+  <tr><th>Provider</th><th class="r">vanilla</th><th class="r">mcpr_v2_merit</th><th class="r">Δ (pp)</th></tr>
+  <tr><td>MESSAGEix-GLOBIOM 1.1</td><td class="r num">85.3</td><td class="r num neg">19.9</td><td class="r num neg">−65.4</td></tr>
+  <tr><td>IMAGE 3.0</td><td class="r num">93.6</td><td class="r num neg">47.5</td><td class="r num neg">−46.1</td></tr>
+  <tr><td>WITCH 5.0</td><td class="r num">75.3*</td><td class="r num neg">48.8</td><td class="r num neg">−26.5*</td></tr>
+  <tr><td>COFFEE 1.1</td><td class="r num">52.8</td><td class="r num">52.8</td><td class="r num">0.0</td></tr>
+  <tr><td>GCAM 5.2</td><td class="r num">52.2</td><td class="r num">52.2</td><td class="r num">0.0</td></tr>
+</table>
+<h3>Extended impact — pooled across the 5 providers (vanilla → mcpr_v2_merit)</h3>
+<table>
+  <tr><th>Class</th><th class="r">Baseline NPV&gt;0</th><th class="r">Shock NPV&gt;0</th><th class="r">Expected direction</th><th class="r">Median ΔNPV</th></tr>
+  <tr><td>High-carbon</td><td class="r num">57.5 → 57.5%</td><td class="r num warn">37.5 → 60.0%</td><td class="r num neg">70.5 → 42.9%</td><td class="r num neg">−55.8 → +7.3%</td></tr>
+  <tr><td>Low-carbon</td><td class="r num">97.9 → 97.9%</td><td class="r num">98.7 → 98.7%</td><td class="r num">89.3 → 89.4%</td><td class="r num">+90.4 → +91.0%</td></tr>
+</table>
+<p class="dim" style="font-size:.85rem">Same pathology as U6, worse: baselines untouched, but shock-scenario viability jumps 37.5→60.0% and the typical carbon shock flips from −55.8% to <strong>+7.3%</strong> — fossil assets end up better off under the shock than the baseline. Regional carbon direction: Advanced 66.6→43.2 · China 77.8→48.9 · <strong>Middle East 48.2→1.3</strong>.</p>
+<div class="callout">
+<p><strong>Resolved (2026-07-25).</strong> The rescue experiment — a clean single-vintage rebuild of all six configs on the 5 providers (30/30 runs passed) — shows the suite does <em>not</em> rescue merit mode: 43.9% carbon direction with the full valuation suite vs 42.9% isolated (MCPR v1's equivalent interaction was +19.5pp), MESSAGEix stuck at 19.5%, Middle East at 1.0%. The pathology is structural: the gas-anchored clearing uplift dominates the VRE decline in shock scenarios, so fossil shock NPVs get rescued (median ΔNPV +4.7%). <strong>Decision: merit → paper track; <code>carbon_explicit</code> is the only production v2 mode; <code>mcpr_mode: auto</code> must fall back to carbon_explicit, never merit. Headline configs, both labeled: <code>mcpr_v2_carbon_full</code> as production (72.6% direction, green 90.8%, baselines intact) and <code>adjusted</code> as direction-optimized sensitivity (86.5%, −77.7% median shock).</strong></p>
+</div>
+</div>
+
+<h2><span class="n">9</span>The combined picture</h2>
+<table>
+  <tr><th>Provider</th><th class="r">vanilla</th><th class="r">iso_d1</th><th class="r">iso_full_ef</th><th class="r">mcpr_v2_carbon</th><th class="r">mcpr_v2_merit</th><th class="r">adjusted</th></tr>
+  <tr><td>COFFEE 1.1</td><td class="r num">52.8</td><td class="r num">53.0</td><td class="r num">52.8</td><td class="r num">53.3</td><td class="r num">52.8</td><td class="r num pos">85.5</td></tr>
+  <tr><td>GCAM 5.2</td><td class="r num">52.2</td><td class="r num">52.0</td><td class="r num">52.2</td><td class="r num">52.2</td><td class="r num">52.2</td><td class="r num pos">69.8</td></tr>
+  <tr><td>IMAGE 3.0</td><td class="r num">93.6</td><td class="r num">94.0</td><td class="r num">93.6</td><td class="r num">93.6</td><td class="r num neg">47.5</td><td class="r num pos">98.1</td></tr>
+  <tr><td>MESSAGEix-GLOBIOM 1.1</td><td class="r num">85.3</td><td class="r num">87.4</td><td class="r num">85.3</td><td class="r num">79.8</td><td class="r num neg">19.9</td><td class="r num pos">92.7</td></tr>
+  <tr><td>WITCH 5.0</td><td class="r num">75.3*</td><td class="r num">84.1</td><td class="r num">83.4</td><td class="r num">83.4</td><td class="r num neg">48.8</td><td class="r num">83.6</td></tr>
+</table>
+<p class="dim" style="font-size:.85rem">Carbontech expected-negative %, recomputed 2026-07-22 from stored run outputs. *WITCH vanilla appears to be an older run vintage — three unrelated configs land at ≈83.4, suggesting the true no-adjustment baseline is closer to that; treat WITCH deltas with caution.</p>
+<ul>
+  <li><strong>Across all 25 providers</strong> (April study): vanilla → adjusted moves carbontech direction <span class="num">68.5% → 78.5%</span> (+9.9pp average, 22 of 25 providers improved). Greentech gives back <span class="num">−1.9pp</span> — an accepted trade-off.</li>
+  <li><strong>OilCap is the star correction:</strong> <span class="num">28.8% → 75.2%</span> negative (+46.4pp). Coal 91.6→98.0; gas only 65.3→69.2 — the structural borderline.</li>
+  <li><strong>Decomposition:</strong> sum of isolated effects = −9.2pp, full delta = +10.3pp, interaction = <span class="num pos">+19.5pp</span>. No single update explains the improvement; D1 spreads are the glue.</li>
+  <li><strong>Provider philosophy matters:</strong> CGE models (POLES, IMACLIM, AIM) start near 94–97% and barely move; partial-equilibrium models (COFFEE, GEM-E3, GCAM) start ~40–64% and gain 10–34pp. IMAGE 3.0 is the notable regression under full <code>adjusted</code> in the April study (−26pp) — worth a colleague discussion on its price philosophy.</li>
+</ul>
+<h3>Extended impact of the full suite — pooled across the 5 providers (vanilla → adjusted)</h3>
+<table>
+  <tr><th>Class</th><th class="r">Baseline NPV&gt;0</th><th class="r">Shock NPV&gt;0</th><th class="r">Expected direction</th><th class="r">Median ΔNPV</th></tr>
+  <tr><td>High-carbon</td><td class="r num">57.5 → 40.1%</td><td class="r num">37.5 → 32.0%</td><td class="r num pos">70.5 → 83.7%</td><td class="r num pos">−55.8 → −74.6%</td></tr>
+  <tr><td>Low-carbon</td><td class="r num warn">97.9 → 79.5%</td><td class="r num">98.7 → 88.3%</td><td class="r num neg">89.3 → 81.2%</td><td class="r num pos">+90.4 → +101.2%</td></tr>
+</table>
+<p class="dim" style="font-size:.85rem">The full suite deepens the typical carbon shock to −74.6% and lifts direction to 83.7% — but note the cost: high-carbon <em>baseline</em> viability falls from 57.5% to 40.1% (D1 spreads + terminal cuts weaken baselines too, not just shocks), and low-carbon baseline viability drops to 79.5%, which is where the −1.9pp greentech trade-off comes from. Pooled cell-level rates differ slightly from the per-provider tables above (pooling weights providers by cell count).</p>
+<h3>Regional picture — carbon expected-negative % by config (pooled, 5 providers)</h3>
+<table>
+  <tr><th>Region</th><th class="r">n (carbon)</th><th class="r">vanilla</th><th class="r">iso_d1</th><th class="r">iso_mcpr</th><th class="r">mcpr_v2_carbon</th><th class="r">mcpr_v2_merit</th><th class="r">adjusted</th></tr>
+  <tr><td>China</td><td class="r num">63,027</td><td class="r num">77.8</td><td class="r num">78.3</td><td class="r num">63.6</td><td class="r num">74.5</td><td class="r num neg">48.9</td><td class="r num pos">92.9</td></tr>
+  <tr><td>Advanced (EU/US/OECD)</td><td class="r num">73,809</td><td class="r num">66.6</td><td class="r num">70.0</td><td class="r num">42.1</td><td class="r num">68.2</td><td class="r num neg">43.2</td><td class="r num pos">85.5</td></tr>
+  <tr><td>Middle East</td><td class="r num">11,313</td><td class="r num neg">48.2</td><td class="r num">50.2</td><td class="r num neg">2.7</td><td class="r num">52.7</td><td class="r num neg">1.3</td><td class="r num neg">49.2</td></tr>
+</table>
+<p class="dim" style="font-size:.85rem">Advanced = EU, USA, CAN, JPN, KOR, R10EUROPE, R10NORTH_AM, R10PAC_OECD; China = CHN, R10CHINA+; Middle East = R10MIDDLE_EAST. Two takeaways for discussion: (1) <strong>China responds best</strong> to the suite (77.8→92.9) and Advanced follows (66.6→85.5); (2) <strong>the Middle East is the unsolved region</strong> — barely half-right in vanilla, essentially unimproved by the full suite (49.2), and destroyed by the price-floor modes (2.7 / 1.3). Oil-and-gas-dominated portfolios there are exactly where the revenue-floor mechanisms backfire; a regional carve-out or ME-specific price treatment belongs on the future-improvements list.</p>
+
+<h2><span class="n">10</span>Caveats &amp; open items for the discussion</h2>
+<ul>
+  <li>Run vintages differ across config folders (April 12 study vs April 14 MCPR v2 batch); the WITCH vanilla anomaly is the visible symptom. The canonical rebuild (decision OP2) fixes this.</li>
+  <li>The 52→67% decom figure and the 68.5→78.5% suite figure use different cell universes — never chain them into one narrative.</li>
+  <li>Terminal normalization, growth split, retirement double-charge fix, and the VRE-baseline bug fix have no isolated runs — their effects are embedded, stated qualitatively.</li>
+  <li><strong>OP9 resolved (2026-07-25):</strong> the single-vintage rescue experiment confirmed merit mode is not rescued by the suite (43.9% vs 42.9% isolated) — merit is paper-track only; <code>carbon_explicit</code> is the production v2 mode; headline configs are both-labeled (<code>mcpr_v2_carbon_full</code> production, <code>adjusted</code> sensitivity). Remaining follow-up: change <code>mcpr_mode: auto</code>'s no-carbon-price fallback from merit to carbon_explicit, and update the Deck v2 results slide before external use.</li>
+</ul>
+
+<h2><span class="n">A</span>Appendix — evidence base &amp; metric definition</h2>
+<p><strong>Direction metric.</strong> For each company-technology cell: does the NPV change between baseline and shock have the economically expected sign? Carbontech (coal, gas, oil) should be <em>negative</em>; greentech (wind, solar, hydro) should be <em>positive</em>. "Carbon&nbsp;neg%" = share of carbontech cells with the expected negative sign.</p>
+<p><strong>Data sources</strong>, all already in the repository:</p>
+<ul>
+  <li><strong>125-run isolation study</strong> (2026-04-12): 25 IAM providers × 5 configs — <code>vanilla</code> (all adjustments off = December-2025 behavior on current plumbing), <code>adjusted</code> (all on), <code>iso_mcpr</code>, <code>iso_stranding_tv</code>, <code>iso_dynamic_ef</code>. 828,791 company-technology records. Source: <code>workspace/comparison_results/COMPARISON_REPORT.md</code>.</li>
+  <li><strong>MCPR v2 batch</strong> (2026-04-14, post-merit-fix): 5 providers × <code>iso_d1</code> / <code>mcpr_v2_carbon</code> / <code>mcpr_v2_merit</code>.</li>
+  <li><strong>Fresh per-config recomputation</strong> (2026-07-22): direction rates recalculated directly from the stored <code>company_technology_npv.csv</code> files for the tables above.</li>
+</ul>
+
+<p class="foot"><em>Sources:</em> <code>workspace/comparison_results/COMPARISON_REPORT.md</code>, <code>summary_table.csv</code>, <code>workspace/scenario_manifest.json</code>, <code>discover_scenario_pairs.py</code>, per-config <code>company_technology_npv.csv</code> recomputation (2026-07-22), commits <code>056d1f6</code>–<code>7b7546a</code>, plan of record <code>docs/superpowers/plans/2026-07-06-altr-reconciliation-and-effectiveness-plan.md</code>. Companion docs: <code>altr_updates_Brief_v1.html</code>, <code>altr_improvements_Deck_v2</code>.</p>
+
+</main>
+</body>
+</html>

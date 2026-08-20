@@ -1,0 +1,120 @@
+CI FAILURE — NO CODE FIX APPLIED (Cloud Run runtime startup, not a repo defect)
+==============================================================================
+Date: 2026-07-22  (verified fresh this session; prior consecutive triggers 07-13..07-21)
+Workflow: .github/workflows/deploy-viz.yml  ("Build, Push, and Deploy Kedro Viz")
+Failing step: Deploy Cloud Run Service (`gcloud run services update kedro-viz`)
+Failed revision: kedro-viz-00028-48x
+Failing image digest: sha256:c5c0fb77ddf34a9796fa5e2902b96c8a3179f1c672e01556cf6348584ff0f83f
+
+WHAT FAILED
+-----------
+Checkout, Docker build, push, and WIF auth all succeeded. The failure is entirely
+at Cloud Run's runtime startup health check:
+
+  ERROR: (gcloud.run.services.update) The user-provided container failed to
+  start and listen on the port defined provided by the PORT=4141 environment
+  variable within the allocated timeout.
+
+Port/host config is correct and is NOT the cause:
+  Dockerfile:33  EXPOSE 4141
+  Dockerfile:36  ENTRYPOINT ["kedro","viz","--host","0.0.0.0","--port","4141","--no-browser"]
+  Cloud Run injects PORT=4141, which equals the hardcoded --port 4141;
+  --host 0.0.0.0 binds all interfaces. No port/host mismatch exists.
+  (kedro-viz 11.0.2's LazyDefaultGroup makes bare `kedro viz <flags>` resolve to
+  the `run` subcommand, so the entrypoint is valid — verified against the installed
+  package source at kedro_viz/launchers/cli/main.py this session.)
+
+THE LOG IS A FROZEN HISTORICAL RUN — RE-PROCESSED EACH AUTO-FIX TRIGGER
+----------------------------------------------------------------------
+Every CI log line is timestamped 2026-04-19T09:1x (pushed-layer lines and the
+"Creating Revision...failed" line). That failed run predates today by ~3 months.
+The daily auto-fix cron keeps re-processing the SAME historical failed run:
+identical digest (c5c0fb77...), identical revision (kedro-viz-00028-48x),
+identical timestamps each trigger. No new deploy occurs on these re-triggers, so
+there is no fresh artifact to fix.
+
+INDEPENDENT VERIFICATION PERFORMED THIS SESSION (2026-07-22, re-derived fresh)
+-----------------------------------------------------------------------------
+1. No image-affecting file has changed since before the failed run. Fresh check:
+     git log -1 -- src conf Dockerfile pyproject.toml poetry.lock .github/workflows
+       -> 7b7546a  2026-04-14  "fix: apply merit order decline to clearing price"
+     HEAD -> eccb4a7  2026-07-10  (docs only)
+     git diff --name-only 7b7546a..HEAD
+       -> AGENTS.md
+          docs/superpowers/plans/2026-07-07-theia-ops-phase-1-foundations.md
+          docs/superpowers/specs/2026-07-07-team-ops-system-design.md
+   The last image-affecting commit (7b7546a, 2026-04-14) is FIVE DAYS BEFORE the
+   failed run (2026-04-19). Every change since is documentation, and the Dockerfile
+   copies only src, conf, pyproject.toml, poetry.lock, README.md — so none of those
+   docs even enter the image. The failing image is byte-identical to what it was.
+
+2. The failing artifact is deterministic: same digest (sha256:c5c0fb77...) and same
+   revision (kedro-viz-00028-48x) on every re-trigger. Container startup is
+   deterministic given identical image bytes + identical injected PORT=4141.
+
+3. The recent code commits (MCPR v2, merit-order fix) touch only node FUNCTION
+   BODIES in src/.../earnings_model/nodes.py and one line in pipeline.py. kedro-viz
+   imports pipeline definitions but never executes node bodies at startup, so those
+   changes cannot alter container startup behavior — and they predate the failed run
+   regardless.
+
+REPO-SIDE STARTUP-CRASH HYPOTHESES RULED OUT (source-read this + prior sessions)
+--------------------------------------------------------------------------------
+A. No import-time filesystem access in the bootstrap path: every "data/" reference
+   in src/ is inside a function body, never at module load, so bootstrap import does
+   not touch the (absent-in-image) data/ dir.
+B. No custom hooks: settings.py leaves HOOKS commented out; kedro-viz nulls the hook
+   manager by default (_VizNullPluginManager).
+C. kedro-viz does NOT connect to BigQuery at startup. The catalog's ibis.TableDataset
+   entries store connection_config only; the connection is created lazily in
+   load()/save()/_exists(), none of which viz calls when building the graph.
+
+WHAT REMAINS (all image-invariant and SERVICE-level, not repo defects)
+----------------------------------------------------------------------
+With every repo-side crash path ruled out, the surviving explanations are runtime
+conditions on the Cloud Run SERVICE, none defined in this repo:
+  - OOMKilled: kedro-viz's top-level imports (pandas + numpy + matplotlib + seaborn
+    + ibis) are memory-heavy; a small/default memory limit can SIGKILL the process
+    before it binds the port. (Single most likely cause.)
+  - Slow cold start exceeding the startup-probe window (cold instance, no CPU boost).
+  - Egress/ADC block, or a blocking PyPI latest-version check hanging until the probe
+    times out.
+These are set out-of-band via gcloud/console (--memory, --cpu-boost, startup-probe
+timeout/threshold, egress policy), NOT in Dockerfile or deploy-viz.yml.
+
+WHY NO IN-REPO CHANGE IS APPLIED (AND WHY THAT IS THE DISCIPLINED CALL)
+----------------------------------------------------------------------
+- The failing run is ~3 months old and the image is unchanged since 5 days before it.
+  There is no new code defect to fix; re-triggering only redeploys identical bytes.
+- The decisive evidence — the container's actual stderr — exists only in Cloud
+  Logging (the run's Logs URL), unreachable from the repo, CI, or this sandbox.
+  Local reproduction would be non-decisive (this machine has data/, ADC, egress, and
+  ample memory — none matching the Cloud Run runtime).
+- Any repo change (adding --memory/--cpu-boost to the workflow, or switching to
+  `kedro viz run --lite`) would be an UNVERIFIABLE GUESS at an undiagnosed failure
+  class: it helps OOM/slow-start but is inert against an egress hang or a real
+  traceback. Committing it as "the fix" would violate the verification rule (no
+  completion claim without fresh evidence — none obtainable from here).
+
+MANDATORY NEXT STEP (operational — outside this repo, human/ops action)
+-----------------------------------------------------------------------
+1. Read the container's real stderr at the failed run's Logs URL:
+   https://console.cloud.google.com/logs/viewer?project=cloud-1in1000&resource=cloud_run_revision/service_name/kedro-viz/revision_name/kedro-viz-00028-48x
+   That single output identifies the class:
+     - OOMKilled / SIGKILL   -> raise service memory (most likely).
+     - Hang, no traceback    -> egress/ADC/PyPI-check block on the service.
+     - Python traceback      -> a real repo defect (fix it with the traceback as the
+                                spec; note the image does NOT COPY data/).
+2. Only AFTER the logs name the class, apply the matched remediation:
+     - OOM / slow start: harden the SERVICE (--memory 1Gi|2Gi, --cpu-boost, wider
+       startup-probe timeout/threshold) via gcloud/console, OR add those flags to the
+       deploy step in deploy-viz.yml, OR change ENTRYPOINT to `kedro viz run --lite`
+       (graph-only; degrades dataset preview).
+     - egress/ADC/PyPI hang: fix credentials/egress on the service (not repo).
+     - Python traceback: fix the specific defect in this repo.
+3. Also consider disabling/quieting this daily auto-fix cron for deploy-viz.yml until
+   the frozen 2026-04-19 run is superseded by a fresh deploy — it is re-alerting on a
+   stale artifact.
+
+No source, Dockerfile, or workflow change is warranted or verifiable for this failure
+from within the repo until the Cloud Logging output is read.

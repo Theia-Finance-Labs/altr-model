@@ -223,6 +223,33 @@ CONFIG_VARIANTS["mcpr_v2_merit"] = ConfigVariant(
     valuation_params=_vanilla_valuation(),
 )
 
+# 10. mcpr_v2_carbon_full — carbon_explicit pricing + full valuation suite.
+# Same earnings as mcpr_v2_carbon; only the valuation changes, so the delta
+# vs mcpr_v2_carbon isolates the suite-interaction effect.
+_mcpr_v2cf_earn = _vanilla_earnings()
+_mcpr_v2cf_earn["enable_mcpr"] = True
+_mcpr_v2cf_earn["carbon_cost_method"] = "full_ef"
+_mcpr_v2cf_earn["mcpr_mode"] = "carbon_explicit"
+CONFIG_VARIANTS["mcpr_v2_carbon_full"] = ConfigVariant(
+    name="mcpr_v2_carbon_full",
+    earnings_params=_mcpr_v2cf_earn,
+    valuation_params=_adjusted_valuation(),
+)
+
+# 11. mcpr_v2_merit_full — merit_order_decline pricing + full valuation suite.
+# Rescue experiment: MCPR v1 collapsed in isolation (-9.8pp) but delivered
+# +19.5pp interaction inside the suite; this tests whether merit mode is
+# rescued the same way or is genuinely pathological.
+_mcpr_v2mf_earn = _vanilla_earnings()
+_mcpr_v2mf_earn["enable_mcpr"] = True
+_mcpr_v2mf_earn["enable_dynamic_capture_ratios"] = True
+_mcpr_v2mf_earn["mcpr_mode"] = "merit_order_decline"
+CONFIG_VARIANTS["mcpr_v2_merit_full"] = ConfigVariant(
+    name="mcpr_v2_merit_full",
+    earnings_params=_mcpr_v2mf_earn,
+    valuation_params=_adjusted_valuation(),
+)
+
 
 # ---------------------------------------------------------------------------
 # Data types
@@ -707,14 +734,25 @@ def main(
         scenario_csv_path = temp_scenarios_dir / f"{safe_provider}_scenarios.csv"
 
         try:
-            row_count = write_scenario_csv(
-                ar6_path=ar6_path,
-                provider=pair.provider,
-                baseline_scenario=pair.baseline_scenario,
-                target_scenario=pair.target_scenario,
-                output_path=scenario_csv_path,
-            )
-            log.info("Extracted %d scenario rows for %s", row_count, pair.provider)
+            if scenario_csv_path.exists() and scenario_csv_path.stat().st_size > 0:
+                # Reuse cached extract (same manifest pair) — keeps inputs
+                # byte-identical with earlier batches and tolerates a
+                # missing/empty AR6 source file.
+                with open(scenario_csv_path) as f:
+                    row_count = sum(1 for _ in f) - 1
+                log.info(
+                    "Using cached scenario extract for %s (%d rows)",
+                    pair.provider, row_count,
+                )
+            else:
+                row_count = write_scenario_csv(
+                    ar6_path=ar6_path,
+                    provider=pair.provider,
+                    baseline_scenario=pair.baseline_scenario,
+                    target_scenario=pair.target_scenario,
+                    output_path=scenario_csv_path,
+                )
+                log.info("Extracted %d scenario rows for %s", row_count, pair.provider)
         except Exception as e:
             log.error("Failed to extract scenarios for %s: %s", pair.provider, e)
             # Record failure for all configs of this provider
