@@ -20,17 +20,17 @@ python3.10 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
 
-### 2. Install Dependencies with Poetry
+### 2. Install Dependencies with uv
 
 ```bash
-# Install Poetry if you don't have it
-curl -sSL https://install.python-poetry.org | python3 -
+# Install uv if you don't have it
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Install project dependencies
-poetry install
+uv sync
 
-# Activate the Poetry shell
-poetry shell
+# Activate the virtual environment
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 ```
 
 ## Running the Pipeline

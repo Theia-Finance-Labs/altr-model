@@ -13,18 +13,18 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Poetry
-RUN pip install poetry==1.8.3
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 # Copy all project files first
 COPY src ./src
 COPY conf ./conf
-COPY pyproject.toml poetry.lock ./
+COPY pyproject.toml uv.lock ./
 COPY README.md ./
 
-# Configure Poetry to avoid virtual environments and install dependencies
-RUN poetry config virtualenvs.create false \
-    && poetry install --no-interaction --no-ansi
+# Install dependencies into the system environment
+ENV UV_PROJECT_ENVIRONMENT="/usr/local"
+RUN uv sync --frozen --no-dev
 
 # Optionally copy data if needed for viz context
 # COPY data ./data
