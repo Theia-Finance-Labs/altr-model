@@ -24,19 +24,6 @@ def filter_scenarios(
     scenarios_pathways: pd.DataFrame, target_scenario: str, baseline_scenario: str
 ) -> pd.DataFrame:
 
-    # Standardize scenario naming
-    # TODO: remove after integration of scenario data in DBT
-    scenarios_pathways["scenario"] = (
-        "AR6_"
-        + scenarios_pathways["scenario_provider"].astype(str).str.strip()
-        + "_"
-        + scenarios_pathways["scenario"].astype(str).str.strip()
-    )
-
-    scenarios_pathways.loc[
-        scenarios_pathways["scenario_geography"] == "Global", "country_iso2_list"
-    ] = np.nan
-
     # NOTE: Removed WindCap transformation - keeping WindCap - Onshore and WindCap - Offshore
     # as-is to match with asset data
 
@@ -136,9 +123,6 @@ def filter_scenarios(
         scenarios_pathways_filtered.loc[:, "scenario_pathway"].astype(float)
     )
 
-    scenarios_pathways_filtered = scenarios_pathways_filtered.rename(
-        columns={"scenario_year": "year"}
-    )
     return scenarios_pathways_filtered
 
 
@@ -148,14 +132,9 @@ def filter_companies(
     ownership_type: str,
 ) -> pd.DataFrame:
 
-    # TODO : remove with logic to handle multi-level ownerships,
-    # and/or fix in the data when owner=parent ie 1 company id matches 2 owewrnships levels
     companies_owners = companies_ownership_tree[
         companies_ownership_tree["ownership_type"] == ownership_type
     ]
-
-    # TODO : fix in dbt
-    companies_owners = companies_owners.rename(columns={"production_year": "year"})
 
     if company_ids:
         filtered_companies_ownership_tree = companies_owners.loc[
@@ -556,117 +535,6 @@ def determine_lifetime_per_technology(
     )
 
     return unique_combinations
-
-
-def interpolate_scenarios_annually(scenarios_pathways: pd.DataFrame) -> pd.DataFrame:
-    """
-    Interpolate scenario data to fill missing years with linear interpolation and extend
-    to the maximum year across the entire dataset using constant values.
-
-    This is a temporary fix to handle the fact that downloaded_scenarios.csv contains
-    5-year interval data but the late_sudden trajectory algorithms expect annual data.
-
-    Args:
-        scenarios_pathways: DataFrame with scenario data (potentially sparse years)
-
-    Returns:
-        DataFrame with annually interpolated scenario data extended to max year
-    """
-
-    # Main grouping columns for interpolation (keeping it simple)
-    group_cols = [
-        "scenario",
-        "scenario_type",
-        "scenario_geography",
-        "sector",
-        "technology",
-    ]
-
-    # Numeric columns that should be interpolated
-    numeric_cols = [
-        "scenario_price",
-        "fuel_price",
-        "scenario_pathway",
-        "scenario_capacity_factor",
-        "lifetime_years",
-    ]
-    existing_numeric_cols = [
-        col for col in numeric_cols if col in scenarios_pathways.columns
-    ]
-
-    # Get the maximum year across the entire dataset
-    global_max_year = int(scenarios_pathways["year"].max())
-
-    interpolated_scenarios = []
-
-    # Group by main identifiers and interpolate within each group
-    for _, group_df in scenarios_pathways.groupby(group_cols, dropna=False):
-        group_df = group_df.sort_values("year").copy()
-
-        # Get the year range for this group
-        min_year = int(group_df["year"].min())
-        group_max_year = int(group_df["year"].max())
-
-        # Create annual year range extending to global max year
-        annual_years = list(range(min_year, global_max_year + 1))
-
-        # Create base template with first row's non-numeric values
-        template_row = group_df.iloc[0].copy()
-
-        # Create rows for each year
-        annual_data = []
-        for year in annual_years:
-            row = template_row.copy()
-            row["year"] = year
-            annual_data.append(row)
-
-        annual_df = pd.DataFrame(annual_data)
-
-        # Merge with original data to get actual values where they exist
-        merged_df = annual_df.merge(
-            group_df[group_cols + ["year"] + existing_numeric_cols],
-            on=group_cols + ["year"],
-            how="left",
-            suffixes=("", "_actual"),
-        )
-
-        # Replace interpolated numeric columns with actual values
-        for col in existing_numeric_cols:
-            actual_col = f"{col}_actual"
-            if actual_col in merged_df.columns:
-                merged_df[col] = merged_df[actual_col]
-                merged_df.drop(columns=[actual_col], inplace=True)
-
-        # Interpolate missing values within the original range
-        for col in existing_numeric_cols:
-            if col in merged_df.columns:
-                merged_df[col] = pd.to_numeric(merged_df[col], errors="coerce")
-                # Only interpolate within the original data range
-                original_range_mask = (merged_df["year"] >= min_year) & (
-                    merged_df["year"] <= group_max_year
-                )
-                merged_df.loc[original_range_mask, col] = merged_df.loc[
-                    original_range_mask, col
-                ].interpolate(method="linear")
-
-                # For years beyond the group's max year, extend with the last known value
-                if group_max_year < global_max_year:
-                    last_known_value = merged_df.loc[
-                        merged_df["year"] == group_max_year, col
-                    ].iloc[0]
-                    if not pd.isna(last_known_value):
-                        extension_mask = merged_df["year"] > group_max_year
-                        merged_df.loc[extension_mask, col] = last_known_value
-
-        interpolated_scenarios.append(merged_df)
-
-    # Combine all groups
-    if interpolated_scenarios:
-        result = pd.concat(interpolated_scenarios, ignore_index=True)
-        result["year"] = result["year"].astype(int)
-        return result
-    else:
-        return scenarios_pathways  # Return original if no interpolation was possible
 
 
 def scale_electricity_price(
