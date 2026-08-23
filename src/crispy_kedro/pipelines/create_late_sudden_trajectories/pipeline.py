@@ -3,20 +3,31 @@ This is a boilerplate pipeline 'create_late_sudden_trajectories'
 generated using Kedro 0.19.12
 """
 
-from kedro.pipeline import node, Pipeline, pipeline  # noqa
+from kedro.pipeline import Pipeline, node, pipeline
 
 from .nodes import (
+    concatenate_late_sudden_results,
     determine_companies_technologies_alignment,
-    late_sudden_misaligned_high_carbon_companies,
-    late_sudden_misaligned_low_carbon_companies,
     late_sudden_aligned_high_carbon_companies,
     late_sudden_aligned_low_carbon_companies,
-    concatenate_late_sudden_results,
+    late_sudden_misaligned_high_carbon_companies,
+    late_sudden_misaligned_low_carbon_companies,
 )
+
+NAMESPACE = "create_late_sudden_trajectories"
+PIPELINE_INPUTS = {
+    "companies_trajectories",
+    "increasing_or_decreasing_techs",
+}
+PIPELINE_OUTPUTS = {
+    "all_alignment_classifications",
+    "companies_late_sudden_trajectories",
+}
+PIPELINE_PARAMETERS = {"alignment_year", "shock_year"}
 
 
 def create_pipeline(**kwargs) -> Pipeline:
-    return Pipeline(
+    return pipeline(
         [
             node(
                 determine_companies_technologies_alignment,
@@ -79,5 +90,9 @@ def create_pipeline(**kwargs) -> Pipeline:
                 outputs="companies_late_sudden_trajectories",
             ),
         ],
+        inputs=PIPELINE_INPUTS,
+        outputs=PIPELINE_OUTPUTS,
+        parameters=PIPELINE_PARAMETERS,
+        namespace=NAMESPACE,
         tags="altrisk",
     )

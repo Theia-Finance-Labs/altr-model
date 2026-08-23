@@ -3,7 +3,8 @@ This is a boilerplate pipeline 'create_baseline_and_target_trajectories'
 generated using Kedro 0.19.12
 """
 
-from kedro.pipeline import node, Pipeline  # noqa
+from kedro.pipeline import Pipeline, node, pipeline
+
 from .nodes import (
     aggregate_assets_to_company_level,
     calculate_tmsr,
@@ -11,9 +12,13 @@ from .nodes import (
     create_companies_trajectories,
 )
 
+NAMESPACE = "create_baseline_and_target_trajectories"
+PIPELINE_INPUTS = {"companies_forecasts", "scenarios_pathways"}
+PIPELINE_OUTPUTS = {"companies_trajectories"}
+
 
 def create_pipeline(**kwargs) -> Pipeline:
-    return Pipeline(
+    return pipeline(
         [
             node(
                 aggregate_assets_to_company_level,
@@ -42,5 +47,8 @@ def create_pipeline(**kwargs) -> Pipeline:
                 outputs="companies_trajectories",
             ),
         ],
+        inputs=PIPELINE_INPUTS,
+        outputs=PIPELINE_OUTPUTS,
+        namespace=NAMESPACE,
         tags="altrisk",
     )

@@ -3,21 +3,44 @@ This is a boilerplate pipeline 'distribute_impacts_to_asset_level'
 generated using Kedro 0.19.12
 """
 
-from kedro.pipeline import node, Pipeline, pipeline  # noqa
+from kedro.pipeline import Pipeline, node, pipeline
+
 from .nodes import (
     compute_asset_baseline_trajectories,
+    concatenate_staggered_shock_results,
+    create_frozen_capacity_at_retirement,
+    flag_phased_out_assets_as_retired,
+    melt_asset_staggered_trajectories,
     split_late_sudden_trajectories_by_alignment_type,
     stagger_decreasing_technologies,
     stagger_increasing_technologies,
-    concatenate_staggered_shock_results,
-    flag_phased_out_assets_as_retired,
-    melt_asset_staggered_trajectories,
-    create_frozen_capacity_at_retirement,
 )
+
+NAMESPACE = "distribute_impacts_to_asset_level"
+PIPELINE_INPUTS = {
+    "assets_retirement_dates",
+    "companies_late_sudden_trajectories",
+    "extended_companies_forecasts",
+}
+PIPELINE_OUTPUTS = {
+    "asset_level_staggered_shock",
+    "asset_level_staggered_shock_melted",
+    "companies_late_sudden_trajectories_corrected",
+    "frozen_capacity_at_retirement",
+}
+PIPELINE_PARAMETERS = {
+    "alignment_year",
+    "apply_decreasing_staggered_shock",
+    "apply_retirement_baseline",
+    "apply_retirement_shock",
+    "shock_year",
+    "staggered_shock.g_k",
+    "staggered_shock.n_quantiles",
+}
 
 
 def create_pipeline(**kwargs) -> Pipeline:
-    return Pipeline(
+    return pipeline(
         [
             node(
                 compute_asset_baseline_trajectories,
@@ -112,5 +135,9 @@ def create_pipeline(**kwargs) -> Pipeline:
                 name="create_frozen_capacity",
             ),
         ],
+        inputs=PIPELINE_INPUTS,
+        outputs=PIPELINE_OUTPUTS,
+        parameters=PIPELINE_PARAMETERS,
+        namespace=NAMESPACE,
         tags="altrisk",
     )

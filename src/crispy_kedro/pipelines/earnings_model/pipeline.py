@@ -3,17 +3,36 @@ Comprehensive earnings model pipeline with 10 nodes implementing
 full financial methodology including synthetic assets and tranche logic.
 """
 
-from kedro.pipeline import node, Pipeline, pipeline
+from kedro.pipeline import Pipeline, node, pipeline
 
 from .nodes import (
-    validate_and_standardize_inputs,
-    build_scenario_surfaces,
     assemble_asset_panel,
+    build_scenario_surfaces,
+    compute_fcff,
     compute_flow_based_capex,
     compute_ops_block,
-    compute_fcff,
+    validate_and_standardize_inputs,
     write_asset_earnings_series,
 )
+
+NAMESPACE = "earnings_model"
+PIPELINE_INPUTS = {
+    "all_alignment_classifications",
+    "asset_level_staggered_shock_melted",
+    "companies_forecasts",
+    "frozen_capacity_at_retirement",
+    "scenarios_pathways",
+}
+PIPELINE_OUTPUTS = {"asset_earnings"}
+PIPELINE_PARAMETERS = {
+    "apply_continued_om_baseline",
+    "apply_continued_om_shock",
+    "include_decom_costs",
+    "include_growth_capex",
+    "include_replacement_capex",
+    "market_passthrough",
+    "shock_year",
+}
 
 
 def create_pipeline(**kwargs) -> Pipeline:
@@ -90,5 +109,9 @@ def create_pipeline(**kwargs) -> Pipeline:
                 outputs="asset_earnings",
             ),
         ],
+        inputs=PIPELINE_INPUTS,
+        outputs=PIPELINE_OUTPUTS,
+        parameters=PIPELINE_PARAMETERS,
+        namespace=NAMESPACE,
         tags="altrisk",
     )

@@ -10,6 +10,20 @@ from .nodes import (
     plot_staggered_shock,
 )
 
+NAMESPACE = "reporting"
+PIPELINE_INPUTS = {
+    "asset_level_staggered_shock_melted",
+    "companies_late_sudden_trajectories",
+    "companies_late_sudden_trajectories_corrected",
+    "yearly_npv_trajectories",
+}
+PIPELINE_OUTPUTS = {"asset_financial_trajectories_plots_dir"}
+PIPELINE_PARAMETERS = {
+    "plot_staggered_shock_show_shock_absorption",
+    "plot_staggered_shock_use_log_scale",
+    "reporting",
+}
+
 
 def create_pipeline(**kwargs) -> Pipeline:
     return pipeline(
@@ -47,5 +61,9 @@ def create_pipeline(**kwargs) -> Pipeline:
                 name="plot_asset_financial_trajectories_node",
             ),
         ],
+        inputs=PIPELINE_INPUTS,
+        outputs=PIPELINE_OUTPUTS,
+        parameters=PIPELINE_PARAMETERS,
+        namespace=NAMESPACE,
         tags="reporting",
     )

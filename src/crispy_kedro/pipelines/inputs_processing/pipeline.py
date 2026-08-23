@@ -3,19 +3,44 @@ This is a boilerplate pipeline 'inputs_processing'
 generated using Kedro 0.19.12
 """
 
-from kedro.pipeline import node, Pipeline, pipeline  # noqa
+from kedro.pipeline import Pipeline, node, pipeline
+
 from .nodes import (
-    check_input_parameters,
-    filter_scenarios,
-    apply_ccs_suffix,
-    filter_assets,
-    filter_companies,
-    assign_scenario_geographies_to_assets,
     allocate_assets_to_companies,
+    apply_ccs_suffix,
+    assign_scenario_geographies_to_assets,
+    check_input_parameters,
     determine_increasing_or_decreasing_techs,
     determine_lifetime_per_technology,
+    filter_assets,
+    filter_companies,
+    filter_scenarios,
     scale_electricity_price,
 )
+
+NAMESPACE = "inputs_processing"
+PIPELINE_INPUTS = {
+    "downloaded_assets",
+    "downloaded_companies",
+    "downloaded_scenarios",
+}
+PIPELINE_OUTPUTS = {
+    "allocated_assets_to_companies",
+    "increasing_or_decreasing_techs",
+    "lifetime_per_technology",
+    "scenarios_pathways",
+}
+PIPELINE_PARAMETERS = {
+    "alignment_year",
+    "baseline_scenario",
+    "ccs_on",
+    "company_ids",
+    "max_forecast_horizon",
+    "ownership_type",
+    "shock_year",
+    "target_scenario",
+    "theta_capex_recovery",
+}
 
 
 def create_pipeline(**kwargs) -> Pipeline:
@@ -104,5 +129,9 @@ def create_pipeline(**kwargs) -> Pipeline:
                 outputs="lifetime_per_technology",
             ),
         ],
+        inputs=PIPELINE_INPUTS,
+        outputs=PIPELINE_OUTPUTS,
+        parameters=PIPELINE_PARAMETERS,
+        namespace=NAMESPACE,
         tags=["altrisk", "trisk"],
     )

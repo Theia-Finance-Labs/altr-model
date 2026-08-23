@@ -2,14 +2,29 @@
 Valuation model pipeline for converting earnings to NPV using DCF methodology.
 """
 
-from kedro.pipeline import node, Pipeline, pipeline
+from kedro.pipeline import Pipeline, node, pipeline
 
 from .nodes import (
-    compute_yearly_npv_trajectories,
-    calculate_npv_per_asset,
-    aggregate_to_company_technology_npv,
     aggregate_to_company_npv,
+    aggregate_to_company_technology_npv,
+    calculate_npv_per_asset,
+    compute_yearly_npv_trajectories,
 )
+
+NAMESPACE = "valuation_model"
+PIPELINE_INPUTS = {"asset_earnings"}
+PIPELINE_OUTPUTS = {
+    "asset_npv",
+    "company_npv",
+    "company_technology_npv",
+    "yearly_npv_trajectories",
+}
+PIPELINE_PARAMETERS = {
+    "dcf.discount_rate_baseline",
+    "dcf.discount_rate_shock",
+    "dcf.terminal_value.g_real_default",
+    "dcf.terminal_value.method",
+}
 
 
 def create_pipeline(**kwargs) -> Pipeline:
@@ -50,5 +65,9 @@ def create_pipeline(**kwargs) -> Pipeline:
                 name="aggregate_to_company_npv_node",
             ),
         ],
+        inputs=PIPELINE_INPUTS,
+        outputs=PIPELINE_OUTPUTS,
+        parameters=PIPELINE_PARAMETERS,
+        namespace=NAMESPACE,
         tags="altrisk",
     )

@@ -3,13 +3,26 @@ This is a boilerplate pipeline 'inputs_postproc'
 generated using Kedro 0.19.12
 """
 
-from kedro.pipeline import node, Pipeline, pipeline  # noqa
+from kedro.pipeline import Pipeline, node, pipeline
 
 from .nodes import (
     apply_reduce_granularity_from_asset_to_company_level,
     determine_assets_retirement_dates,
     extend_allocated_assets_to_companies,
 )
+
+NAMESPACE = "inputs_postproc"
+PIPELINE_INPUTS = {
+    "allocated_assets_to_companies",
+    "lifetime_per_technology",
+    "scenarios_pathways",
+}
+PIPELINE_OUTPUTS = {
+    "assets_retirement_dates",
+    "companies_forecasts",
+    "extended_companies_forecasts",
+}
+PIPELINE_PARAMETERS = {"reduce_granularity_from_asset_to_company_level"}
 
 
 def create_pipeline(**kwargs) -> Pipeline:
@@ -40,5 +53,9 @@ def create_pipeline(**kwargs) -> Pipeline:
                 outputs="assets_retirement_dates",
             ),
         ],
+        inputs=PIPELINE_INPUTS,
+        outputs=PIPELINE_OUTPUTS,
+        parameters=PIPELINE_PARAMETERS,
+        namespace=NAMESPACE,
         tags="altrisk",
     )
