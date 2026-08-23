@@ -25,7 +25,6 @@ from crispy_kedro.pipelines.prepare_scenario_asset_and_company_inputs._input_nod
     filter_assets,
     filter_companies,
     filter_scenarios,
-    scale_electricity_price,
 )
 
 NON_FUEL_TECHNOLOGIES = {
@@ -56,7 +55,6 @@ def prepare_scenario_pathways(
     downloaded_scenarios: pd.DataFrame,
     target_scenario: str,
     baseline_scenario: str,
-    theta_capex_recovery: float,
 ) -> pd.DataFrame:
     """Filter scenarios once and add all downstream trajectory/model fields."""
     scenarios = filter_scenarios(
@@ -64,7 +62,6 @@ def prepare_scenario_pathways(
         target_scenario=target_scenario,
         baseline_scenario=baseline_scenario,
     )
-    scenarios = scale_electricity_price(scenarios, theta=theta_capex_recovery)
     scenarios = calculate_tmsr(scenarios)
 
     trend = determine_increasing_or_decreasing_techs(scenarios)

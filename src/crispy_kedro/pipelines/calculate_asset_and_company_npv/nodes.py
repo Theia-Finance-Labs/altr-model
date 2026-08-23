@@ -31,8 +31,13 @@ def compute_yearly_npv_trajectories(
 
     npv_data = asset_earnings.copy()
 
-    # TODO: for some reason some assets have no scenario associated; MUST FIX THIS
-    npv_data = npv_data.dropna(subset=["scenario_type"]).reset_index(drop=True)
+    unresolved_mask = npv_data["scenario_type"].isna()
+    if unresolved_mask.any():
+        unresolved_asset_ids = sorted(npv_data.loc[unresolved_mask, "asset_id"].unique())
+        raise ValueError(
+            f"{len(unresolved_asset_ids)} asset(s) have no scenario_type resolved "
+            f"and cannot be included in NPV: {unresolved_asset_ids}"
+        )
 
     def get_discount_rate(scenario_type):
         if scenario_type == "baseline":

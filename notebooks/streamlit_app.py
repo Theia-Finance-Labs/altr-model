@@ -257,17 +257,10 @@ with tab_config:
                 help="Major impact — aggregates to one synthetic row per company/technology before the model runs.",
             )
 
-        col4, col5 = st.columns(2)
-        with col4:
-            max_forecast_horizon = st.number_input(
-                "max_forecast_horizon", min_value=1, max_value=30,
-                value=int(defaults.get("max_forecast_horizon", 5)), step=1,
-            )
-        with col5:
-            theta_capex_recovery = st.number_input(
-                "theta_capex_recovery", min_value=0.0,
-                value=float(defaults.get("theta_capex_recovery", 1.0)), step=0.1,
-            )
+        max_forecast_horizon = st.number_input(
+            "max_forecast_horizon", min_value=1, max_value=30,
+            value=int(defaults.get("max_forecast_horizon", 5)), step=1,
+        )
 
     with st.expander("Company trajectory timing — calculate_company_trajectories"):
         col1, col2 = st.columns(2)
@@ -391,7 +384,6 @@ with tab_config:
             "ownership_type": ownership_type,
             "ccs_on": ccs_on,
             "max_forecast_horizon": int(max_forecast_horizon),
-            "theta_capex_recovery": float(theta_capex_recovery),
             "reduce_granularity_from_asset_to_company_level": bool(reduce_granularity),
             "shock_year": int(shock_year),
             "alignment_year": int(alignment_year),

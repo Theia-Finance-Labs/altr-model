@@ -19,7 +19,6 @@ PIPELINE_PARAMETERS = {
     "ownership_type",
     "reduce_granularity_from_asset_to_company_level",
     "target_scenario",
-    "theta_capex_recovery",
 }
 
 
@@ -32,7 +31,6 @@ def create_pipeline(**kwargs) -> Pipeline:
                     "downloaded_scenarios": "scenarios",
                     "target_scenario": "params:target_scenario",
                     "baseline_scenario": "params:baseline_scenario",
-                    "theta_capex_recovery": "params:theta_capex_recovery",
                 },
                 outputs="_scenario_pathways",
                 name="prepare_scenarios",

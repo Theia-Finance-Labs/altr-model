@@ -268,8 +268,68 @@ allocation frames remain internal datasets and do not cross pipeline boundaries.
 | `ownership_type` | string | Which ownership relationship to use when allocating assets to companies (e.g. `"direct"`). Changes which assets get attributed to which company. |
 | `ccs_on` | bool or null | Whether to use the with-CCS or without-CCS scenario variant for Coal/Gas/Biomass technologies (`null` = no distinction). Changes which technology rows are matched from `scenarios.csv`. |
 | `max_forecast_horizon` | int | Number of years of forecast kept per asset/company. Larger = longer trajectories but more low-confidence out-years. |
-| `theta_capex_recovery` | float | CapEx-recovery weighting applied when scaling electricity price forecasts. Higher values increase modeled price recovery of capital costs. |
 | `reduce_granularity_from_asset_to_company_level` | bool | **Major impact.** `True` aggregates inputs to one synthetic row per company-technology before the rest of the pipeline runs; `False` keeps real per-asset granularity. Changes the row count, identifiers, and structure of every downstream output — see [section 6](#6-model-outputs). |
+
+#### How assets get matched to a scenario geography
+
+Every asset is assigned exactly one `scenario_geography` (used as a merge/
+groupby key for the rest of the pipeline), via `country_iso2` against the
+geography → country mapping implied by `country_iso2_list` in
+`scenarios.csv`:
+
+1. **Most specific match wins.** If a country is covered by more than one
+   scenario geography (e.g. a single-country entry *and* a multi-country
+   regional bucket), the geography with the *fewest* countries is used — an
+   exact-country geography beats a 10-country region, which beats a
+   100-country region.
+2. **A true tie is a hard error.** If two geographies cover the same country
+   with the same specificity, the run fails with
+   `ValueError: Ambiguous scenario geography assignment detected...` rather
+   than picking one arbitrarily.
+3. **Global fallback.** Any asset whose country isn't covered by *any*
+   specific geography is assigned to the scenario's global geography — the
+   one `scenario_geography` row whose `country_iso2_list` is empty/NaN (e.g.
+   a row named `Global`).
+4. **A scenario without a global row is a hard requirement, not optional.**
+   If no such global-fallback row exists in the (filtered) scenario data and
+   some asset's country still isn't covered, the run fails with
+   `AssertionError: Some assets are not assigned to a scenario geography`.
+   In other words: any scenario used as `baseline_scenario` or
+   `target_scenario` must include a no-country-restriction geography *unless*
+   every possible asset country is explicitly listed somewhere.
+5. **Watch for the geography silently disappearing first.** `filter_scenarios`
+   (used to build both `baseline_scenario` and `target_scenario` into one
+   working dataset) intersects the geographies common to both and only
+   *warns* on a mismatch (see the cross-provider note further down this doc).
+   If the global geography exists in only one of the two scenarios, it gets
+   dropped before the matching above ever runs — which then surfaces as the
+   `AssertionError` above rather than as an obviously-related warning.
+
+#### Asset retirement age: refurbishment wrap-around, not a hard cutoff
+
+An asset's observed age is not used as-is. At its first valid observation,
+age is wrapped modulo the technology's `lifetime_years`, then ages linearly
+from there — i.e. the model assumes assets are refurbished on a rolling
+lifetime cycle rather than permanently retired the first time they exceed
+their nominal lifetime. This changes which assets the model treats as "old"
+(near their *next* retirement point) versus "recently refurbished," and
+therefore which assets are subject to retirement-driven capacity drop-off
+under `apply_retirement_baseline`/`apply_retirement_shock`.
+
+#### Defaults silently applied while building the scenario financial surface
+
+`prepare_scenario_pathways` derives several cost/price columns from
+`scenarios.csv`, filling gaps with fixed assumptions rather than leaving them
+missing — worth knowing since a missing input value is then indistinguishable
+from an intentionally-zero one:
+
+- `fuel_price_usd_per_mwh_fuel` is forced to `0.0` for a fixed list of
+  non-fuel technologies (Solar, Wind, Hydro, Nuclear, Geothermal).
+- `capacity_factor` defaults to `1.0`, and `carbon_price_usd_per_tco2`
+  defaults to `0.0`, whenever missing from the input data.
+- `scrap_usd_per_mw` (decommissioning scrap value) is always derived as
+  `-capex_usd_per_mw / 2` — a fixed assumption that decommissioning recovers
+  exactly 50% of capital cost, not a value read from `scenarios.csv`.
 
 ### `calculate_company_trajectories`
 
@@ -311,6 +371,36 @@ construction, and company-level reconciliation as distinct steps.
 | `staggered_shock.g_k` | float | Curve-shape parameter for the staggered shock (steepness of the quantile allocation curve). |
 | `staggered_shock.n_quantiles` | int | Number of quantile buckets the staggered shock is split across. |
 
+#### Synthetic assets for increasing technologies
+
+For technologies whose scenario pathway is *increasing* (e.g. renewables
+build-out), a company's real assets are left at business-as-usual capacity,
+and any gap versus the company's target trajectory is filled by a single
+**synthetic** top-up asset:
+
+- **A synthetic asset can only appear where the company already has a real
+  one.** This isn't an explicit check in the synthetic-asset builder itself —
+  it's a structural consequence of an earlier step
+  (`prepare_company_projection_inputs`) that only produces a company
+  trajectory for `(company, scenario_geography, sector, technology)`
+  combinations where the company already has at least one real asset there.
+  A company can never get a synthetic asset in a country/technology it has no
+  real presence in at all.
+- From `shock_year` onward, the synthetic asset's capacity in year *t* is
+  `max(0, company_target[t] - sum(real_assets[t]))` — it fills exactly the
+  gap between the company-level target and what real assets already deliver,
+  so real + synthetic always reconciles to the company total.
+- Exactly **one** synthetic asset id is created per
+  `company × sector × technology × geography` group (not one per year),
+  named `NEW_{company_id}_{sector}_{technology}_{geography}`, flagged
+  `is_synthetic = True`.
+- Synthetic rows for renewable technologies (Solar, Wind, Hydro, Nuclear,
+  Geothermal) get `emission_factor` forced to `0.0` when it would otherwise
+  be missing.
+- This is a second, independent source of `is_synthetic = True` rows — it
+  happens regardless of the `reduce_granularity_from_asset_to_company_level`
+  setting discussed in [section 6](#granularity-changes-the-shape-of-every-output).
+
 ### `calculate_asset_earnings`
 
 - **Inputs:** `asset_trajectories`
@@ -326,8 +416,32 @@ stage to reload `asset_trajectories`.
 | `include_growth_capex` | bool | Whether to include CapEx for new-build capacity growth in the cost stack. |
 | `include_replacement_capex` | bool | Whether to include CapEx for replacing retired eligible assets. |
 | `include_decom_costs` | bool | Whether to include decommissioning costs for retired assets. |
-| `apply_continued_om_baseline` | bool | Whether fixed O&M keeps being charged (at first-year capacity) after retirement, in the baseline trajectory. |
-| `apply_continued_om_shock` | bool | Same, for the shock trajectory. |
+| `apply_continued_om_baseline` | bool | Whether fixed O&M keeps being charged (at first-year capacity) after retirement, in the baseline trajectory. **Only affects decreasing (high-carbon) technologies** — see note below. |
+| `apply_continued_om_shock` | bool | Same, for the shock trajectory. **Only affects decreasing (high-carbon) technologies** — see note below. |
+
+The two `apply_continued_om_*` toggles only take effect for
+`misaligned_high_carbon`/`aligned_high_carbon` alignment types (decreasing
+technologies); increasing/low-carbon technologies always use actual capacity
+for O&M regardless of these parameters.
+
+#### Replacement CapEx is a hardcoded 5% rate, and depends on `is_synthetic`
+
+Capacity growth on a **real** (non-synthetic) asset is treated as
+roll-over/replacement and capitalized at a fixed 5% of the capacity
+increase; capacity growth on a **synthetic** asset (new-build, see the
+increasing-technology synthetic-asset note in
+[section 5](#allocate_company_trajectories_to_assets)) is capitalized at full
+CapEx. This means `is_synthetic` — driven either by
+`reduce_granularity_from_asset_to_company_level` or by the increasing-tech
+synthetic top-up rule — changes the *composition* of the cost stack, not
+just row shape/count.
+
+This is deliberate, not a bug: the capacity-flow identity check that would
+normally validate "flows fully explain the capacity trajectory" is
+intentionally disabled, because the 5% roll-over rate is not meant to add up
+to the full capacity delta. If you're reconciling `capex_total` against
+capacity changes yourself, don't expect them to match exactly for real
+assets.
 
 ### `calculate_asset_and_company_npv`
 
@@ -341,6 +455,12 @@ stage to reload `asset_trajectories`.
 | `dcf.discount_rate_shock` | float | Real discount rate applied to shock (late-sudden) cash flows; typically set higher than baseline to reflect transition risk. |
 | `dcf.terminal_value.method` | string (`"none"` \| `"perpetuity"`) | Whether a terminal value is added beyond the forecast horizon. |
 | `dcf.terminal_value.g_real_default` | float | Real terminal growth rate used when `method` is `"perpetuity"`. |
+
+`compute_yearly_npv_trajectories` requires every `asset_earnings` row to have
+a resolved `scenario_type` (`"baseline"` or `"target"`); a row that reaches
+this stage without one raises `ValueError: N asset(s) have no scenario_type
+resolved...` rather than being silently excluded from NPV — see
+[troubleshooting](#7-optional-troubleshooting--kedro-viz) if you hit this.
 
 ### `plot_transition_risk_results`
 
@@ -432,3 +552,19 @@ lineage — useful for seeing which tag(s) touch which datasets.
   `altrisk` outputs (`asset_earnings`, `company_trajectories`,
   `yearly_npv_trajectories`); run `--tags=altrisk,reporting` (or run
   `altrisk` first).
+- **`ValueError: Ambiguous scenario geography assignment detected`** — two
+  scenario geographies tie for the same country at the same specificity
+  (e.g. two regional buckets both list that country and neither is more
+  granular than the other). Fix the overlap in the scenario data's
+  `country_iso2_list` values. See [the geography-matching note in section
+  5](#how-assets-get-matched-to-a-scenario-geography).
+- **`AssertionError: Some assets are not assigned to a scenario geography`**
+  — the (filtered) scenario data has no global, no-country-restriction
+  geography to fall back to for at least one asset's country. Either add
+  one, or check whether `filter_scenarios`' baseline/target intersection
+  silently dropped it (only a `logger.warning`, easy to miss) — see the same
+  section-5 note.
+- **`ValueError: N asset(s) have no scenario_type resolved`** — one or more
+  `asset_earnings` rows never got tagged `"baseline"` or `"target"` before
+  reaching NPV. Look upstream at alignment classification and scenario
+  geography assignment for the affected `asset_id`s listed in the error.
