@@ -1,0 +1,11 @@
+# Asset earnings parameters
+market_passthrough: 0  # 0.5 => 50% carbon price passthrough to market prices
+
+# Cost element switches for earnings model
+include_growth_capex: False        # Include growth CapEx for new buildout capacity
+include_replacement_capex: False  # Include CapEx for replacing retired eligible assets
+include_decom_costs: False        # Include decommissioning costs for retired assets
+
+# Continued O&M uses each asset trajectory's first-year capacity for fixed costs.
+apply_continued_om_baseline: False
+apply_continued_om_shock: True

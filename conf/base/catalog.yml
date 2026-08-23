@@ -2,87 +2,41 @@
 # ================== INPUTS ======================
 # ================================================
 
-
-db_assets_forecasts:
-  type: ibis.TableDataset
-  table_name: assets_forecasts
-  database: bertrand2_marts
-  connection:
-    backend: bigquery
-    project_id: cloud-1in1000
-
-
-plant_ownerships:
-  type: ibis.TableDataset
-  table_name: companies_ownership_tree
-  database: bertrand2_marts
-  connection:
-    backend: bigquery
-    project_id: cloud-1in1000
-
-
-db_scenarios_pathways:
-  type: ibis.TableDataset
-  table_name: scenarios
-  database: bertrand2_marts
-  connection:
-    backend: bigquery
-    project_id: cloud-1in1000
-
-financial_averages:
-  type: ibis.TableDataset
-  table_name: financial_averages
-  database: bertrand_marts
-  connection:
-    backend: bigquery
-    project_id: cloud-1in1000
+# scenarios / assets_forecasts / ownership_tree below are the model's actual inputs.
+# Maintainers with BigQuery access produce them via
+# `python src/crispy_kedro/bigquery_marts_downloader.py`; everyone else
+# receives these three CSVs through another channel and places them here.
 
 # ================================================
 # ================== INTERMEDIATE ================
 # ================================================
 
-downloaded_scenarios:
+scenarios:
   type: pandas.CSVDataset
-  filepath: data/05_model_input/downloaded_scenarios.csv
+  filepath: data/05_model_input/scenarios.csv
 
-downloaded_assets:
+assets_forecasts:
   type: pandas.CSVDataset
-  filepath: data/05_model_input/downloaded_assets.csv
+  filepath: data/05_model_input/assets_forecasts.csv
 
-downloaded_companies:
+ownership_tree:
   type: pandas.CSVDataset
-  filepath: data/05_model_input/downloaded_companies.csv
-
-allocated_assets_to_companies:
-  type: pandas.CSVDataset
-  filepath: data/07_model_output/allocated_assets_to_companies.csv
-
-scenarios_pathways:
-  type: pandas.CSVDataset
-  filepath: data/07_model_output/scenarios_pathways_clean.csv  
+  filepath: data/05_model_input/ownership_tree.csv
 
 # ================================================
 # ================== OUTPUTS =====================
 # ================================================
 
-# Key output from TRISK pipeline - this will be logged to MLflow
-companies_npvs:
+# Canonical company trajectories: baseline, target, requested transition,
+# and the post-allocation transition realized by the asset fleet.
+company_trajectories:
   type: pandas.CSVDataset
-  filepath: data/08_reporting/companies_npvs.csv
+  filepath: data/07_model_output/company_trajectories.csv
 
-# Combined late sudden trajectories and alignment classifications
-companies_late_sudden_trajectories:
+# Canonical long asset trajectories used by the earnings model.
+asset_trajectories:
   type: pandas.CSVDataset
-  filepath: data/07_model_output/companies_late_sudden_trajectories.csv
-
-asset_level_staggered_shock:  
-  type: pandas.CSVDataset
-  filepath: data/07_model_output/asset_level_staggered_shock.csv
-
-# Frozen capacity at retirement for fixed cost calculations
-frozen_capacity_at_retirement:
-  type: pandas.CSVDataset
-  filepath: data/07_model_output/frozen_capacity_at_retirement.csv
+  filepath: data/07_model_output/asset_trajectories.csv
 
 
 # ================================================
@@ -123,35 +77,4 @@ company_technology_npv:
 company_npv:
   type: pandas.CSVDataset
   filepath: data/07_model_output/company_npv.csv
-
-# ================================================
-# ================ REPORTING PIPELINE OUTPUTS ===
-# ================================================
-
-
-validation_summary:
-  type: pandas.CSVDataset
-  filepath: data/08_reporting/tables/validation_summary.csv
-
-# Compliance-ready reporting tables
-report_company_summary:
-  type: pandas.CSVDataset
-  filepath: data/08_reporting/tables/compliance_ready/company_summary.csv
-
-report_technology_summary:
-  type: pandas.CSVDataset
-  filepath: data/08_reporting/tables/compliance_ready/technology_summary.csv
-
-report_top_assets:
-  type: pandas.CSVDataset
-  filepath: data/08_reporting/tables/compliance_ready/top_assets.csv
-
-report_methodology:
-  type: pandas.CSVDataset
-  filepath: data/08_reporting/tables/compliance_ready/methodology_parameters.csv
-
-# Quality control summary
-reporting_qc_summary:
-  type: pandas.CSVDataset
-  filepath: data/08_reporting/tables/compliance_ready/reporting_qc.csv
 

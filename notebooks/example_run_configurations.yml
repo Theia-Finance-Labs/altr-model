@@ -1,0 +1,89 @@
+# Example run configurations for notebooks/run_kedro_batch.py and
+# notebooks/streamlit_app.py.
+#
+# Each top-level key is a run name (becomes a subfolder under
+# workspace_dir/) and its value is a set of parameter overrides applied on
+# top of conf/base/ for that run only - same shape and same six runs as the
+# `runs_configuration` dict in notebooks/generate_results.ipynb (four of
+# them were commented out there; all six are enabled here as a reference).
+#
+# company_ids is deliberately NOT set per run here: run_kedro_batch.py
+# applies a single company selection (e.g. example_company_selection.csv)
+# across every run in the file. Add a per-run `company_ids:` list yourself
+# if you want a specific run to use a different subset, and omit
+# --company-ids on the CLI (or the uploaded file in the app) so those
+# per-run values are respected instead of being overridden.
+#
+# All six runs below pair the same baseline/target scenario:
+#   AR6_AIM/CGE 2.2_EN_NPi2020_1200f (baseline) / AR6_AIM/CGE 2.2_EN_NPi2020_900f (target)
+# Both come from the same IAM provider ("AIM/CGE 2.2") - see
+# notebooks/scenario_utils.py for why that matters: baseline/target pairs
+# from different providers are not rejected by the pipeline (it silently
+# intersects geographies/technologies and logs a warning), so mixing
+# providers quietly degrades results instead of failing loudly.
+
+AIM-CGE_2.2__runA_company_granularity_with_shock_continued_omcost:
+  reduce_granularity_from_asset_to_company_level: true
+  apply_retirement_baseline: false
+  apply_retirement_shock: false
+  apply_decreasing_staggered_shock: false
+  baseline_scenario: "AR6_AIM/CGE 2.2_EN_NPi2020_1200f"
+  target_scenario: "AR6_AIM/CGE 2.2_EN_NPi2020_900f"
+  apply_continued_om_baseline: false
+  apply_continued_om_shock: true
+  max_forecast_horizon: 5
+
+AIM-CGE_2.2__runB_asset_granularity_with_shock_retirement:
+  reduce_granularity_from_asset_to_company_level: false
+  apply_retirement_baseline: false
+  apply_retirement_shock: true
+  apply_decreasing_staggered_shock: true
+  baseline_scenario: "AR6_AIM/CGE 2.2_EN_NPi2020_1200f"
+  target_scenario: "AR6_AIM/CGE 2.2_EN_NPi2020_900f"
+  apply_continued_om_baseline: false
+  apply_continued_om_shock: false
+  max_forecast_horizon: 5
+
+AIM-CGE_2.2__runC_asset_granularity_with_retirement:
+  reduce_granularity_from_asset_to_company_level: false
+  apply_retirement_baseline: true
+  apply_retirement_shock: true
+  apply_decreasing_staggered_shock: true
+  baseline_scenario: "AR6_AIM/CGE 2.2_EN_NPi2020_1200f"
+  target_scenario: "AR6_AIM/CGE 2.2_EN_NPi2020_900f"
+  apply_continued_om_baseline: false
+  apply_continued_om_shock: false
+  max_forecast_horizon: 5
+
+AIM-CGE_2.2__runD_asset_granularity_with_retirement_and_om_cost:
+  reduce_granularity_from_asset_to_company_level: false
+  apply_retirement_baseline: true
+  apply_retirement_shock: true
+  apply_decreasing_staggered_shock: true
+  baseline_scenario: "AR6_AIM/CGE 2.2_EN_NPi2020_1200f"
+  target_scenario: "AR6_AIM/CGE 2.2_EN_NPi2020_900f"
+  apply_continued_om_baseline: true
+  apply_continued_om_shock: true
+  max_forecast_horizon: 5
+
+AIM-CGE_2.2__runE_company_granularity_with_shock_continued_omcost:
+  reduce_granularity_from_asset_to_company_level: true
+  apply_retirement_baseline: false
+  apply_retirement_shock: false
+  apply_decreasing_staggered_shock: false
+  baseline_scenario: "AR6_AIM/CGE 2.2_EN_NPi2020_1200f"
+  target_scenario: "AR6_AIM/CGE 2.2_EN_NPi2020_900f"
+  apply_continued_om_baseline: false
+  apply_continued_om_shock: true
+  max_forecast_horizon: 1
+
+AIM-CGE_2.2__runF_asset_granularity_with_retirement_and_om_cost:
+  reduce_granularity_from_asset_to_company_level: false
+  apply_retirement_baseline: true
+  apply_retirement_shock: true
+  apply_decreasing_staggered_shock: true
+  baseline_scenario: "AR6_AIM/CGE 2.2_EN_NPi2020_1200f"
+  target_scenario: "AR6_AIM/CGE 2.2_EN_NPi2020_900f"
+  apply_continued_om_baseline: true
+  apply_continued_om_shock: true
+  max_forecast_horizon: 1

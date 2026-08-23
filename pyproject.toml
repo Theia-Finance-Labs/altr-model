@@ -1,61 +1,64 @@
-[tool.poetry]
+[project]
 name = "crispy-kedro"
 version = "0.1.0"
 description = ""
-authors = ["bertrand.gallice <bertrandgllc@gmail.com>"]
+authors = [{ name = "bertrand.gallice", email = "bertrandgllc@gmail.com" }]
 readme = "README.md"
-packages = [{ include = "crispy_kedro", from = "src" }]
+requires-python = ">=3.10,<3.11"
+dependencies = [
+    "kedro>=0.19.12,<0.20.0",
+    "pandas>=2.1,<2.2",
+    "numpy>=1.26,<1.27",
+    "kedro-datasets[pandas]>=6.0.0,<7.0.0",
+    "matplotlib>=3.10.1,<4.0.0",
+    "seaborn>=0.13.2,<0.14.0",
+    "openpyxl>=3.1.5,<4.0.0",
+    "kedro-viz>=11.0.0,<12.0.0",
+    "tqdm>=4.67.1,<5.0.0",
+    "joblib>=1.5.2,<2.0.0",
+]
 
-[tool.poetry.dependencies]
-python = ">=3.10,<3.11.dev0"
-# TODO : bigquery here forces the use of numpy 1.26.1 .
-#  If needed to upgrade to numpy >= 2.0.0 one day, then look into ibis-bigquery package
-ibis-framework = {extras = ["bigquery"], version = "^10.4.0"}
-# TODO proto-plus is forced because only common version for google-cloud-bigquery-storage and google-api-core
-proto-plus = "1.22.3"
-kedro = "^0.19.12"
-pandas = "2.1.*"
-numpy = "1.26.*"
-kedro-datasets = {extras = ["pandas", "ibis"], version = "^6.0.0"}
-matplotlib = "^3.10.1"
-seaborn = "^0.13.2"
-openpyxl = "^3.1.5"
-kedro-viz = "^11.0.0"
-tqdm = "^4.67.1"
-joblib = "^1.5.2"
-
-
-
-[tool.poetry.group.dev.dependencies]
-ipython = ">=8.10"
-jupyterlab = ">=3.0"
-notebook = "*"
-pytest-cov = "~=3.0"
-pytest-mock = ">=1.7.1,<2.0"
-pytest = "~=7.2"
-ruff = "~=0.1.8"
-
-
-[tool.poetry.group.docs.dependencies]
-docutils = "<0.21"
-sphinx = ">=5.3,<7.3"
-sphinx_rtd_theme = "==2.0.0"
-nbsphinx = "==0.8.1"
-sphinx-autodoc-typehints = "==1.20.2"
-sphinx_copybutton = "==0.5.2"
-ipykernel = ">=5.3,<7.0"
-Jinja2 = "<3.2.0"
-myst-parser = ">=1.0,<2.1"
-
-[tool.poetry.scripts]
+[project.scripts]
 crispy-kedro = "crispy_kedro.__main__:main"
 kedro = "kedro.framework.cli.cli:main"
+
+[dependency-groups]
+dev = [
+    "ipython>=8.10",
+    "jupyterlab>=3.0",
+    "notebook",
+    "pytest-cov~=3.0",
+    "pytest-mock>=1.7.1,<2.0",
+    "pytest~=7.2",
+    "ruff~=0.1.8",
+]
+# Only needed to run bigquery_marts_downloader.py (maintainer-only input
+# download). Not a default group: end users without BigQuery access never
+# need these, so `uv sync` skips them unless explicitly requested with
+# `uv sync --group bigquery`.
+bigquery = [
+    "google-cloud-bigquery>=3.43.0,<4.0.0",
+    "google-cloud-bigquery-storage>=2.39.0,<3.0.0",
+    "python-dotenv>=1.0.0,<2.0.0",
+]
+# Only needed for the batch-run Streamlit app under notebooks/. Not a
+# default group: `uv sync` skips it unless explicitly requested with
+# `uv sync --group streamlit`.
+streamlit = [
+    "streamlit>=1.38,<2.0.0",
+]
+
+[tool.uv]
+default-groups = ["dev"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/crispy_kedro"]
 
 [tool.kedro]
 package_name = "crispy_kedro"
 project_name = "crispy-kedro"
 kedro_init_version = "0.19.12"
-tools = ["Linting", "Testing", "Documentation", "Data Structure"]
+tools = ["Linting", "Testing", "Data Structure"]
 example_pipeline = false
 source_dir = "src"
 
@@ -93,5 +96,5 @@ select = [
 ignore = ["E501"]
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"

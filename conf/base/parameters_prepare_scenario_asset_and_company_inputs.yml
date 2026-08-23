@@ -1,0 +1,52 @@
+# Scenario filtering, ownership allocation, and asset/company preparation.
+#
+# Documentation for this file format can be found in "Parameters"
+# Link: https://docs.kedro.org/en/0.19.12/configuration/parameters.html
+
+
+baseline_scenario: "AR6_AIM/CGE 2.2_EN_NPi2020_1200f"
+target_scenario: "AR6_AIM/CGE 2.2_EN_NPi2020_900f"
+
+reduce_granularity_from_asset_to_company_level: False
+
+
+max_forecast_horizon: 5
+
+ownership_type: "direct"
+
+# Technology scenario mapping control
+# If True, use w/ CCS scenarios for Coal, Gas, Biomass. If False, use w/o CCS
+# If Null, use technology without distinction.
+ccs_on: False
+
+
+company_ids:
+  - CN_8600108312240451561
+  - CP_1512176126791706747
+  # big greentech owners
+  - CN_6660639238798673502
+  - CN_6660639238798673502
+  - CN_5719632086864744401
+  # big carbontech owners
+  - CN_8600108312240451561
+  - CN_7548398708980274705
+  - CN_5252218731344992786
+  # random other owners with 10-20 assets
+  - CN_8249155112555313068
+  - CP_7671368023139165011
+  - CN_7263620466430749129
+  - CP_5133603177600074280
+  - CP_1405113695717703383
+  - CN_7237425157254272056
+  # random other owners with <10 assets
+  - CN_1325960156574879189
+  - CN_8258543408338880789
+  - CN_4206272115616897750
+  - CN_413233497131578182
+  - CP_2845696436723078206
+  - CN_6870637186458717950
+  - CN_1465642096900403277
+  - CN_4903484062166566625
+  - CP_4899418540238054262
+  - CP_1564781859061095794
+

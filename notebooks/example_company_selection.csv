@@ -1,0 +1,31 @@
+company_id,company_name,carbon_alignment_quadrant,owned_capacity_mw,quadrant_purity,n_asset_tech_rows
+CP_7367629456451130624,Saudi Electricity Co,misaligned_high_carbon,5993843,1.0,52
+CP_6411932603966179940,JERA,misaligned_high_carbon,5428333,0.85,39
+CN_2272387057764697337,NTPC Ltd,misaligned_high_carbon,5278350,0.88,40
+CN_8289062574935601752,Eskom Holdings SOC Ltd,misaligned_high_carbon,4305730,0.95,19
+CP_6280725841277318280,Comisión Federal de Electricidad EPE,misaligned_high_carbon,3708069,0.67,81
+CN_9147469651065703957,Florida Power & Light Co,misaligned_high_carbon,2785896,0.89,19
+CP_4147148409075105689,Tennessee Valley Authority,misaligned_high_carbon,2768813,0.7,30
+CN_6475749649582456139,Ministry of Electricity (Iraq),misaligned_high_carbon,2057960,0.94,66
+CN_6488161088428600082,Electricité de France SA,misaligned_low_carbon,7519232,0.83,126
+CP_8560203160377002286,Hydro Quebec,misaligned_low_carbon,3654600,0.98,56
+CP_774336548921366747,PJSC RusHydro,misaligned_low_carbon,2799100,1.0,33
+CP_4137086261914115,Rosatom,misaligned_low_carbon,2753800,1.0,12
+CP_7605127394594156381,Korea Hydro & Nuclear Power Co,misaligned_low_carbon,2421600,1.0,8
+CP_5374584170705946147,Ontario Power Generation Inc,misaligned_low_carbon,2343742,0.97,34
+CN_8031185245170948262,NextEra Energy Inc,misaligned_low_carbon,2271363,1.0,125
+CP_7370862721649467085,EDF Energy Ltd,misaligned_low_carbon,2035200,1.0,62
+CN_3371785431787292505,Kansai Electric Power Co,aligned_high_carbon,2703700,0.74,57
+CP_6311715612862685805,China Yangzi River Three Gorges Group Co Ltd,aligned_high_carbon,2529630,1.0,6
+CN_8064818311359297904,State Grid Xinyuan Co Ltd,aligned_high_carbon,1794200,1.0,31
+CN_1784098929884717109,Kyushu Electric Power Co Inc,aligned_high_carbon,1506550,0.58,26
+CP_8927133391983718557,Vietnam Electricity (EVN),aligned_high_carbon,1149700,1.0,25
+CN_4117655119178337552,State Power Investment Group Upper Yellow River Hydropower Development Co Ltd,aligned_high_carbon,1085050,0.92,13
+CN_5490653372497379599,Vietnam Electricity LLC,aligned_high_carbon,935050,0.5,14
+CP_9187576119013201591,Azure Power,aligned_low_carbon,227400,1.0,1
+CN_3609115420225854555,China Guangdong Nuclear Solar Energy Development Co Ltd,aligned_low_carbon,161900,1.0,1
+CN_6980468522228318247,SDIC Power Holdings Co Ltd,aligned_low_carbon,156400,0.67,9
+CN_4440463050459774439,Neoen SA,aligned_low_carbon,139042,1.0,2
+CN_6741456596082465682,EVNGENCO2 JSC,aligned_low_carbon,125000,0.5,2
+CP_3185202543523296674,Tata Power Renewable Energy Ltd,aligned_low_carbon,116600,1.0,5
+CN_6894373266496773215,Guoneng Changyuan Wuhan Qingshan Thermal Power Co Ltd,aligned_low_carbon,103000,0.5,2
