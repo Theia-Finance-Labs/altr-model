@@ -480,8 +480,8 @@ def compute_asset_baseline_trajectories(
             ]
         ].copy()
 
-        # Convert asset_id to string for consistent matching
-        retirement_df["asset_id"] = retirement_df["asset_id"].astype(str)
+        # Use a normalized helper key without changing the public asset_id dtype.
+        retirement_df["_asset_id_merge"] = retirement_df["asset_id"].astype(str)
 
         # Calculate effective retirement year (cannot be before alignment_year + 1)
         retirement_df["eff_retirement_year"] = retirement_df["retirement_year"].astype(
@@ -492,47 +492,37 @@ def compute_asset_baseline_trajectories(
                 "eff_retirement_year"
             ].clip(lower=int(alignment_year) + 1)
 
-        # Merge retirement info with output DataFrame
-        # Use left merge to keep all rows from out, adding retirement info where available
-        # Convert asset_id to string temporarily for consistent merging
-        out_asset_id_original = out["asset_id"]
-        out["asset_id"] = out["asset_id"].astype(str)
-
-        try:
-            out_with_retirement = out.merge(
-                retirement_df[
-                    [
-                        "company_id",
-                        "scenario_geography",
-                        "sector",
-                        "technology",
-                        "asset_id",
-                        "eff_retirement_year",
-                    ]
-                ],
-                on=[
-                    "company_id",
-                    "scenario_geography",
-                    "sector",
-                    "technology",
-                    "asset_id",
-                ],
-                how="left",
-                suffixes=("", "_retirement"),
-            )
-        finally:
-            # Restore original asset_id dtype
-            out["asset_id"] = out_asset_id_original
+        # Apply the mask to the merged frame itself. ``out`` retains source index
+        # labels after groupby/apply, whereas merge creates a RangeIndex. Applying
+        # a mask from the merged frame back to ``out`` label-aligns unrelated rows
+        # and makes retirement depend on upstream row order.
+        out["_asset_id_merge"] = out["asset_id"].astype(str)
+        retirement_keys = [
+            "company_id",
+            "scenario_geography",
+            "sector",
+            "technology",
+            "_asset_id_merge",
+        ]
+        out_with_retirement = out.merge(
+            retirement_df[retirement_keys + ["eff_retirement_year"]],
+            on=retirement_keys,
+            how="left",
+            validate="many_to_one",
+            sort=False,
+        )
 
         # Vectorized mask: zero out rows where year >= effective retirement year
         retirement_mask = out_with_retirement["eff_retirement_year"].notna() & (
             out_with_retirement["year"] >= out_with_retirement["eff_retirement_year"]
         )
 
-        # Apply retirement zeroing using vectorized assignment
-        # retirement_mask has the same index as out (left merge preserves left index)
-        out.loc[retirement_mask, "asset_baseline_trajectory"] = 0.0
-        out.loc[retirement_mask, "asset_activity"] = 0.0
+        out_with_retirement.loc[
+            retirement_mask, ["asset_baseline_trajectory", "asset_activity"]
+        ] = 0.0
+        out = out_with_retirement.drop(
+            columns=["_asset_id_merge", "eff_retirement_year"]
+        )
 
     # Clean up helper column
     out.drop(columns=["_company_baseline"], inplace=True)

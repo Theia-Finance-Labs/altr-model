@@ -5,6 +5,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 from crispy_kedro.pipelines.allocate_company_trajectories_to_assets._allocation_nodes import (
+    compute_asset_baseline_trajectories,
     stagger_decreasing_technologies,
     stagger_increasing_technologies,
 )
@@ -252,6 +253,76 @@ def test_retirement_toggle_controls_post_alignment_asset_zeroing():
     assert results[False]["late_sudden_phase"] != "retirement"
     assert results[True]["capacity_after_shock"] == 0.0
     assert results[True]["late_sudden_phase"] == "retirement"
+
+
+def test_baseline_retirement_is_key_aligned_when_asset_rows_are_interleaved():
+    years = [2035, 2036, 2037]
+    company_path = pd.DataFrame(
+        [
+            {
+                "company_id": "company",
+                "company_name": "Company",
+                "scenario_geography": "World",
+                "sector": "Power",
+                "technology": "CoalCap",
+                "year": year,
+                "trajectory_type": "baseline",
+                "company_trajectory": 20.0,
+            }
+            for year in years
+        ]
+    )
+    assets = pd.DataFrame(
+        [
+            {
+                "asset_id": asset_id,
+                "asset_name": asset_id,
+                "company_id": "company",
+                "company_name": "Company",
+                "scenario_geography": "World",
+                "sector": "Power",
+                "technology": "CoalCap",
+                "year": year,
+                "asset_activity": activity,
+                "asset_age": 10.0 + year - years[0],
+            }
+            for year in years
+            for asset_id, activity in [("retiring", 12.0), ("continuing", 8.0)]
+        ]
+    )
+    retirement_dates = pd.DataFrame(
+        [
+            {
+                "asset_id": "retiring",
+                "company_id": "company",
+                "scenario_geography": "World",
+                "sector": "Power",
+                "technology": "CoalCap",
+                "retirement_year": 2036,
+            }
+        ]
+    )
+
+    result = compute_asset_baseline_trajectories(
+        companies_late_sudden_trajectories=company_path,
+        allocated_assets_to_companies=assets,
+        assets_retirement_dates=retirement_dates,
+        apply_retirement_baseline=True,
+        alignment_year=2035,
+    )
+
+    retiring = result[result["asset_id"].eq("retiring")].set_index("year")
+    continuing = result[result["asset_id"].eq("continuing")].set_index("year")
+    assert retiring["asset_baseline_trajectory"].to_dict() == {
+        2035: 12.0,
+        2036: 0.0,
+        2037: 0.0,
+    }
+    assert continuing["asset_baseline_trajectory"].to_dict() == {
+        2035: 8.0,
+        2036: 8.0,
+        2037: 8.0,
+    }
 
 
 def test_retirement_is_carried_on_panel_and_missing_retirement_stays_null():
