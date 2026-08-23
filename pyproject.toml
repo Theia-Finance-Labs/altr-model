@@ -48,11 +48,8 @@ docs = [
 # need these, so `uv sync` skips them unless explicitly requested with
 # `uv sync --group bigquery`.
 bigquery = [
-    # TODO : bigquery here forces the use of numpy 1.26.1 .
-    #  If needed to upgrade to numpy >= 2.0.0 one day, then look into ibis-bigquery package
-    "ibis-framework[bigquery]>=10.4.0,<11.0.0",
-    # TODO proto-plus is forced because only common version for google-cloud-bigquery-storage and google-api-core
-    "proto-plus==1.22.3",
+    "google-cloud-bigquery>=3.43.0,<4.0.0",
+    "google-cloud-bigquery-storage>=2.39.0,<3.0.0",
 ]
 
 [tool.uv]

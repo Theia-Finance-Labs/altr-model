@@ -23,14 +23,6 @@ downloaded_companies:
   type: pandas.CSVDataset
   filepath: data/05_model_input/downloaded_companies.csv
 
-allocated_assets_to_companies:
-  type: pandas.CSVDataset
-  filepath: data/07_model_output/allocated_assets_to_companies.csv
-
-scenarios_pathways:
-  type: pandas.CSVDataset
-  filepath: data/07_model_output/scenarios_pathways_clean.csv  
-
 # ================================================
 # ================== OUTPUTS =====================
 # ================================================
