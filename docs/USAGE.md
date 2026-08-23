@@ -75,7 +75,7 @@ The model needs exactly three CSV files, placed in `data/05_model_input/`:
 | File | Schema |
 |---|---|
 | `scenarios.csv` | see [below](#scenarioscsv) |
-| `assets.csv` | see [below](#assetscsv) |
+| `assets_forecasts.csv` | see [below](#assets_forecastscsv) |
 | `ownership_tree.csv` | see [below](#ownership_treecsv) |
 
 ### Where the data comes from
@@ -86,7 +86,7 @@ The model needs exactly three CSV files, placed in `data/05_model_input/`:
 
 ### Schemas
 
-#### `assets.csv`
+#### `assets_forecasts.csv`
 
 Physical power-generation assets (plants) and their technical
 characteristics — capacity, technology, location, age — one row per asset
@@ -107,7 +107,6 @@ per forecast year.
 | `latitude` | float | Asset location, latitude. |
 | `longitude` | float | Asset location, longitude. |
 | `age_is_inferred` | bool | Whether `asset_age` was inferred rather than sourced directly. |
-| `workforce_size` | float (nullable) | Number of people employed at/by the asset, where known. |
 | `capacity_factor` | float | Fraction of nameplate capacity the asset is expected to run at. |
 | `emission_factor` | float | Emissions per unit of output for this asset/technology. |
 
@@ -143,27 +142,16 @@ measured against.
 | `sector` | string | Economic sector the pathway applies to. |
 | `technology` | string | Technology the pathway applies to within its sector. |
 | `year` | int | Year this row's pathway values apply to. |
-| `technology_type` | string | Broad classification of the technology (e.g. carbon-intensive vs. green tech). |
-| `price_unit` | string | Unit that `scenario_price` is expressed in. |
-| `price_indicator` | string | Which price series/indicator `scenario_price` was sourced from. |
 | `scenario_price` | float | Output price projected under this scenario. |
 | `fuel_price` | float | Fuel input price projected under this scenario. |
-| `pathway_unit` | string | Unit that `scenario_pathway` is expressed in. |
 | `scenario_pathway` | float | Projected production/capacity pathway value for this row. |
 | `scenario_capacity_factor` | float | Fraction of nameplate capacity assumed under this scenario. |
 | `country_iso2_list` | string (comma-list) | ISO 3166-1 alpha-2 codes of countries covered by `scenario_geography`. |
-| `stringency` | string | Climate stringency category of the scenario (e.g. IPCC category). |
-| `gap_filled_columns` | string | Names of columns in this row whose values were imputed rather than sourced. |
-| `fuel_for_price` | string | Fuel type that `fuel_price` refers to. |
 | `lifetime_years` | float | Assumed operating lifetime of the technology, in years. |
 | `efficiency_decimal` | float | Conversion efficiency of the technology, as a fraction. |
-| `capacity_additions_mw_per_yr` | float (nullable) | Projected new capacity added per year, in MW. |
 | `om_cost_usd_per_mw_per_yr` | float | Operations & maintenance cost per MW per year. |
 | `capital_cost_usd_per_mw` | float | Capital expenditure per MW of capacity. |
 | `carbon_price_usd_per_tco2` | float | Carbon price assumed under this scenario, per tonne of CO2. |
-| `annual_revenue_per_mw` | float | Projected annual revenue per MW of capacity. |
-| `ebitda_check` | bool | Whether the row passed an EBITDA plausibility check during scenario prep. |
-| `scenario_viable` | bool | Whether the scenario/technology combination is considered economically viable. |
 
 ## 4. Running the model
 
@@ -213,6 +201,49 @@ one go — useful for comparing scenarios or granularities without editing
   (`--tags=altrisk,reporting`, see below) with that run's parameters.
 
 > 📸 *Screenshot idea: the `runs_configuration` cell with 2-3 example runs.*
+
+### Batch runs without a notebook
+
+`notebooks/run_kedro_batch.py` is the script form of the same pattern —
+useful for headless/CI-style batch runs, or as the engine behind the
+Streamlit app below:
+
+```bash
+python notebooks/run_kedro_batch.py \
+    --run-configurations notebooks/example_run_configurations.yml \
+    --company-ids notebooks/example_company_selection.csv \
+    --workspace-dir workspace/results_batch \
+    --tags altrisk
+```
+
+- `--run-configurations`: a YAML/JSON file shaped like the notebook's
+  `runs_configuration` dict. `notebooks/example_run_configurations.yml`
+  reproduces the six configs (including the ones left commented out) from
+  `generate_results.ipynb`.
+- `--company-ids`: a CSV (`company_id` column), plain text (one id per
+  line), or YAML/JSON list, applied to every run in the file.
+  `notebooks/example_company_selection.csv` is a sample of 30 large
+  companies picked to cover all four alignment × carbon-intensity
+  quadrants (`aligned`/`misaligned` × `high_carbon`/`low_carbon`) — see the
+  file's own columns for how each was classified.
+- Baseline/target scenario pairs are validated to come from the same IAM
+  provider before a run starts (see `notebooks/scenario_utils.py`) — the
+  pipeline itself only warns and silently intersects geographies/
+  technologies on a mismatch, which otherwise fails quietly rather than
+  loudly. Pass `--allow-cross-provider-scenarios` to bypass this.
+- Same output-copying behavior as the notebook, plus a `run_manifest.csv`
+  per batch summarizing which runs succeeded.
+
+`notebooks/streamlit_app.py` wraps the same script in a form-based UI —
+build configurations interactively (with the scenario dropdown already
+constrained to same-provider pairs), upload or paste a company selection,
+download the resulting config YAML, and run the batch with live progress
+and per-run download buttons:
+
+```bash
+uv sync --group streamlit
+uv run streamlit run notebooks/streamlit_app.py
+```
 
 ## 5. Pipeline reference
 

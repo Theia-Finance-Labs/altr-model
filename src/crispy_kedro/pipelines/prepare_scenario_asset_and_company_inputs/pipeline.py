@@ -9,7 +9,7 @@ from .nodes import (
 )
 
 NAMESPACE = "prepare_scenario_asset_and_company_inputs"
-PIPELINE_INPUTS = {"assets", "ownership_tree", "scenarios"}
+PIPELINE_INPUTS = {"assets_forecasts", "ownership_tree", "scenarios"}
 PIPELINE_OUTPUTS = {"asset_forecast_panel", "company_projection_inputs"}
 PIPELINE_PARAMETERS = {
     "baseline_scenario",
@@ -40,7 +40,7 @@ def create_pipeline(**kwargs) -> Pipeline:
             node(
                 prepare_asset_forecast_panel,
                 inputs={
-                    "downloaded_assets": "assets",
+                    "downloaded_assets": "assets_forecasts",
                     "downloaded_companies": "ownership_tree",
                     "scenario_pathways": "_scenario_pathways",
                     "company_ids": "params:company_ids",

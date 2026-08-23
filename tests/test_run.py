@@ -54,7 +54,7 @@ def test_default_pipeline_keeps_only_raw_datasets_as_free_data_inputs():
     }
 
     assert data_inputs == {
-        "assets",
+        "assets_forecasts",
         "ownership_tree",
         "scenarios",
     }

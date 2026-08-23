@@ -10,6 +10,18 @@ logger = logging.getLogger(__name__)
 # Constants
 HOURS_PER_YEAR = 8760
 
+# A physical asset can legitimately appear once per owner. Every time-series
+# operation must therefore use the complete canonical asset-series grain, not
+# ``asset_id`` alone.
+ASSET_SERIES_KEYS = [
+    "company_id",
+    "asset_id",
+    "scenario_geography",
+    "sector",
+    "technology",
+    "trajectory_type",
+]
+
 
 def validate_asset_trajectories(asset_trajectories: pd.DataFrame) -> pd.DataFrame:
     """Validate the canonical, already-enriched asset trajectory contract."""
@@ -82,11 +94,23 @@ def validate_asset_trajectories(asset_trajectories: pd.DataFrame) -> pd.DataFram
     ].isna()
     assets.loc[renewable_missing, "emission_factor"] = 0.0
 
-    continuity = assets.groupby(["asset_id", "trajectory_type"])["year"].apply(
-        lambda values: values.sort_values().diff().dropna().unique()
+    duplicate_years = assets.duplicated(ASSET_SERIES_KEYS + ["year"], keep=False)
+    if duplicate_years.any():
+        bad_rows = (
+            assets.loc[duplicate_years, ASSET_SERIES_KEYS + ["year"]]
+            .drop_duplicates()
+            .head(10)
+            .to_dict("records")
+        )
+        raise ValueError(f"Duplicate asset trajectory years: {bad_rows}")
+
+    continuity = assets.groupby(ASSET_SERIES_KEYS, dropna=False)["year"].agg(
+        first_year="min",
+        last_year="max",
+        year_count="nunique",
     )
-    non_contiguous = continuity.apply(
-        lambda differences: any(difference != 1 for difference in differences)
+    non_contiguous = continuity["year_count"] != (
+        continuity["last_year"] - continuity["first_year"] + 1
     )
     if non_contiguous.any():
         bad_groups = list(non_contiguous[non_contiguous].index[:10])
@@ -111,21 +135,11 @@ def validate_capacity_flow_identity(
     data = asset_panel_enriched.copy()
 
     # Sort by asset and year
-    data = data.sort_values(
-        ["trajectory_type", "company_id", "asset_id", "technology", "year"]
-    ).reset_index(drop=True)
+    data = data.sort_values(ASSET_SERIES_KEYS + ["year"]).reset_index(drop=True)
 
     # Check for and remove duplicates before pivoting
     # Each (company_id, asset_id, technology, year, capex_indicator) combination should be unique
-    duplicate_check_cols = [
-        "trajectory_type",
-        "company_id",
-        "asset_id",
-        "technology",
-        "scenario_geography",
-        "year",
-        "capex_indicator",
-    ]
+    duplicate_check_cols = ASSET_SERIES_KEYS + ["year", "capex_indicator"]
 
     duplicates_count = data.duplicated(subset=duplicate_check_cols).sum()
     if duplicates_count > 0:
@@ -137,13 +151,7 @@ def validate_capacity_flow_identity(
     # Get capacity flows by indicator type per asset-year
     # Use pivot_table with aggfunc='sum' to aggregate flows by type
     flows_pivot = data.pivot_table(
-        index=[
-            "trajectory_type",
-            "company_id",
-            "asset_id",
-            "technology",
-            "year",
-        ],
+        index=ASSET_SERIES_KEYS + ["year"],
         columns="capex_indicator",
         values="capex_capacity",
         fill_value=0.0,
@@ -156,23 +164,14 @@ def validate_capacity_flow_identity(
             flows_pivot[col] = 0.0
 
     # Get unique asset-year combinations from original data
-    base_cols = [
-        "company_id",
-        "asset_id",
-        "technology",
-        "year",
-        "trajectory_type",
-    ]
+    base_cols = ASSET_SERIES_KEYS + ["year"]
     capacity_data = data[base_cols + ["asset_trajectory"]].drop_duplicates()
 
     validation_data = flows_pivot.merge(capacity_data, on=base_cols, how="left")
 
     # Calculate previous year capacity
-    validation_data = validation_data.sort_values(
-        ["trajectory_type", "company_id", "asset_id", "technology", "year"]
-    )
-    group_keys = ["trajectory_type", "company_id", "asset_id", "technology"]
-    validation_data["K_prev"] = validation_data.groupby(group_keys)[
+    validation_data = validation_data.sort_values(ASSET_SERIES_KEYS + ["year"])
+    validation_data["K_prev"] = validation_data.groupby(ASSET_SERIES_KEYS)[
         "asset_trajectory"
     ].shift(1)
 
@@ -240,17 +239,14 @@ def compute_capacity_flows(asset_panel: pd.DataFrame) -> pd.DataFrame:
     logger.info("Computing capacity flows from capacity changes...")
 
     data = asset_panel.copy()
-    data = data.sort_values(
-        ["trajectory_type", "company_id", "asset_id", "technology", "year"]
-    ).reset_index(drop=True)
+    data = data.sort_values(ASSET_SERIES_KEYS + ["year"]).reset_index(drop=True)
 
     # Use asset_trajectory (melted capacity)
     if "asset_trajectory" not in data.columns:
         raise ValueError("compute_capacity_flows expects 'asset_trajectory' column")
 
     # Calculate capacity changes vectorized, per trajectory_type when present
-    group_keys = ["trajectory_type", "company_id", "asset_id", "technology"]
-    data["K_prev"] = data.groupby(group_keys)["asset_trajectory"].shift(1)
+    data["K_prev"] = data.groupby(ASSET_SERIES_KEYS)["asset_trajectory"].shift(1)
     data["capacity_change"] = (data["asset_trajectory"] - data["K_prev"]).fillna(0)
 
     # Create flow records vectorized - this creates multiple rows per asset-year
@@ -491,24 +487,11 @@ def compute_ops_block(
 
         # Sort by keys + year to ensure we find the first year's capacity
         # We use a stable sort to be safe, though not strictly required if keys are unique
-        sort_keys = [
-            "trajectory_type",
-            "company_id",
-            "asset_id",
-            "technology",
-            "scenario_geography",
-            "year",
-        ]
+        sort_keys = ASSET_SERIES_KEYS + ["year"]
         ops_data = ops_data.sort_values(sort_keys)
 
         # Define grouping keys to identify unique assets within a trajectory
-        group_keys = [
-            "trajectory_type",
-            "company_id",
-            "asset_id",
-            "technology",
-            "scenario_geography",
-        ]
+        group_keys = ASSET_SERIES_KEYS
 
         # Compute initial capacity: transform('first') takes the first value in the sorted group
         ops_data["initial_capacity"] = ops_data.groupby(group_keys)["K_avg"].transform(

@@ -1,7 +1,7 @@
 """Maintainer-only script: download the model's raw input tables from BigQuery.
 
 End users without BigQuery access never run this — they receive the three
-CSVs this script produces (``scenarios.csv``, ``assets.csv``,
+CSVs this script produces (``scenarios.csv``, ``assets_forecasts.csv``,
 ``ownership_tree.csv`` in ``data/05_model_input/``) through another channel
 and place them there directly. Requires the ``bigquery`` dependency group
 (``uv sync --group bigquery``), kept out of the default install so end users
@@ -55,7 +55,7 @@ MARTS_DATASET = _require_env("BIGQUERY_DATASET")
 # output CSV name -> "database.table" (both under PROJECT_ID)
 TABLES: dict[str, str] = {
     "scenarios": f"{MARTS_DATASET}.altr_scenarios",
-    "assets": f"{MARTS_DATASET}.altr_assets_forecasts",
+    "assets_forecasts": f"{MARTS_DATASET}.altr_assets_forecasts",
     "ownership_tree": f"{MARTS_DATASET}.altr_companies_ownership_tree",
 }
 

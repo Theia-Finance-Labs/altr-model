@@ -2,7 +2,7 @@
 # ================== INPUTS ======================
 # ================================================
 
-# scenarios / assets / ownership_tree below are the model's actual inputs.
+# scenarios / assets_forecasts / ownership_tree below are the model's actual inputs.
 # Maintainers with BigQuery access produce them via
 # `python src/crispy_kedro/bigquery_marts_downloader.py`; everyone else
 # receives these three CSVs through another channel and places them here.
@@ -15,9 +15,9 @@ scenarios:
   type: pandas.CSVDataset
   filepath: data/05_model_input/scenarios.csv
 
-assets:
+assets_forecasts:
   type: pandas.CSVDataset
-  filepath: data/05_model_input/assets.csv
+  filepath: data/05_model_input/assets_forecasts.csv
 
 ownership_tree:
   type: pandas.CSVDataset
