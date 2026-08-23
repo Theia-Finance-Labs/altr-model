@@ -266,8 +266,8 @@ def filter_assets(
     forecast_end_year = scenario_start_year + max_forecast_horizon
 
     filtered_assets_forecasts = filtered_assets_forecasts.loc[
-        (scenario_start_year <= filtered_assets_forecasts.production_year)
-        & (filtered_assets_forecasts.production_year <= forecast_end_year),
+        (scenario_start_year <= filtered_assets_forecasts.year)
+        & (filtered_assets_forecasts.year <= forecast_end_year),
         :,
     ]
 
@@ -281,9 +281,6 @@ def filter_assets(
     if filtered_assets_forecasts.empty:
         raise ValueError("No assets remaining after filtering")
 
-    filtered_assets_forecasts = filtered_assets_forecasts.rename(
-        {"production_year": "year"}, axis=1
-    )
     filtered_assets_forecasts.loc[:, "capacity"] = filtered_assets_forecasts.loc[
         :, "capacity"
     ].astype(float)
@@ -437,8 +434,10 @@ def allocate_assets_to_companies(
     # Prepare assets data
     assets_prepared = assets_forecasts.copy()
 
-    # Prepare companies data
-    companies_prepared = companies_ownership_tree.copy()
+    # Prepare companies data. Drop asset_name: it's also on assets_prepared, and
+    # duplicating it would make pandas suffix both copies (asset_name_x/_y)
+    # instead of keeping a plain asset_name column.
+    companies_prepared = companies_ownership_tree.copy().drop(columns=["asset_name"])
 
     # Merge assets with ownership data on asset_id, sector, technology, and year
     merged_data = pd.merge(
