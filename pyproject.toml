@@ -32,17 +32,6 @@ dev = [
     "pytest~=7.2",
     "ruff~=0.1.8",
 ]
-docs = [
-    "docutils<0.21",
-    "sphinx>=5.3,<7.3",
-    "sphinx_rtd_theme==2.0.0",
-    "nbsphinx==0.8.1",
-    "sphinx-autodoc-typehints==1.20.2",
-    "sphinx_copybutton==0.5.2",
-    "ipykernel>=5.3,<7.0",
-    "Jinja2<3.2.0",
-    "myst-parser>=1.0,<2.1",
-]
 # Only needed to run bigquery_marts_downloader.py (maintainer-only input
 # download). Not a default group: end users without BigQuery access never
 # need these, so `uv sync` skips them unless explicitly requested with
@@ -50,10 +39,11 @@ docs = [
 bigquery = [
     "google-cloud-bigquery>=3.43.0,<4.0.0",
     "google-cloud-bigquery-storage>=2.39.0,<3.0.0",
+    "python-dotenv>=1.0.0,<2.0.0",
 ]
 
 [tool.uv]
-default-groups = ["dev", "docs"]
+default-groups = ["dev"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/crispy_kedro"]
@@ -62,7 +52,7 @@ packages = ["src/crispy_kedro"]
 package_name = "crispy_kedro"
 project_name = "crispy-kedro"
 kedro_init_version = "0.19.12"
-tools = ["Linting", "Testing", "Documentation", "Data Structure"]
+tools = ["Linting", "Testing", "Data Structure"]
 example_pipeline = false
 source_dir = "src"
 

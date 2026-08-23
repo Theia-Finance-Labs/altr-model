@@ -12,28 +12,46 @@ progress bar — plain ``query_job.result().to_dataframe()`` gives no feedback
 until the whole table has downloaded.
 
 Credentials fall back to Application Default Credentials.
+
+Configuration is read from environment variables (see ``BIGQUERY_PROJECT`` /
+``BIGQUERY_DATASET`` in ``.env``):
+- ``BIGQUERY_PROJECT``: GCP project id (required)
+- ``BIGQUERY_DATASET``: dataset holding the three mart tables (required)
 """
 
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 import pandas as pd
 import pyarrow as pa
 import pyarrow.compute as pc
+from dotenv import load_dotenv
 from google.cloud import bigquery, bigquery_storage
 from tqdm import tqdm
 
 logger = logging.getLogger("crispy_kedro.bigquery_marts")
 
-PROJECT_ID = "cloud-1in1000"
+load_dotenv()
+
+
+def _require_env(name: str) -> str:
+    value = os.environ.get(name)
+    if not value:
+        raise RuntimeError(f"Missing required environment variable: {name}")
+    return value
+
+
+PROJECT_ID = _require_env("BIGQUERY_PROJECT")
+MARTS_DATASET = _require_env("BIGQUERY_DATASET")
 
 # output CSV name -> "database.table" (both under PROJECT_ID)
 TABLES: dict[str, str] = {
-    "downloaded_scenarios": "bertrand2_marts.altr_scenarios",
-    "downloaded_assets": "bertrand2_marts.altr_assets_forecasts",
-    "downloaded_companies": "bertrand2_marts.altr_companies_ownership_tree",
+    "downloaded_scenarios": f"{MARTS_DATASET}.altr_scenarios",
+    "downloaded_assets": f"{MARTS_DATASET}.altr_assets_forecasts",
+    "downloaded_companies": f"{MARTS_DATASET}.altr_companies_ownership_tree",
 }
 
 OUTPUT_DIR = Path("data/05_model_input")
