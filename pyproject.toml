@@ -6,15 +6,10 @@ authors = [{ name = "bertrand.gallice", email = "bertrandgllc@gmail.com" }]
 readme = "README.md"
 requires-python = ">=3.10,<3.11"
 dependencies = [
-    # TODO : bigquery here forces the use of numpy 1.26.1 .
-    #  If needed to upgrade to numpy >= 2.0.0 one day, then look into ibis-bigquery package
-    "ibis-framework[bigquery]>=10.4.0,<11.0.0",
-    # TODO proto-plus is forced because only common version for google-cloud-bigquery-storage and google-api-core
-    "proto-plus==1.22.3",
     "kedro>=0.19.12,<0.20.0",
     "pandas>=2.1,<2.2",
     "numpy>=1.26,<1.27",
-    "kedro-datasets[pandas,ibis]>=6.0.0,<7.0.0",
+    "kedro-datasets[pandas]>=6.0.0,<7.0.0",
     "matplotlib>=3.10.1,<4.0.0",
     "seaborn>=0.13.2,<0.14.0",
     "openpyxl>=3.1.5,<4.0.0",
@@ -47,6 +42,17 @@ docs = [
     "ipykernel>=5.3,<7.0",
     "Jinja2<3.2.0",
     "myst-parser>=1.0,<2.1",
+]
+# Only needed to run bigquery_marts_downloader.py (maintainer-only input
+# download). Not a default group: end users without BigQuery access never
+# need these, so `uv sync` skips them unless explicitly requested with
+# `uv sync --group bigquery`.
+bigquery = [
+    # TODO : bigquery here forces the use of numpy 1.26.1 .
+    #  If needed to upgrade to numpy >= 2.0.0 one day, then look into ibis-bigquery package
+    "ibis-framework[bigquery]>=10.4.0,<11.0.0",
+    # TODO proto-plus is forced because only common version for google-cloud-bigquery-storage and google-api-core
+    "proto-plus==1.22.3",
 ]
 
 [tool.uv]

@@ -488,21 +488,23 @@ name = "crispy-kedro"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "ibis-framework", extra = ["bigquery"] },
     { name = "joblib" },
     { name = "kedro" },
-    { name = "kedro-datasets", extra = ["ibis", "pandas"] },
+    { name = "kedro-datasets", extra = ["pandas"] },
     { name = "kedro-viz" },
     { name = "matplotlib" },
     { name = "numpy" },
     { name = "openpyxl" },
     { name = "pandas" },
-    { name = "proto-plus" },
     { name = "seaborn" },
     { name = "tqdm" },
 ]
 
 [package.dev-dependencies]
+bigquery = [
+    { name = "ibis-framework", extra = ["bigquery"] },
+    { name = "proto-plus" },
+]
 dev = [
     { name = "ipython" },
     { name = "jupyterlab" },
@@ -526,21 +528,23 @@ docs = [
 
 [package.metadata]
 requires-dist = [
-    { name = "ibis-framework", extras = ["bigquery"], specifier = ">=10.4.0,<11.0.0" },
     { name = "joblib", specifier = ">=1.5.2,<2.0.0" },
     { name = "kedro", specifier = ">=0.19.12,<0.20.0" },
-    { name = "kedro-datasets", extras = ["pandas", "ibis"], specifier = ">=6.0.0,<7.0.0" },
+    { name = "kedro-datasets", extras = ["pandas"], specifier = ">=6.0.0,<7.0.0" },
     { name = "kedro-viz", specifier = ">=11.0.0,<12.0.0" },
     { name = "matplotlib", specifier = ">=3.10.1,<4.0.0" },
     { name = "numpy", specifier = ">=1.26,<1.27" },
     { name = "openpyxl", specifier = ">=3.1.5,<4.0.0" },
     { name = "pandas", specifier = ">=2.1,<2.2" },
-    { name = "proto-plus", specifier = "==1.22.3" },
     { name = "seaborn", specifier = ">=0.13.2,<0.14.0" },
     { name = "tqdm", specifier = ">=4.67.1,<5.0.0" },
 ]
 
 [package.metadata.requires-dev]
+bigquery = [
+    { name = "ibis-framework", extras = ["bigquery"], specifier = ">=10.4.0,<11.0.0" },
+    { name = "proto-plus", specifier = "==1.22.3" },
+]
 dev = [
     { name = "ipython", specifier = ">=8.10" },
     { name = "jupyterlab", specifier = ">=3.0" },
@@ -1523,9 +1527,6 @@ wheels = [
 ]
 
 [package.optional-dependencies]
-ibis = [
-    { name = "ibis-framework" },
-]
 pandas = [
     { name = "deltalake" },
     { name = "lxml" },

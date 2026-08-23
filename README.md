@@ -35,18 +35,19 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
 ## Running the Pipeline
 
-### Step 1: Download Input Data
+### Step 1: Get Input Data
 
-If you have GCP credentials for BigQuery:
-
-```bash
-kedro run --tags=download_inputs
-```
-
-If you **don't have GCP credentials**, manually place these files in the `data/05_model_input/` folder:
+Most users receive these three files through another channel and place them directly in the `data/05_model_input/` folder:
 - `downloaded_assets.csv`
 - `downloaded_scenarios.csv`
 - `downloaded_companies.csv`
+
+If you're a maintainer with GCP credentials for BigQuery, generate them instead with:
+
+```bash
+uv sync --group bigquery
+uv run python src/crispy_kedro/bigquery_marts_downloader.py
+```
 
 ### Step 2: Run the Model
 
@@ -70,7 +71,7 @@ Use the pre-configured debug settings in `.vscode/launch.json`:
 
 1. **Kedro Run AltRisk with reporting (Debug)**: Runs with `--tags=altrisk,reporting` (results + plots)
 2. **Kedro Run AltRisk (Debug)**: Runs with `--tags=altrisk` (results only)
-3. **Kedro Download Trisk data (Debug)**: Runs with `--tags=download_inputs` (data download)
+3. **Download BigQuery Input Data (Debug)**: Runs `bigquery_marts_downloader.py` (maintainers only, see Step 1 above)
 
 #### Option C: Using Jupyter Notebook for Batch Processing
 
@@ -83,7 +84,6 @@ Use `notebooks/generate_results.ipynb` to:
 
 The main pipeline code is located in `src/crispy_kedro/pipelines/`. Each pipeline is in its own folder:
 
-- `download_inputs/`: Downloads data from BigQuery
 - `inputs_processing/`: Filters and processes input data
 - `inputs_postproc/`: Final data preparation
 - `create_baseline_and_target_trajectories/`: Creates production trajectories
@@ -92,6 +92,9 @@ The main pipeline code is located in `src/crispy_kedro/pipelines/`. Each pipelin
 - `earnings_model/`: Calculates asset-level earnings
 - `valuation_model/`: Converts earnings to NPV using DCF
 - `reporting/`: Generates outputs and visualizations
+
+BigQuery input download is not a pipeline: it's the standalone, maintainer-only
+`src/crispy_kedro/bigquery_marts_downloader.py` script (see Step 1 above).
 
 Each pipeline folder contains:
 - `nodes.py`: The actual data processing functions

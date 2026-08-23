@@ -1,20 +1,19 @@
-"""Download BigQuery mart tables to local Parquet files.
+"""Maintainer-only script: download the model's raw input tables from BigQuery.
 
-Adapted from crispy-datamodels-viewer's ``BigQueryManager``: chunked reads
-via the BigQuery Storage API into Arrow batches, decimal-to-float64 casting
-for pandas compatibility, tqdm progress. Scoped to this project's catalog
-tables (see ``conf/base/catalog.yml``), which live in the ``bertrand2_marts``
-and ``bertrand_marts`` BigQuery datasets under project ``cloud-1in1000``.
+End users without BigQuery access never run this — they receive the three
+CSVs this script produces (``downloaded_scenarios.csv``, ``downloaded_assets.csv``,
+``downloaded_companies.csv`` in ``data/05_model_input/``) through another channel
+and place them there directly. Requires the ``bigquery`` dependency group
+(``uv sync --group bigquery``), kept out of the default install so end users
+don't need ibis/google-cloud-bigquery.
 
-Gives visible per-row progress for a download that, via ibis's
-``Table.execute()`` (used in ``pipelines/download_inputs/nodes.py``), runs
-silently until the whole table has been fetched.
+Uses ibis's ``Table.execute()`` with a live tqdm progress bar. Ibis's BigQuery
+backend hardcodes ``progress_bar_type=None`` in its own ``execute()``, so a
+plain ``.execute()`` would download silently until the whole table is fetched;
+``_execute_with_progress`` replicates that method but passes
+``progress_bar_type="tqdm"`` through.
 
-``BigQueryMartsDownloader`` takes project/dataset/credentials as explicit
-constructor arguments; it never reads config or the environment itself.
-Credentials fall back to Application Default Credentials (the
-``GOOGLE_APPLICATION_CREDENTIALS`` path already set in ``.env``) when
-``credentials_path`` is not given.
+Credentials fall back to Application Default Credentials.
 """
 
 from __future__ import annotations
@@ -22,139 +21,58 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+import ibis
 import pandas as pd
-import pyarrow as pa
-import pyarrow.compute as pc
-import pyarrow.parquet as pq
-from google.cloud import bigquery, bigquery_storage
-from google.oauth2 import service_account
-from tqdm import tqdm
 
 logger = logging.getLogger("crispy_kedro.bigquery_marts")
 
+PROJECT_ID = "cloud-1in1000"
 
-class BigQueryMartsDownloader:
-    """Downloads the configured marts tables to local Parquet files."""
+# output CSV name -> (BigQuery table name, database)
+TABLES: dict[str, tuple[str, str]] = {
+    "downloaded_scenarios": ("altr_scenarios", "bertrand2_marts"),
+    "downloaded_assets": ("altr_assets_forecasts", "bertrand2_marts"),
+    "downloaded_companies": ("altr_companies_ownership_tree", "bertrand2_marts"),
+}
 
-    def __init__(
-        self,
-        project_id: str,
-        dataset: str,
-        dataset_schema: str,
-        tables: list[str],
-        output_dir: Path | str,
-        credentials_path: Path | str | None,
-    ) -> None:
-        self.project_id = project_id
-        self.dataset = f"{dataset}_{dataset_schema}"
-        self.tables = tables
-        self.output_dir = Path(output_dir)
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.credentials_path = credentials_path
-        self._client: bigquery.Client | None = None
-
-    def _get_client(self) -> bigquery.Client:
-        if self._client is None:
-            if self.credentials_path is not None:
-                credentials = service_account.Credentials.from_service_account_file(
-                    self.credentials_path
-                )
-                self._client = bigquery.Client(
-                    project=self.project_id, credentials=credentials
-                )
-            else:
-                self._client = bigquery.Client(project=self.project_id)
-        return self._client
-
-    def output_path_for_table(self, table: str) -> Path:
-        return self.output_dir / f"{table}.parquet"
-
-    def _fully_qualified_table(self, table: str) -> str:
-        return f"{self.project_id}.{self.dataset}.{table}"
-
-    @staticmethod
-    def _cast_decimals_to_float(batch: pa.RecordBatch) -> pa.RecordBatch:
-        """Cast Decimal128/256 columns (BigQuery NUMERIC/BIGNUMERIC) to float64."""
-        columns = []
-        names = []
-        for i, field in enumerate(batch.schema):
-            column = batch.column(i)
-            if pa.types.is_decimal(field.type):
-                column = pc.cast(column, pa.float64())
-            columns.append(column)
-            names.append(field.name)
-        return pa.RecordBatch.from_arrays(columns, names=names)
-
-    def _row_count(self, query: str) -> int:
-        client = self._get_client()
-        (row,) = client.query(f"SELECT COUNT(*) AS total_rows FROM ({query})").result()
-        return row.total_rows
-
-    def download_table(self, table: str, *, refresh: bool = False) -> Path:
-        """Download one mart table to Parquet, skipping if already cached locally."""
-        output_path = self.output_path_for_table(table)
-        if output_path.exists() and not refresh:
-            logger.info("Using cached %s", output_path)
-            return output_path
-
-        client = self._get_client()
-        query = f"SELECT * FROM `{self._fully_qualified_table(table)}`"
-        total_rows = self._row_count(query)
-
-        query_job = client.query(query)
-        bqstorage_client = bigquery_storage.BigQueryReadClient(credentials=client._credentials)
-        batches = query_job.result().to_arrow_iterable(bqstorage_client=bqstorage_client)
-
-        writer: pq.ParquetWriter | None = None
-        pbar = tqdm(total=total_rows, unit="rows", desc=f"Downloading {table}", unit_scale=True)
-        try:
-            for batch in batches:
-                batch = self._cast_decimals_to_float(batch)
-                if writer is None:
-                    writer = pq.ParquetWriter(output_path, batch.schema)
-                writer.write_batch(batch)
-                pbar.update(batch.num_rows)
-        finally:
-            if writer:
-                writer.close()
-            pbar.close()
-
-        logger.info("Downloaded %s to %s", table, output_path)
-        return output_path
-
-    def download_all(self, *, refresh: bool = False) -> dict[str, Path]:
-        """Download every configured marts table; returns table name -> Parquet path."""
-        return {table: self.download_table(table, refresh=refresh) for table in self.tables}
-
-    def read_table(self, table: str, *, refresh: bool = False) -> pd.DataFrame:
-        """Download (if needed) and load a mart table as a pandas DataFrame."""
-        return pd.read_parquet(self.download_table(table, refresh=refresh))
+OUTPUT_DIR = Path("data/05_model_input")
 
 
-def _default_downloaders(output_dir: Path | str = "data/01_raw") -> list[BigQueryMartsDownloader]:
-    """Downloaders for the tables declared in ``conf/base/catalog.yml``."""
-    project_id = "cloud-1in1000"
-    return [
-        BigQueryMartsDownloader(
-            project_id=project_id,
-            dataset="bertrand2",
-            dataset_schema="marts",
-            tables=["assets_forecasts", "companies_ownership_tree", "scenarios"],
-            output_dir=output_dir,
-            credentials_path=None,
-        ),
-        BigQueryMartsDownloader(
-            project_id=project_id,
-            dataset="bertrand",
-            dataset_schema="marts",
-            tables=["financial_averages"],
-            output_dir=output_dir,
-            credentials_path=None,
-        ),
-    ]
+def _execute_with_progress(table: ibis.expr.types.Table) -> pd.DataFrame:
+    """Same as ``table.execute()``, but with a live tqdm progress bar."""
+    from ibis.backends.bigquery.converter import BigQueryPandasData
+
+    backend = table._find_backend(use_default=True)
+    table_expr = table.as_table()
+    schema = table_expr.schema() - ibis.schema({"_TABLE_SUFFIX": "string"})
+    query = backend._to_query(table_expr)
+    df = query.to_arrow(
+        progress_bar_type="tqdm", bqstorage_client=backend.storage_client
+    ).to_pandas(timestamp_as_object=True)
+    df = df.drop(columns="_TABLE_SUFFIX", errors="ignore")
+    df.columns = schema.names
+    return table_expr.__pandas_result__(df, schema=schema, data_mapper=BigQueryPandasData)
+
+
+def download_all(output_dir: Path = OUTPUT_DIR) -> dict[str, Path]:
+    """Download every table in ``TABLES`` to a CSV in ``output_dir``."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    connection = ibis.bigquery.connect(project_id=PROJECT_ID)
+
+    paths: dict[str, Path] = {}
+    for output_name, (table_name, database) in TABLES.items():
+        logger.info("Downloading %s (%s.%s)", output_name, database, table_name)
+        table = connection.table(table_name, database=database)
+        df = _execute_with_progress(table)
+
+        path = output_dir / f"{output_name}.csv"
+        df.to_csv(path, index=False)
+        paths[output_name] = path
+        logger.info("Saved %s", path)
+
+    return paths
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    for downloader in _default_downloaders():
-        downloader.download_all()
+    download_all()

@@ -2,40 +2,10 @@
 # ================== INPUTS ======================
 # ================================================
 
-
-db_assets_forecasts:
-  type: ibis.TableDataset
-  table_name: altr_assets_forecasts
-  database: bertrand2_marts
-  connection:
-    backend: bigquery
-    project_id: cloud-1in1000
-
-
-plant_ownerships:
-  type: ibis.TableDataset
-  table_name: altr_companies_ownership_tree
-  database: bertrand2_marts
-  connection:
-    backend: bigquery
-    project_id: cloud-1in1000
-
-
-db_scenarios_pathways:
-  type: ibis.TableDataset
-  table_name: altr_scenarios
-  database: bertrand2_marts
-  connection:
-    backend: bigquery
-    project_id: cloud-1in1000
-
-financial_averages:
-  type: ibis.TableDataset
-  table_name: financial_averages
-  database: bertrand_marts
-  connection:
-    backend: bigquery
-    project_id: cloud-1in1000
+# downloaded_scenarios / downloaded_assets / downloaded_companies below are
+# the model's actual inputs. Maintainers with BigQuery access produce them
+# via `python src/crispy_kedro/bigquery_marts_downloader.py`; everyone else
+# receives these three CSVs through another channel and places them here.
 
 # ================================================
 # ================== INTERMEDIATE ================
