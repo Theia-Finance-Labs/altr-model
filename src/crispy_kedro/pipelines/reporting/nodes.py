@@ -821,7 +821,10 @@ def plot_staggered_shock(
                         candidates.append(
                             aset_year["total_after"].to_numpy(dtype=float)
                         )
-                    # For melted, individual asset series are already included via aset_year aggregate
+                    if "aset_ls" in locals() and not aset_ls.empty:
+                        candidates.append(
+                            aset_ls["asset_trajectory"].to_numpy(dtype=float)
+                        )
                     all_vals = (
                         np.concatenate([c for c in candidates if c is not None])
                         if candidates
@@ -899,6 +902,10 @@ def plot_staggered_shock(
                     if "aset_year" in locals() and not aset_year.empty:
                         candidates.append(
                             aset_year["total_after"].to_numpy(dtype=float)
+                        )
+                    if "aset_ls" in locals() and not aset_ls.empty:
+                        candidates.append(
+                            aset_ls["asset_trajectory"].to_numpy(dtype=float)
                         )
                     all_vals = (
                         np.concatenate([c for c in candidates if c is not None])
@@ -2167,23 +2174,22 @@ def plot_asset_financial_trajectories(
 
     plots_created = 0
     total_asset_company_pairs = (
-        merged[["asset_id", "company_id"]].drop_duplicates().shape[0]
+        merged[existing_group_cols].drop_duplicates().shape[0]
     )
 
     logger.info(
-        f"Creating trajectory plots for {total_asset_company_pairs} asset-company pairs..."
+        f"Creating trajectory plots for {total_asset_company_pairs} asset-company-geography groups..."
     )
 
-    for i, ((asset_id, company_id), asset_data) in enumerate(
-        merged.groupby(["asset_id", "company_id"])
-    ):
-        if i % 50 == 0:  # Log progress every 50 asset-company pairs
+    for i, (_, asset_data) in enumerate(merged.groupby(existing_group_cols)):
+        if i % 50 == 0:  # Log progress every 50 groups
             logger.info(
-                f"Progress: {i}/{total_asset_company_pairs} asset-company pairs processed"
+                f"Progress: {i}/{total_asset_company_pairs} groups processed"
             )
 
         # Get asset metadata
         first_row = asset_data.iloc[0]
+        asset_id = first_row.get("asset_id", "Unknown")
         company_id = first_row.get("company_id", "Unknown")
         company_name = first_row.get("company_name", company_id)
         asset_name = first_row.get("asset_name", asset_id)

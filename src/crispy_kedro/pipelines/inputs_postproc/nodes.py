@@ -47,6 +47,8 @@ def apply_reduce_granularity_from_asset_to_company_level(
             + companies_forecasts["technology"]
             + "_"
             + companies_forecasts["company_id"].astype(str)
+            + "_"
+            + companies_forecasts["scenario_geography"].astype(str)
         )
         companies_forecasts["asset_name"] = (
             "UNIQUE_COMPANY_ASSET_"
@@ -55,6 +57,8 @@ def apply_reduce_granularity_from_asset_to_company_level(
             + companies_forecasts["technology"]
             + "_"
             + companies_forecasts["company_name"].astype(str)
+            + "_"
+            + companies_forecasts["scenario_geography"].astype(str)
         )
         companies_forecasts[
             ["country_iso2", "country_name", "latitude", "longitude"]
