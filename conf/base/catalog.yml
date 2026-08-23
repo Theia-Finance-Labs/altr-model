@@ -2,49 +2,41 @@
 # ================== INPUTS ======================
 # ================================================
 
-# downloaded_scenarios / downloaded_assets / downloaded_companies below are
-# the model's actual inputs. Maintainers with BigQuery access produce them
-# via `python src/crispy_kedro/bigquery_marts_downloader.py`; everyone else
+# scenarios / assets / ownership_tree below are the model's actual inputs.
+# Maintainers with BigQuery access produce them via
+# `python src/crispy_kedro/bigquery_marts_downloader.py`; everyone else
 # receives these three CSVs through another channel and places them here.
 
 # ================================================
 # ================== INTERMEDIATE ================
 # ================================================
 
-downloaded_scenarios:
+scenarios:
   type: pandas.CSVDataset
-  filepath: data/05_model_input/downloaded_scenarios.csv
+  filepath: data/05_model_input/scenarios.csv
 
-downloaded_assets:
+assets:
   type: pandas.CSVDataset
-  filepath: data/05_model_input/downloaded_assets.csv
+  filepath: data/05_model_input/assets.csv
 
-downloaded_companies:
+ownership_tree:
   type: pandas.CSVDataset
-  filepath: data/05_model_input/downloaded_companies.csv
+  filepath: data/05_model_input/ownership_tree.csv
 
 # ================================================
 # ================== OUTPUTS =====================
 # ================================================
 
-# Key output from TRISK pipeline - this will be logged to MLflow
-companies_npvs:
+# Canonical company trajectories: baseline, target, requested transition,
+# and the post-allocation transition realized by the asset fleet.
+company_trajectories:
   type: pandas.CSVDataset
-  filepath: data/08_reporting/companies_npvs.csv
+  filepath: data/07_model_output/company_trajectories.csv
 
-# Combined late sudden trajectories and alignment classifications
-companies_late_sudden_trajectories:
+# Canonical long asset trajectories used by the earnings model.
+asset_trajectories:
   type: pandas.CSVDataset
-  filepath: data/07_model_output/companies_late_sudden_trajectories.csv
-
-asset_level_staggered_shock:  
-  type: pandas.CSVDataset
-  filepath: data/07_model_output/asset_level_staggered_shock.csv
-
-# Frozen capacity at retirement for fixed cost calculations
-frozen_capacity_at_retirement:
-  type: pandas.CSVDataset
-  filepath: data/07_model_output/frozen_capacity_at_retirement.csv
+  filepath: data/07_model_output/asset_trajectories.csv
 
 
 # ================================================
@@ -85,5 +77,4 @@ company_technology_npv:
 company_npv:
   type: pandas.CSVDataset
   filepath: data/07_model_output/company_npv.csv
-
 

@@ -25,14 +25,12 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
 Main pipeline code lives in `src/crispy_kedro/pipelines/`, one folder per pipeline:
 
-- `inputs_processing/`: Filters and processes input data
-- `inputs_postproc/`: Final data preparation
-- `create_baseline_and_target_trajectories/`: Creates production trajectories
-- `create_late_sudden_trajectories/`: Models delayed policy scenarios
-- `distribute_impacts_to_asset_level/`: Applies staggered shock methodology
-- `earnings_model/`: Calculates asset-level earnings
-- `valuation_model/`: Converts earnings to NPV using DCF
-- `reporting/`: Generates outputs and visualizations
+- `prepare_scenario_asset_and_company_inputs/`: Filters scenarios and prepares the asset forecast panel and company projection inputs
+- `calculate_company_trajectories/`: Calculates baseline, target, and all four alignment-case transition paths
+- `allocate_company_trajectories_to_assets/`: Allocates decreasing/increasing company paths to assets and reconciles realized company paths
+- `calculate_asset_earnings/`: Calculates asset-level earnings
+- `calculate_asset_and_company_npv/`: Converts earnings to asset, technology, and company NPV using DCF
+- `plot_transition_risk_results/`: Generates trajectory and financial visualizations
 
 Each pipeline folder contains `nodes.py` (processing functions) and
 `pipeline.py` (node wiring). BigQuery input download is not a pipeline: it's

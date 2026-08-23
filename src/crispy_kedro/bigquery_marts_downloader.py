@@ -1,8 +1,8 @@
 """Maintainer-only script: download the model's raw input tables from BigQuery.
 
 End users without BigQuery access never run this — they receive the three
-CSVs this script produces (``downloaded_scenarios.csv``, ``downloaded_assets.csv``,
-``downloaded_companies.csv`` in ``data/05_model_input/``) through another channel
+CSVs this script produces (``scenarios.csv``, ``assets.csv``,
+``ownership_tree.csv`` in ``data/05_model_input/``) through another channel
 and place them there directly. Requires the ``bigquery`` dependency group
 (``uv sync --group bigquery``), kept out of the default install so end users
 don't need any Google Cloud packages.
@@ -54,9 +54,9 @@ MARTS_DATASET = _require_env("BIGQUERY_DATASET")
 
 # output CSV name -> "database.table" (both under PROJECT_ID)
 TABLES: dict[str, str] = {
-    "downloaded_scenarios": f"{MARTS_DATASET}.altr_scenarios",
-    "downloaded_assets": f"{MARTS_DATASET}.altr_assets_forecasts",
-    "downloaded_companies": f"{MARTS_DATASET}.altr_companies_ownership_tree",
+    "scenarios": f"{MARTS_DATASET}.altr_scenarios",
+    "assets": f"{MARTS_DATASET}.altr_assets_forecasts",
+    "ownership_tree": f"{MARTS_DATASET}.altr_companies_ownership_tree",
 }
 
 OUTPUT_DIR = Path("data/05_model_input")
@@ -77,7 +77,9 @@ def _batches_to_pandas(batches: list[pa.RecordBatch]) -> pd.DataFrame:
     return pa.Table.from_batches(batches).to_pandas()
 
 
-def _download_table(client: bigquery.Client, fully_qualified_table: str) -> pd.DataFrame:
+def _download_table(
+    client: bigquery.Client, fully_qualified_table: str
+) -> pd.DataFrame:
     query_job = client.query(f"SELECT * FROM `{fully_qualified_table}`")
     result = query_job.result()
     expected_rows = int(result.total_rows or 0)

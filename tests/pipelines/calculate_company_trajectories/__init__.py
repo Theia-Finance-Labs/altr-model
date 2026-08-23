@@ -1,0 +1,1 @@
+"""Company trajectory calculation tests."""
