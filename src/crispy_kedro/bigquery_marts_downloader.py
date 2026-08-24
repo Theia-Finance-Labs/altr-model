@@ -2,7 +2,7 @@
 
 End users without BigQuery access never run this — they receive the three
 CSVs this script produces (``scenarios.csv``, ``assets_forecasts.csv``,
-``ownership_tree.csv`` in ``data/05_model_input/``) through another channel
+``companies_ownerships.csv`` in ``data/05_model_input/``) through another channel
 and place them there directly. Requires the ``bigquery`` dependency group
 (``uv sync --group bigquery``), kept out of the default install so end users
 don't need any Google Cloud packages.
@@ -56,7 +56,7 @@ MARTS_DATASET = _require_env("BIGQUERY_DATASET")
 TABLES: dict[str, str] = {
     "scenarios": f"{MARTS_DATASET}.altr_scenarios",
     "assets_forecasts": f"{MARTS_DATASET}.altr_assets_forecasts",
-    "ownership_tree": f"{MARTS_DATASET}.altr_companies_ownership_tree",
+    "companies_ownerships": f"{MARTS_DATASET}.altr_companies_ownership_tree",
 }
 
 OUTPUT_DIR = Path("data/05_model_input")

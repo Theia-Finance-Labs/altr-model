@@ -93,13 +93,12 @@ def prepare_asset_forecast_panel(
     downloaded_companies: pd.DataFrame,
     scenario_pathways: pd.DataFrame,
     company_ids: list[str],
-    ownership_type: str,
     ccs_on: bool | None,
     max_forecast_horizon: int,
     reduce_granularity_from_asset_to_company_level: bool,
 ) -> pd.DataFrame:
     """Build the reusable asset-grain panel and carry scenario metadata on it."""
-    companies = filter_companies(downloaded_companies, company_ids, ownership_type)
+    companies = filter_companies(downloaded_companies, company_ids)
     assets_ccs, companies_ccs = apply_ccs_suffix(
         downloaded_assets.copy(), companies.copy(), scenario_pathways, ccs_on
     )

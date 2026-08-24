@@ -14,7 +14,6 @@ def test_reduced_granularity_creates_one_synthetic_company_asset():
         "sector": "Power",
         "technology": "CoalCap",
         "year": 2030,
-        "ownership_type": "subsidiary",
         "capacity_unit": "MW",
         "asset_age": 10.0,
         "age_is_inferred": False,

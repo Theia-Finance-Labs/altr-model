@@ -76,7 +76,7 @@ The model needs exactly three CSV files, placed in `data/05_model_input/`:
 |---|---|
 | `scenarios.csv` | see [below](#scenarioscsv) |
 | `assets_forecasts.csv` | see [below](#assets_forecastscsv) |
-| `ownership_tree.csv` | see [below](#ownership_treecsv) |
+| `companies_ownerships.csv` | see [below](#companies_ownershipscsv) |
 
 ### Where the data comes from
 
@@ -110,7 +110,7 @@ per forecast year.
 | `capacity_factor` | float | Fraction of nameplate capacity the asset is expected to run at. |
 | `emission_factor` | float | Emissions per unit of output for this asset/technology. |
 
-#### `ownership_tree.csv`
+#### `companies_ownerships.csv`
 
 Which companies own which assets, and to what degree — one row per
 asset-company ownership link per year.
@@ -120,7 +120,6 @@ asset-company ownership link per year.
 | `asset_id` | string | Unique identifier for the physical asset. |
 | `company_id` | string | Unique identifier for the owning company. |
 | `year` | int | Year this ownership link applies to. |
-| `ownership_type` | string | Basis of the ownership relationship (e.g. equity vs. operational control). |
 | `ownership_percentage` | float | Share of the asset owned by the company, as a fraction. |
 | `sector` | string | Economic sector the asset belongs to. |
 | `technology` | string | Technology the asset uses within its sector. |
@@ -257,7 +256,7 @@ allocation frames remain internal datasets and do not cross pipeline boundaries.
 
 ### `prepare_scenario_asset_and_company_inputs`
 
-- **Inputs:** `assets`, `ownership_tree`, `scenarios`
+- **Inputs:** `assets`, `companies_ownerships`, `scenarios`
 - **Outputs:** `asset_forecast_panel`, `company_projection_inputs`
 
 | Parameter | Type | Meaning and impact |
@@ -265,7 +264,6 @@ allocation frames remain internal datasets and do not cross pipeline boundaries.
 | `baseline_scenario` | string | Scenario id used as the no-transition reference pathway that baseline trajectories follow. |
 | `target_scenario` | string | Scenario id used as the transition pathway that shock trajectories move toward. |
 | `company_ids` | list of strings (optional) | Restricts the run to these companies; empty/unset processes all companies in the input data. Directly controls run size and runtime. |
-| `ownership_type` | string | Which ownership relationship to use when allocating assets to companies (e.g. `"direct"`). Changes which assets get attributed to which company. |
 | `ccs_on` | bool or null | Whether to use the with-CCS or without-CCS scenario variant for Coal/Gas/Biomass technologies (`null` = no distinction). Changes which technology rows are matched from `scenarios.csv`. |
 | `max_forecast_horizon` | int | Number of years of forecast kept per asset/company. Larger = longer trajectories but more low-confidence out-years. |
 | `reduce_granularity_from_asset_to_company_level` | bool | **Major impact.** `True` aggregates inputs to one synthetic row per company-technology before the rest of the pipeline runs; `False` keeps real per-asset granularity. Changes the row count, identifiers, and structure of every downstream output — see [section 6](#6-model-outputs). |

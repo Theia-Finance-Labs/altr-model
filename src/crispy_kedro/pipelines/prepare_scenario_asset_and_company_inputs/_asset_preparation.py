@@ -22,7 +22,6 @@ def apply_reduce_granularity_from_asset_to_company_level(
                     "sector",
                     "technology",
                     "year",
-                    "ownership_type",
                     "capacity_unit",
                 ],
             )

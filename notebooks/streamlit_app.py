@@ -183,7 +183,7 @@ with tab_companies:
     else:
         st.warning(
             "No restriction: every run will process every company in "
-            "ownership_tree.csv. This can take a long time."
+            "companies_ownerships.csv. This can take a long time."
         )
 
     st.session_state.company_ids = company_ids
@@ -237,20 +237,15 @@ with tab_config:
             key=f"form_target_scenario__{baseline_scenario}",
         )
 
-        col1, col2, col3 = st.columns(3)
+        col1, col2 = st.columns(2)
         with col1:
-            ownership_type = st.selectbox(
-                "ownership_type", ["direct", "equity"],
-                index=["direct", "equity"].index(defaults.get("ownership_type", "direct")),
-            )
-        with col2:
             ccs_default_label = CCS_LABELS_BY_VALUE.get(defaults.get("ccs_on"), "Without CCS (False)")
             ccs_label = st.selectbox(
                 "ccs_on", list(CCS_OPTIONS.keys()),
                 index=list(CCS_OPTIONS.keys()).index(ccs_default_label),
             )
             ccs_on = CCS_OPTIONS[ccs_label]
-        with col3:
+        with col2:
             reduce_granularity = st.checkbox(
                 "reduce_granularity_from_asset_to_company_level",
                 value=bool(defaults.get("reduce_granularity_from_asset_to_company_level", False)),
@@ -381,7 +376,6 @@ with tab_config:
         st.session_state.run_configurations[run_name.strip()] = {
             "baseline_scenario": baseline_scenario,
             "target_scenario": target_scenario,
-            "ownership_type": ownership_type,
             "ccs_on": ccs_on,
             "max_forecast_horizon": int(max_forecast_horizon),
             "reduce_granularity_from_asset_to_company_level": bool(reduce_granularity),

@@ -124,27 +124,22 @@ def filter_scenarios(
 
 
 def filter_companies(
-    companies_ownership_tree: pd.DataFrame,
+    companies_ownerships: pd.DataFrame,
     company_ids: List[str],
-    ownership_type: str,
 ) -> pd.DataFrame:
-    companies_owners = companies_ownership_tree[
-        companies_ownership_tree["ownership_type"] == ownership_type
-    ]
-
     if company_ids:
-        filtered_companies_ownership_tree = companies_owners.loc[
-            companies_owners.company_id.isin(company_ids), :
+        filtered_companies_ownerships = companies_ownerships.loc[
+            companies_ownerships.company_id.isin(company_ids), :
         ].reset_index(drop=True)
     else:
-        filtered_companies_ownership_tree = companies_owners
+        filtered_companies_ownerships = companies_ownerships
 
-    return filtered_companies_ownership_tree
+    return filtered_companies_ownerships
 
 
 def apply_ccs_suffix(
     assets_forecasts: pd.DataFrame,
-    companies_ownership_tree: pd.DataFrame,
+    companies_ownerships: pd.DataFrame,
     scenarios_pathways: pd.DataFrame,
     ccs_on: bool | None,
 ) -> pd.DataFrame:
@@ -157,7 +152,7 @@ def apply_ccs_suffix(
         )
     ) or ccs_on is None:
         logger.warning("No CCS technologies are present in the assets forecasts")
-        return assets_forecasts, companies_ownership_tree
+        return assets_forecasts, companies_ownerships
 
     if (
         not any(
@@ -181,7 +176,7 @@ def apply_ccs_suffix(
     ccs_technologies_mask_assets = assets_forecasts["technology"].isin(
         ["BiomassCap", "CoalCap", "GasCap", "OilCap"]
     )
-    ccs_technologies_mask_companies = companies_ownership_tree["technology"].isin(
+    ccs_technologies_mask_companies = companies_ownerships["technology"].isin(
         ["BiomassCap", "CoalCap", "GasCap", "OilCap"]
     )
     if ccs_on:
@@ -189,8 +184,8 @@ def apply_ccs_suffix(
             assets_forecasts.loc[ccs_technologies_mask_assets, "technology"]
             + " - w/ CCS"
         )
-        companies_ownership_tree.loc[ccs_technologies_mask_companies, "technology"] = (
-            companies_ownership_tree.loc[ccs_technologies_mask_companies, "technology"]
+        companies_ownerships.loc[ccs_technologies_mask_companies, "technology"] = (
+            companies_ownerships.loc[ccs_technologies_mask_companies, "technology"]
             + " - w/ CCS"
         )
     else:
@@ -198,16 +193,16 @@ def apply_ccs_suffix(
             assets_forecasts.loc[ccs_technologies_mask_assets, "technology"]
             + " - w/o CCS"
         )
-        companies_ownership_tree.loc[ccs_technologies_mask_companies, "technology"] = (
-            companies_ownership_tree.loc[ccs_technologies_mask_companies, "technology"]
+        companies_ownerships.loc[ccs_technologies_mask_companies, "technology"] = (
+            companies_ownerships.loc[ccs_technologies_mask_companies, "technology"]
             + " - w/o CCS"
         )
-    return assets_forecasts, companies_ownership_tree
+    return assets_forecasts, companies_ownerships
 
 
 def filter_assets(
     assets_forecasts: pd.DataFrame,
-    companies_ownership_tree: pd.DataFrame,
+    companies_ownerships: pd.DataFrame,
     scenarios_pathways: pd.DataFrame,
     max_forecast_horizon: int,
 ) -> pd.DataFrame:
@@ -246,7 +241,7 @@ def filter_assets(
     # NOTE: Removed WindCap transformation - keeping WindCap - Onshore and WindCap - Offshore
     # as-is to match with scenario data which has WindCap - Onshore
 
-    owned_assets = companies_ownership_tree["asset_id"].unique().tolist()
+    owned_assets = companies_ownerships["asset_id"].unique().tolist()
     filtered_assets_forecasts = assets_forecasts.loc[
         assets_forecasts["asset_id"].isin(owned_assets), :
     ]
@@ -402,7 +397,7 @@ def assign_scenario_geographies_to_assets(
 
 def allocate_assets_to_companies(
     assets_forecasts: pd.DataFrame,
-    companies_ownership_tree: pd.DataFrame,
+    companies_ownerships: pd.DataFrame,
     scenarios_pathways: pd.DataFrame,
 ) -> pd.DataFrame:
     """
@@ -416,7 +411,7 @@ def allocate_assets_to_companies(
 
     Args:
         assets_forecasts: DataFrame with asset information and capacities
-        companies_ownership_tree: DataFrame with company ownership information
+        companies_ownerships: DataFrame with company ownership information
         scenarios_pathways: DataFrame with scenario data to determine start year
 
     Returns:
@@ -432,7 +427,7 @@ def allocate_assets_to_companies(
     # Prepare companies data. Drop asset_name: it's also on assets_prepared, and
     # duplicating it would make pandas suffix both copies (asset_name_x/_y)
     # instead of keeping a plain asset_name column.
-    companies_prepared = companies_ownership_tree.copy().drop(columns=["asset_name"])
+    companies_prepared = companies_ownerships.copy().drop(columns=["asset_name"])
 
     # Merge assets with ownership data on asset_id, sector, technology, and year
     merged_data = pd.merge(

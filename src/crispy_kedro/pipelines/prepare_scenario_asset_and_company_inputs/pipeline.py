@@ -9,14 +9,13 @@ from .nodes import (
 )
 
 NAMESPACE = "prepare_scenario_asset_and_company_inputs"
-PIPELINE_INPUTS = {"assets_forecasts", "ownership_tree", "scenarios"}
+PIPELINE_INPUTS = {"assets_forecasts", "companies_ownerships", "scenarios"}
 PIPELINE_OUTPUTS = {"asset_forecast_panel", "company_projection_inputs"}
 PIPELINE_PARAMETERS = {
     "baseline_scenario",
     "ccs_on",
     "company_ids",
     "max_forecast_horizon",
-    "ownership_type",
     "reduce_granularity_from_asset_to_company_level",
     "target_scenario",
 }
@@ -39,10 +38,9 @@ def create_pipeline(**kwargs) -> Pipeline:
                 prepare_asset_forecast_panel,
                 inputs={
                     "downloaded_assets": "assets_forecasts",
-                    "downloaded_companies": "ownership_tree",
+                    "downloaded_companies": "companies_ownerships",
                     "scenario_pathways": "_scenario_pathways",
                     "company_ids": "params:company_ids",
-                    "ownership_type": "params:ownership_type",
                     "ccs_on": "params:ccs_on",
                     "max_forecast_horizon": "params:max_forecast_horizon",
                     "reduce_granularity_from_asset_to_company_level": "params:reduce_granularity_from_asset_to_company_level",

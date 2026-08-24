@@ -12,8 +12,6 @@ reduce_granularity_from_asset_to_company_level: False
 
 max_forecast_horizon: 5
 
-ownership_type: "direct"
-
 # Technology scenario mapping control
 # If True, use w/ CCS scenarios for Coal, Gas, Biomass. If False, use w/o CCS
 # If Null, use technology without distinction.
