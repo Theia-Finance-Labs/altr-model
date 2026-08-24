@@ -1,4 +1,4 @@
-# Crispy Kedro - Climate Risk Financial Analysis Pipeline
+# ALTR Model - Climate Risk Financial Analysis Pipeline
 
 [![Powered by Kedro](https://img.shields.io/badge/powered_by-kedro-ffc900?logo=kedro)](https://kedro.org)
 
@@ -23,7 +23,7 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
 ## Code Structure
 
-Main pipeline code lives in `src/crispy_kedro/pipelines/`, one folder per pipeline:
+Main pipeline code lives in `src/altr_model/pipelines/`, one folder per pipeline:
 
 - `prepare_scenario_asset_and_company_inputs/`: Filters scenarios and prepares the asset forecast panel and company projection inputs
 - `calculate_company_trajectories/`: Calculates baseline, target, and all four alignment-case transition paths
@@ -34,7 +34,7 @@ Main pipeline code lives in `src/crispy_kedro/pipelines/`, one folder per pipeli
 
 Each pipeline folder contains `nodes.py` (processing functions) and
 `pipeline.py` (node wiring). BigQuery input download is not a pipeline: it's
-the standalone, maintainer-only `src/crispy_kedro/bigquery_marts_downloader.py`
+the standalone, maintainer-only `src/altr_model/bigquery_marts_downloader.py`
 script — see [docs/USAGE.md](docs/USAGE.md) for how to run it.
 
 For more on Kedro itself, see the [Kedro documentation](https://docs.kedro.org).

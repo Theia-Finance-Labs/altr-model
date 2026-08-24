@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from crispy_kedro.pipelines.calculate_company_trajectories.nodes import (
+from altr_model.pipelines.calculate_company_trajectories.nodes import (
     calculate_aligned_decreasing_technology_transition,
     calculate_aligned_increasing_technology_transition,
     calculate_misaligned_decreasing_technology_transition,
@@ -12,7 +12,7 @@ from crispy_kedro.pipelines.calculate_company_trajectories.nodes import (
     classify_company_trajectory_alignment,
     combine_company_trajectory_cases,
 )
-from crispy_kedro.pipelines.prepare_scenario_asset_and_company_inputs.nodes import (
+from altr_model.pipelines.prepare_scenario_asset_and_company_inputs.nodes import (
     FINANCIAL_SURFACE_COLUMNS,
 )
 

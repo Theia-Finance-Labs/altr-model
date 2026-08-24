@@ -4,7 +4,7 @@
 
 # scenarios / assets_forecasts / companies_ownerships below are the model's actual inputs.
 # Maintainers with BigQuery access produce them via
-# `python src/crispy_kedro/bigquery_marts_downloader.py`; everyone else
+# `python src/altr_model/bigquery_marts_downloader.py`; everyone else
 # receives these three CSVs through another channel and places them here.
 
 # ================================================

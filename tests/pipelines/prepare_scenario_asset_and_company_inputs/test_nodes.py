@@ -1,7 +1,7 @@
 """Focused tests for scenario, asset, and company input preparation."""
 
 import pandas as pd
-from crispy_kedro.pipelines.prepare_scenario_asset_and_company_inputs._asset_preparation import (
+from altr_model.pipelines.prepare_scenario_asset_and_company_inputs._asset_preparation import (
     apply_reduce_granularity_from_asset_to_company_level,
 )
 

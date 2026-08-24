@@ -1,4 +1,4 @@
-"""Streamlit UI for building and running batches of crispy-kedro configs.
+"""Streamlit UI for building and running batches of ALTR Model configs.
 
 Lets you:
   1. pick a subset of companies (upload a CSV, paste ids, or use the
@@ -57,7 +57,7 @@ CCS_OPTIONS = {
 CCS_LABELS_BY_VALUE = {v: k for k, v in CCS_OPTIONS.items()}
 
 
-st.set_page_config(page_title="Crispy Kedro batch runner", layout="wide")
+st.set_page_config(page_title="ALTR Model batch runner", layout="wide")
 
 
 @st.cache_data
@@ -116,7 +116,7 @@ if "last_workspace_dir" not in st.session_state:
     st.session_state.last_workspace_dir = None
 
 
-st.title("Crispy Kedro — batch run builder")
+st.title("ALTR Model — batch run builder")
 st.caption(
     "Build one or more parameter configurations, pick a company subset, run "
     "the altrisk model across all of them, and collect the outputs under "

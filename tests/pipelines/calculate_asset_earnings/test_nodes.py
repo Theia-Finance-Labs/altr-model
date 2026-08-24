@@ -1,6 +1,6 @@
 import pandas as pd
 import pytest
-from crispy_kedro.pipelines.calculate_asset_earnings.nodes import (
+from altr_model.pipelines.calculate_asset_earnings.nodes import (
     validate_asset_trajectories,
 )
 

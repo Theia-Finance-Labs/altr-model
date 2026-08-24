@@ -6,7 +6,7 @@ import os
 
 # Instantiated project hooks.
 # For example, after creating a hooks.py and defining a ProjectHooks class there, do
-# from crispy_kedro.hooks import ProjectHooks
+# from altr_model.hooks import ProjectHooks
 # Hooks are executed in a Last-In-First-Out (LIFO) order.
 # HOOKS = []
 

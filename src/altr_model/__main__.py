@@ -1,5 +1,5 @@
-"""crispy-kedro file for ensuring the package is executable
-as `crispy-kedro` and `python -m crispy_kedro`
+"""ALTR Model entry point for ensuring the package is executable
+as `altr-model` and `python -m altr_model`
 """
 import sys
 from pathlib import Path

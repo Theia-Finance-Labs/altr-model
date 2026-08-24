@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from crispy_kedro.pipeline_registry import register_pipelines
+from altr_model.pipeline_registry import register_pipelines
 from kedro.framework.startup import bootstrap_project
 
 PIPELINE_NAMES = {

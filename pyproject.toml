@@ -1,5 +1,5 @@
 [project]
-name = "crispy-kedro"
+name = "altr-model"
 version = "0.1.0"
 description = ""
 authors = [{ name = "bertrand.gallice", email = "bertrandgllc@gmail.com" }]
@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.scripts]
-crispy-kedro = "crispy_kedro.__main__:main"
+altr-model = "altr_model.__main__:main"
 kedro = "kedro.framework.cli.cli:main"
 
 [dependency-groups]
@@ -52,11 +52,11 @@ streamlit = [
 default-groups = ["dev"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/crispy_kedro"]
+packages = ["src/altr_model"]
 
 [tool.kedro]
-package_name = "crispy_kedro"
-project_name = "crispy-kedro"
+package_name = "altr_model"
+project_name = "altr-model"
 kedro_init_version = "0.19.12"
 tools = ["Linting", "Testing", "Data Structure"]
 example_pipeline = false
@@ -68,7 +68,7 @@ project_id = "0bec92a005924635896a5c2b9e02dc93"
 [tool.pytest.ini_options]
 addopts = """
 --cov-report term-missing \
---cov src/crispy_kedro -ra"""
+--cov src/altr_model -ra"""
 
 [tool.coverage.report]
 fail_under = 0

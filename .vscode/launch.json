@@ -35,7 +35,7 @@
         "name": "Download BigQuery Input Data (Debug)",
         "type": "debugpy",
         "request": "launch",
-        "program": "${workspaceFolder}/src/crispy_kedro/bigquery_marts_downloader.py",
+        "program": "${workspaceFolder}/src/altr_model/bigquery_marts_downloader.py",
         "console": "integratedTerminal",
         "justMyCode": false,
         "env": {

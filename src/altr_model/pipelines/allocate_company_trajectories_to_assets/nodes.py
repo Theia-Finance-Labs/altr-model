@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from crispy_kedro.pipelines.allocate_company_trajectories_to_assets._allocation_nodes import (
+from altr_model.pipelines.allocate_company_trajectories_to_assets._allocation_nodes import (
     compute_asset_baseline_trajectories,
     flag_phased_out_assets_as_retired,
     melt_asset_staggered_trajectories,
@@ -12,11 +12,11 @@ from crispy_kedro.pipelines.allocate_company_trajectories_to_assets._allocation_
     stagger_decreasing_technologies,
     stagger_increasing_technologies,
 )
-from crispy_kedro.pipelines.prepare_scenario_asset_and_company_inputs._asset_preparation import (
+from altr_model.pipelines.prepare_scenario_asset_and_company_inputs._asset_preparation import (
     determine_assets_retirement_dates,
     extend_allocated_assets_to_companies,
 )
-from crispy_kedro.pipelines.prepare_scenario_asset_and_company_inputs.nodes import (
+from altr_model.pipelines.prepare_scenario_asset_and_company_inputs.nodes import (
     FINANCIAL_SURFACE_COLUMNS,
 )
 

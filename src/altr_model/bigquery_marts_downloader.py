@@ -24,6 +24,7 @@ Configuration is read from environment variables (see ``BIGQUERY_PROJECT`` /
 
 from __future__ import annotations
 
+import argparse
 import csv
 import logging
 import os
@@ -37,7 +38,7 @@ from dotenv import load_dotenv
 from google.cloud import bigquery
 from tqdm import tqdm
 
-logger = logging.getLogger("crispy_kedro.bigquery_marts")
+logger = logging.getLogger("altr_model.bigquery_marts")
 
 load_dotenv()
 
@@ -136,18 +137,31 @@ def _write_csv(df: pd.DataFrame, path: Path) -> None:
         raise
 
 
-def download_all(output_dir: Path = OUTPUT_DIR) -> dict[str, Path]:
-    """Download every table in ``TABLES`` to a CSV in ``output_dir``."""
+def download_all(output_dir: Path = OUTPUT_DIR, force: bool = False) -> dict[str, Path]:
+    """Download every table in ``TABLES`` to a CSV in ``output_dir``.
+
+    Tables whose CSV already exists in ``output_dir`` are skipped unless
+    ``force`` is set.
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
-    client = bigquery.Client(project=PROJECT_ID)
+    client: bigquery.Client | None = None
 
     paths: dict[str, Path] = {}
     for output_name, table in TABLES.items():
+        path = output_dir / f"{output_name}.csv"
+
+        if path.exists() and not force:
+            logger.info("Skipping %s: %s already exists (use --force to redownload)", output_name, path)
+            paths[output_name] = path
+            continue
+
+        if client is None:
+            client = bigquery.Client(project=PROJECT_ID)
+
         fully_qualified_table = f"{PROJECT_ID}.{table}"
         logger.info("Downloading %s (%s)", output_name, fully_qualified_table)
         df = _download_table(client, fully_qualified_table)
 
-        path = output_dir / f"{output_name}.csv"
         _write_csv(df, path)
         paths[output_name] = path
         logger.info("Saved %s (%d rows)", path, len(df))
@@ -155,6 +169,17 @@ def download_all(output_dir: Path = OUTPUT_DIR) -> dict[str, Path]:
     return paths
 
 
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Redownload tables even if their output CSV already exists.",
+    )
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    download_all()
+    args = _parse_args()
+    download_all(force=args.force)

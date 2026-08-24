@@ -1,4 +1,4 @@
-"""Batch-run the crispy-kedro model across named parameter configurations.
+"""Batch-run the ALTR model across named parameter configurations.
 
 This is the script form of the loop in ``notebooks/generate_results.ipynb``:
 each entry of a "run configurations" mapping becomes one ``kedro run`` (via

@@ -9,14 +9,14 @@ from __future__ import annotations
 
 import pandas as pd
 
-from crispy_kedro.pipelines.calculate_company_trajectories._baseline_nodes import (
+from altr_model.pipelines.calculate_company_trajectories._baseline_nodes import (
     aggregate_assets_to_company_level,
     calculate_tmsr,
 )
-from crispy_kedro.pipelines.prepare_scenario_asset_and_company_inputs._asset_preparation import (
+from altr_model.pipelines.prepare_scenario_asset_and_company_inputs._asset_preparation import (
     apply_reduce_granularity_from_asset_to_company_level,
 )
-from crispy_kedro.pipelines.prepare_scenario_asset_and_company_inputs._input_nodes import (
+from altr_model.pipelines.prepare_scenario_asset_and_company_inputs._input_nodes import (
     allocate_assets_to_companies,
     apply_ccs_suffix,
     assign_scenario_geographies_to_assets,

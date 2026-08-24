@@ -3,22 +3,22 @@ from __future__ import annotations
 
 from kedro.pipeline import Pipeline
 
-from crispy_kedro.pipelines.allocate_company_trajectories_to_assets.pipeline import (
+from altr_model.pipelines.allocate_company_trajectories_to_assets.pipeline import (
     create_pipeline as create_asset_allocation,
 )
-from crispy_kedro.pipelines.calculate_asset_and_company_npv import (
+from altr_model.pipelines.calculate_asset_and_company_npv import (
     create_pipeline as create_valuation,
 )
-from crispy_kedro.pipelines.calculate_asset_earnings import (
+from altr_model.pipelines.calculate_asset_earnings import (
     create_pipeline as create_earnings,
 )
-from crispy_kedro.pipelines.calculate_company_trajectories.pipeline import (
+from altr_model.pipelines.calculate_company_trajectories.pipeline import (
     create_pipeline as create_company_trajectory_calculation,
 )
-from crispy_kedro.pipelines.plot_transition_risk_results import (
+from altr_model.pipelines.plot_transition_risk_results import (
     create_pipeline as create_reporting,
 )
-from crispy_kedro.pipelines.prepare_scenario_asset_and_company_inputs.pipeline import (
+from altr_model.pipelines.prepare_scenario_asset_and_company_inputs.pipeline import (
     create_pipeline as create_input_preparation,
 )
 

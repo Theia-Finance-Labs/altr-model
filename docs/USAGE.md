@@ -1,11 +1,11 @@
-# Using Crispy Kedro
+# Using ALTR Model
 
 This is a guide for running the climate transition risk model end-to-end.
 For contributing to the codebase itself, see the [README](../README.md).
 
 ## 1. Kedro quickstart
 
-Crispy Kedro is a [Kedro](https://kedro.org) project. The concepts that
+ALTR Model is a [Kedro](https://kedro.org) project. The concepts that
 matter for using it:
 
 - **Nodes** are Python functions; **pipelines** wire nodes together.
@@ -48,7 +48,7 @@ downloads and pins the right Python version automatically from
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
 git clone <repo-url>
-cd crispy-kedro
+cd altr-model
 
 uv sync
 source .venv/bin/activate
@@ -60,7 +60,7 @@ source .venv/bin/activate
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 
 git clone <repo-url>
-cd crispy-kedro
+cd altr-model
 
 uv sync
 .venv\Scripts\activate

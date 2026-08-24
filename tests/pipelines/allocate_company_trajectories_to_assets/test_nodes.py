@@ -4,17 +4,17 @@ from __future__ import annotations
 
 import pandas as pd
 import pytest
-from crispy_kedro.pipelines.allocate_company_trajectories_to_assets._allocation_nodes import (
+from altr_model.pipelines.allocate_company_trajectories_to_assets._allocation_nodes import (
     compute_asset_baseline_trajectories,
     stagger_decreasing_technologies,
     stagger_increasing_technologies,
 )
-from crispy_kedro.pipelines.allocate_company_trajectories_to_assets.nodes import (
+from altr_model.pipelines.allocate_company_trajectories_to_assets.nodes import (
     build_canonical_asset_trajectories,
     extend_asset_panel_and_attach_retirement,
     reconcile_realized_company_trajectories,
 )
-from crispy_kedro.pipelines.prepare_scenario_asset_and_company_inputs.nodes import (
+from altr_model.pipelines.prepare_scenario_asset_and_company_inputs.nodes import (
     FINANCIAL_SURFACE_COLUMNS,
 )
 from pandas.testing import assert_frame_equal
