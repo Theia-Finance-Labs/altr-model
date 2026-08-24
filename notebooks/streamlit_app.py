@@ -510,7 +510,7 @@ with tab_run:
             try:
                 summary = run_batch(
                     st.session_state.run_configurations,
-                    workspace_dir=PROJECT_ROOT / workspace_dir,
+                    output_dir=PROJECT_ROOT / workspace_dir,
                     tags=tags,
                     company_ids=st.session_state.company_ids,
                     scenarios_csv=str(SCENARIOS_CSV),
@@ -537,7 +537,7 @@ with tab_run:
         for _, row in st.session_state.last_summary.iterrows():
             if row["status"] != "success":
                 continue
-            run_dir = Path(row["output_dir"])
+            run_dir = Path(row["run_dir"])
             with st.expander(f"{row['run_name']} — {run_dir}"):
                 files = sorted(p.name for p in run_dir.glob("*.csv"))
                 st.write(files)

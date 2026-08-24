@@ -2,7 +2,7 @@
 # notebooks/streamlit_app.py.
 #
 # Each top-level key is a run name (becomes a subfolder under
-# workspace_dir/) and its value is a set of parameter overrides applied on
+# output_dir/) and its value is a set of parameter overrides applied on
 # top of conf/base/ for that run only - same shape and same six runs as the
 # `runs_configuration` dict in notebooks/generate_results.ipynb (four of
 # them were commented out there; all six are enabled here as a reference).

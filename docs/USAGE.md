@@ -211,7 +211,7 @@ Streamlit app below:
 python notebooks/run_kedro_batch.py \
     --run-configurations notebooks/example_run_configurations.yml \
     --company-ids notebooks/example_company_selection.csv \
-    --workspace-dir workspace/results_batch \
+    --output-dir workspace/results_batch \
     --tags altrisk
 ```
 
