@@ -167,8 +167,6 @@ def render_step_portfolio() -> None:
     if preview_df is not None:
         st.dataframe(preview_df, width="stretch", height=280)
         st.metric("Companies selected", len(preview_df))
-        if "carbon_alignment_quadrant" in preview_df.columns:
-            st.bar_chart(preview_df["carbon_alignment_quadrant"].value_counts())
 
     st.session_state.company_ids = company_ids
 
@@ -197,11 +195,7 @@ def render_step_parameters() -> None:
     alignment_invalid = False
 
     if mode == "Recommended defaults":
-        st.info(
-            "Uses the model's built-in defaults (baseline/target scenario, "
-            "shock timing, cost assumptions, ...) with no changes — a "
-            "reasonable starting point for a first run."
-        )
+        st.info("Uses the model's built-in defaults.")
     else:
         baseline_options = load_baseline_scenario_options()
         default_baseline = defaults.get("baseline_scenario")
