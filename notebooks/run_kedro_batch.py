@@ -4,7 +4,7 @@ This is the script form of the loop in ``notebooks/generate_results.ipynb``:
 each entry of a "run configurations" mapping becomes one ``kedro run`` (via
 ``KedroSession.create(extra_params=...)``), optionally restricted to a fixed
 subset of companies, and each run's outputs are copied into
-``workspace_dir/<run_name>/`` (plus a ``run_params.csv`` recording exactly
+``output_dir/<run_name>/`` (plus a ``run_params.csv`` recording exactly
 which parameters produced them) so runs never overwrite each other.
 
 CLI usage::
@@ -12,7 +12,7 @@ CLI usage::
     python notebooks/run_kedro_batch.py \\
         --run-configurations notebooks/example_run_configurations.yml \\
         --company-ids notebooks/example_company_selection.csv \\
-        --workspace-dir workspace/results_batch \\
+        --output-dir workspace/results_batch \\
         --tags altrisk
 
 Library usage (this is how ``notebooks/streamlit_app.py`` drives it, so
@@ -21,7 +21,7 @@ progress can be streamed into the UI instead of only printed)::
     from run_kedro_batch import run_batch, load_run_configurations
 
     run_configurations = load_run_configurations("notebooks/example_run_configurations.yml")
-    summary = run_batch(run_configurations, workspace_dir="workspace/results_batch")
+    summary = run_batch(run_configurations, output_dir="workspace/results_batch")
 """
 
 from __future__ import annotations
@@ -118,7 +118,7 @@ def load_company_ids(path: Path | str) -> list[str]:
 
 
 def _sanitize_run_name(run_name: str) -> str:
-    """Run names become directory names under workspace_dir - keep them safe."""
+    """Run names become directory names under output_dir - keep them safe."""
     return run_name.replace("/", "-")
 
 
@@ -165,7 +165,7 @@ def _validate_scenario_pairing(
 
 def run_batch(
     run_configurations: Mapping[str, Mapping],
-    workspace_dir: Path | str,
+    output_dir: Path | str,
     tags: Sequence[str] = ("altrisk",),
     company_ids: Iterable[str] | None = None,
     scenarios_csv: Path | str | None = None,
@@ -181,9 +181,9 @@ def run_batch(
         ``{run_name: {param: value, ...}}``. Each entry is passed as
         ``extra_params`` to a fresh ``KedroSession`` and overrides
         ``conf/base`` for that run only.
-    workspace_dir:
+    output_dir:
         Root folder each run's outputs are copied into, under
-        ``workspace_dir/<run_name>/``.
+        ``output_dir/<run_name>/``.
     tags:
         Kedro tags to run, e.g. ``["altrisk"]`` or ``["altrisk", "reporting"]``.
     company_ids:
@@ -210,7 +210,7 @@ def run_batch(
     Returns
     -------
     A DataFrame with one row per run: ``run_name``, ``status``
-    (``"success"`` or ``"failed"``), ``output_dir``, ``error``,
+    (``"success"`` or ``"failed"``), ``run_dir``, ``error``,
     ``elapsed_seconds``.
     """
     from kedro.framework.session import KedroSession
@@ -219,8 +219,8 @@ def run_batch(
     project_path = Path(project_path) if project_path else PROJECT_ROOT
     bootstrap_project(project_path=project_path)
 
-    workspace_dir = Path(workspace_dir)
-    workspace_dir.mkdir(parents=True, exist_ok=True)
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     company_ids = list(company_ids) if company_ids is not None else None
     tags = list(tags)
@@ -234,7 +234,7 @@ def run_batch(
             run_params["company_ids"] = company_ids
 
         safe_run_name = _sanitize_run_name(run_name)
-        run_workspace_dir = workspace_dir / safe_run_name
+        run_dir = output_dir / safe_run_name
 
         log("=" * 60)
         log(f"Run {idx}/{total_runs}: {run_name}")
@@ -253,7 +253,7 @@ def run_batch(
                 session.run(pipeline_name="__default__", tags=tags)
 
             run_id = uuid.uuid4()
-            run_workspace_dir.mkdir(parents=True, exist_ok=True)
+            run_dir.mkdir(parents=True, exist_ok=True)
 
             for filename in MODEL_OUTPUT_FILES:
                 src = MODEL_OUTPUT_DIR / filename
@@ -261,17 +261,17 @@ def run_batch(
                     continue
                 df = pd.read_csv(src)
                 df["run_id"] = run_id
-                df.to_csv(run_workspace_dir / filename, index=False)
+                df.to_csv(run_dir / filename, index=False)
 
             run_params_df = pd.DataFrame([run_params])
             run_params_df["run_id"] = run_id
             run_params_df["run_name"] = run_name
-            run_params_df.to_csv(run_workspace_dir / "run_params.csv", index=False)
+            run_params_df.to_csv(run_dir / "run_params.csv", index=False)
 
             if "reporting" in tags:
                 for folder in REPORTING_FOLDERS:
                     src_dir = REPORTING_DIR / folder
-                    dst_dir = run_workspace_dir / folder
+                    dst_dir = run_dir / folder
                     if not src_dir.exists():
                         continue
                     if dst_dir.exists():
@@ -280,12 +280,12 @@ def run_batch(
                     log(f"Copied {folder} to {dst_dir}")
 
             elapsed = time.monotonic() - start
-            log(f"Completed {run_name} in {elapsed:.1f}s -> {run_workspace_dir}")
+            log(f"Completed {run_name} in {elapsed:.1f}s -> {run_dir}")
             records.append(
                 {
                     "run_name": run_name,
                     "status": "success",
-                    "output_dir": str(run_workspace_dir),
+                    "run_dir": str(run_dir),
                     "error": None,
                     "elapsed_seconds": round(elapsed, 1),
                 }
@@ -293,14 +293,14 @@ def run_batch(
         except Exception as exc:
             elapsed = time.monotonic() - start
             error_msg = f"{exc}\n{traceback.format_exc()}"
-            error_file = workspace_dir / f"{safe_run_name}_error.txt"
+            error_file = output_dir / f"{safe_run_name}_error.txt"
             error_file.write_text(error_msg)
             log(f"FAILED {run_name} after {elapsed:.1f}s - see {error_file}")
             records.append(
                 {
                     "run_name": run_name,
                     "status": "failed",
-                    "output_dir": None,
+                    "run_dir": None,
                     "error": str(exc),
                     "elapsed_seconds": round(elapsed, 1),
                 }
@@ -308,10 +308,10 @@ def run_batch(
             continue
 
     summary = pd.DataFrame.from_records(records)
-    summary.to_csv(workspace_dir / "run_manifest.csv", index=False)
+    summary.to_csv(output_dir / "run_manifest.csv", index=False)
     log("=" * 60)
     n_success = (summary["status"] == "success").sum() if len(summary) else 0
-    log(f"Done: {n_success}/{total_runs} runs succeeded. Manifest: {workspace_dir / 'run_manifest.csv'}")
+    log(f"Done: {n_success}/{total_runs} runs succeeded. Manifest: {output_dir / 'run_manifest.csv'}")
     return summary
 
 
@@ -331,7 +331,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "Omit to use each run's own company_ids (default: all companies).",
     )
     parser.add_argument(
-        "--workspace-dir",
+        "--output-dir",
         type=Path,
         default=PROJECT_ROOT / "workspace" / "results_batch",
         help="Root folder each run's outputs are copied into (default: %(default)s).",
@@ -370,7 +370,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     summary = run_batch(
         run_configurations,
-        workspace_dir=args.workspace_dir,
+        output_dir=args.output_dir,
         tags=tags,
         company_ids=company_ids,
         scenarios_csv=scenarios_csv,

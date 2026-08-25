@@ -4,10 +4,6 @@
 
 A climate risk financial analysis pipeline that performs transition risk analysis by modeling the financial impact of climate scenarios on companies and their assets in the energy sector.
 
-This README covers dev setup for people working on the codebase. For running
-the model end-to-end (including how to get input data without BigQuery
-access, parameters, outputs, and troubleshooting), see **[docs/USAGE.md](docs/USAGE.md)**.
-
 ## Install
 
 Requires Python 3.10 (3.11+ is not supported due to dependency constraints).

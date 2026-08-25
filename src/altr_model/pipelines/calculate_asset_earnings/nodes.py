@@ -122,6 +122,7 @@ def validate_asset_trajectories(asset_trajectories: pd.DataFrame) -> pd.DataFram
 
 def validate_capacity_flow_identity(
     asset_panel_enriched: pd.DataFrame,
+    replacement_capex_rate: float = 0.05,
 ):
     """
     Validate the capacity flow identity: K_t = K_{t-1} - retired + replaced + new_build
@@ -176,12 +177,10 @@ def validate_capacity_flow_identity(
     ].shift(1)
 
     # Apply flow identity: K_t = K_{t-1} - retired + replaced + new_build
-    # TODO the 0.05 is hardcoded like it is in the compute_capacity_flows() function.
-    # Should be a parameter or this validation function droped entirely
     validation_data["K_calculated"] = (
         validation_data["K_prev"]
         - validation_data["retired_max_cap"]
-        + (validation_data["roll_over_cap"] / 0.05)
+        + (validation_data["roll_over_cap"] / replacement_capex_rate)
         + validation_data["new_buildout_cap"]
     )
 
@@ -226,7 +225,9 @@ def validate_capacity_flow_identity(
                 )
 
 
-def compute_capacity_flows(asset_panel: pd.DataFrame) -> pd.DataFrame:
+def compute_capacity_flows(
+    asset_panel: pd.DataFrame, replacement_capex_rate: float = 0.05
+) -> pd.DataFrame:
     """
     Compute capacity flows from capacity changes in the asset panel (vectorized).
 
@@ -270,14 +271,16 @@ def compute_capacity_flows(asset_panel: pd.DataFrame) -> pd.DataFrame:
         retirement_data["capex_capacity"] = retirement_data["capacity_change"].abs()
         flow_records.append(retirement_data)
 
-    # 3. Replacement flows (5% of existing non-synthetic capacity annually)
+    # 3. Replacement flows (replacement_capex_rate of existing non-synthetic capacity annually)
     replacement_mask = (
         ~data.get("is_synthetic", pd.Series(False, index=data.index))
     ) & (data["capacity_change"] > 0)
     if replacement_mask.any():
         replacement_data = data[replacement_mask].copy()
         replacement_data["capex_indicator"] = "roll_over_cap"
-        replacement_data["capex_capacity"] = replacement_data["capacity_change"] * 0.05
+        replacement_data["capex_capacity"] = (
+            replacement_data["capacity_change"] * replacement_capex_rate
+        )
         flow_records.append(replacement_data)
 
     # 4. No-flow records (assets with no flows need placeholder records)
@@ -321,6 +324,7 @@ def compute_flow_based_capex(
     include_growth_capex: bool,
     include_replacement_capex: bool,
     include_decom_costs: bool,
+    replacement_capex_rate: float = 0.05,
 ) -> pd.DataFrame:
     """
     Node 5: Compute CapEx using flow-based approach.
@@ -334,13 +338,13 @@ def compute_flow_based_capex(
     logger.info("Computing flow-based CapEx...")
 
     # Compute capacity flows from the data
-    capex_data = compute_capacity_flows(asset_panel_enriched)
+    capex_data = compute_capacity_flows(asset_panel_enriched, replacement_capex_rate)
 
     # NOTE: Flow identity validation disabled because it's based on flawed assumptions:
-    # - Roll-over flows are intentionally only 5% of capacity changes (replacement rate)
+    # - Roll-over flows are intentionally only replacement_capex_rate of capacity changes
     # - The validation expects flows to fully explain capacity trajectories, which they don't by design
     # - The flows themselves are correct and properly used in CapEx calculations
-    # validate_capacity_flow_identity(capex_data)
+    # validate_capacity_flow_identity(capex_data, replacement_capex_rate)
 
     # Ensure capex_capacity is numeric and fill NaNs
     capex_data["capex_capacity"] = pd.to_numeric(

@@ -16,21 +16,29 @@ RUN apt-get update && apt-get install -y \
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# Copy all project files first
+# Copy the project files needed to run the Streamlit batch-runner app
+# (data/ and workspace/ are deliberately not copied - see below)
 COPY src ./src
 COPY conf ./conf
+COPY notebooks ./notebooks
 COPY pyproject.toml uv.lock ./
 COPY README.md ./
 
-# Install dependencies into the system environment
+# Install dependencies into the system environment, including the
+# streamlit-only dependency group
 ENV UV_PROJECT_ENVIRONMENT="/usr/local"
-RUN uv sync --frozen --no-dev
+RUN uv sync --frozen --no-dev --group streamlit
 
-# Optionally copy data if needed for viz context
-# COPY data ./data
+# Don't run streamlit's first-launch prompt / usage-stats collection
+ENV STREAMLIT_BROWSER_GATHER_USAGE_STATS="false"
 
-# Expose Kedro Viz port
-EXPOSE 4141
+# data/ is not baked into the image: run via docker-compose.yml, which
+# mounts the local data/ and workspace/ folders at runtime so the app reads
+# and writes whatever is on disk (docker compose up, then open
+# http://localhost:8501 in your browser).
 
-# Launch Kedro Viz
-ENTRYPOINT ["kedro", "viz", "--host", "0.0.0.0", "--port", "4141", "--no-browser"]
+# Expose the Streamlit port
+EXPOSE 8501
+
+# Launch the Streamlit app
+ENTRYPOINT ["streamlit", "run", "notebooks/streamlit_app.py", "--server.address=0.0.0.0", "--server.port=8501", "--server.headless=true"]

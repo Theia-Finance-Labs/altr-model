@@ -1,15 +1,8 @@
-"""Streamlit UI for building and running batches of ALTR Model configs.
+"""Streamlit wizard for trying out the ALTR Model.
 
-Lets you:
-  1. pick a subset of companies (upload a CSV, paste ids, or use the
-     bundled example selection),
-  2. build one or more named parameter configurations through a form (with
-     the baseline/target scenario dropdowns constrained to the same IAM
-     provider - see notebooks/scenario_utils.py),
-  3. download the resulting config as YAML (for reuse with
-     notebooks/run_kedro_batch.py directly, headless),
-  4. run the batch and browse/download each run's outputs, which land under
-     workspace/ exactly like notebooks/generate_results.ipynb does.
+A deliberately simple three-step flow: pick a portfolio (upload one or use
+the bundled demo), pick parameters (recommended defaults or a custom
+selection), then run the model and download every output as one zip.
 
 Run with:
 
@@ -36,7 +29,6 @@ if str(APP_DIR) not in sys.path:
 import scenario_utils  # noqa: E402
 from run_kedro_batch import run_batch  # noqa: E402
 
-EXAMPLE_CONFIG_PATH = APP_DIR / "example_run_configurations.yml"
 EXAMPLE_COMPANIES_PATH = APP_DIR / "example_company_selection.csv"
 SCENARIOS_CSV = PROJECT_ROOT / "data" / "05_model_input" / "scenarios.csv"
 
@@ -56,18 +48,18 @@ CCS_OPTIONS = {
 }
 CCS_LABELS_BY_VALUE = {v: k for k, v in CCS_OPTIONS.items()}
 
+STEP_LABELS = ["Portfolio", "Parameters", "Run & results"]
 
-st.set_page_config(page_title="ALTR Model batch runner", layout="wide")
+st.set_page_config(page_title="ALTR Model", layout="wide")
 
 
 @st.cache_data
 def load_base_defaults() -> dict:
     """Flatten conf/base/parameters_*.yml into one default-value dict.
 
-    Parameter keys don't collide across files, so this is a plain merge -
-    it's only used to pre-fill form widgets, never fed back into kedro
-    directly (each configuration built in the form carries its own full
-    values instead).
+    Only used to pre-fill form widgets, never fed back into kedro directly -
+    the "recommended defaults" run passes no overrides at all, and a
+    "customize" run carries its own full values instead.
     """
     merged: dict = {}
     for filename in PARAMETER_FILES.values():
@@ -98,74 +90,72 @@ def _read_company_ids_from_csv(uploaded_file) -> pd.DataFrame:
 def _zip_directory_bytes(directory: Path) -> bytes:
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-        for file_path in sorted(directory.glob("*")):
+        for file_path in sorted(directory.rglob("*")):
             if file_path.is_file():
-                zf.write(file_path, arcname=file_path.name)
+                zf.write(file_path, arcname=file_path.relative_to(directory))
     return buffer.getvalue()
 
 
-if "run_configurations" not in st.session_state:
-    st.session_state.run_configurations = {}
-if "company_ids" not in st.session_state:
-    st.session_state.company_ids = None
-if "company_ids_label" not in st.session_state:
-    st.session_state.company_ids_label = "All companies (no restriction)"
-if "last_summary" not in st.session_state:
-    st.session_state.last_summary = None
-if "last_workspace_dir" not in st.session_state:
-    st.session_state.last_workspace_dir = None
+def _init_state() -> None:
+    for key, value in {
+        "step": 1,
+        "company_ids": None,
+        "param_mode": "Recommended defaults",
+        "custom_params": {},
+        "run_summary": None,
+    }.items():
+        st.session_state.setdefault(key, value)
 
 
-st.title("ALTR Model — batch run builder")
-st.caption(
-    "Build one or more parameter configurations, pick a company subset, run "
-    "the altrisk model across all of them, and collect the outputs under "
-    "workspace/ — the same pattern as notebooks/generate_results.ipynb."
-)
+def _goto(step: int) -> None:
+    st.session_state.step = step
+    st.rerun()
 
-tab_companies, tab_config, tab_run = st.tabs(
-    ["1. Companies", "2. Run configurations", "3. Run & results"]
-)
+
+def _start_over() -> None:
+    for key in ["step", "company_ids", "param_mode", "custom_params", "run_summary"]:
+        st.session_state.pop(key, None)
+    _init_state()
+
+
+def render_stepper() -> None:
+    step = st.session_state.step
+    cols = st.columns(len(STEP_LABELS))
+    for i, (col, label) in enumerate(zip(cols, STEP_LABELS), start=1):
+        if i < step:
+            col.markdown(f"✅ {i}. {label}")
+        elif i == step:
+            col.markdown(f"**▶ {i}. {label}**")
+        else:
+            col.markdown(f"⬜ {i}. {label}")
+    st.progress(step / len(STEP_LABELS))
+
 
 # ---------------------------------------------------------------------------
-# Tab 1: company selection
+# Step 1: portfolio
 # ---------------------------------------------------------------------------
-with tab_companies:
-    st.subheader("Which companies should every run be restricted to?")
-    st.caption(
-        "Applied to every configuration below via `company_ids`. Restricting "
-        "to a small subset is strongly recommended for interactive runs — "
-        "the full universe is 10,000+ companies."
-    )
+def render_step_portfolio() -> None:
+    st.header("1. Portfolio")
+    st.caption("Try the model on the bundled demo portfolio, or upload your own.")
 
     source = st.radio(
-        "Source",
-        [
-            "Example selection (30 companies, mixed carbon/alignment profile)",
-            "Upload a CSV",
-            "Paste ids",
-            "All companies (no restriction — slow)",
-        ],
-        key="company_source",
+        "Portfolio source",
+        ["Demo portfolio (30 companies)", "Upload your own CSV"],
+        key="company_source_choice",
     )
 
     company_ids: list[str] | None = None
     preview_df: pd.DataFrame | None = None
 
-    if source.startswith("Example selection"):
+    if source.startswith("Demo"):
         preview_df = pd.read_csv(EXAMPLE_COMPANIES_PATH)
         company_ids = preview_df["company_id"].astype(str).tolist()
         st.caption(
-            "Selected to skew toward the biggest owners in each quadrant of "
-            "carbon intensity × scenario alignment (under the default "
-            "AIM/CGE 2.2 scenario pair) — see the `carbon_alignment_quadrant` "
-            "column. `aligned_low_carbon` companies are structurally much "
-            "smaller in this dataset (there's no such thing as a giant "
-            "renewables-only company whose growth exactly matches the "
-            "scenario), so that quadrant's picks are smaller than the others."
+            "30 large companies picked to cover all four alignment × "
+            "carbon-intensity quadrants, so results show a mix of winners "
+            "and losers under the transition scenario."
         )
-
-    elif source == "Upload a CSV":
+    else:
         uploaded = st.file_uploader(
             "CSV with a `company_id` column (extra columns are ignored)",
             type=["csv"],
@@ -174,56 +164,53 @@ with tab_companies:
             preview_df = _read_company_ids_from_csv(uploaded)
             company_ids = preview_df["company_id"].astype(str).tolist()
 
-    elif source == "Paste ids":
-        pasted = st.text_area("One company id per line", height=150)
-        if pasted.strip():
-            company_ids = [line.strip() for line in pasted.splitlines() if line.strip()]
-            preview_df = pd.DataFrame({"company_id": company_ids})
-
-    else:
-        st.warning(
-            "No restriction: every run will process every company in "
-            "companies_ownerships.csv. This can take a long time."
-        )
-
-    st.session_state.company_ids = company_ids
-    st.session_state.company_ids_label = source
-
     if preview_df is not None:
-        st.dataframe(preview_df, width='stretch', height=280)
+        st.dataframe(preview_df, width="stretch", height=280)
         st.metric("Companies selected", len(preview_df))
         if "carbon_alignment_quadrant" in preview_df.columns:
             st.bar_chart(preview_df["carbon_alignment_quadrant"].value_counts())
 
-    st.download_button(
-        "Download example company selection (CSV)",
-        data=EXAMPLE_COMPANIES_PATH.read_bytes(),
-        file_name="example_company_selection.csv",
-        mime="text/csv",
-    )
+    st.session_state.company_ids = company_ids
+
+    st.divider()
+    next_disabled = not company_ids
+    if st.button("Next →", type="primary", disabled=next_disabled, key="next_1"):
+        _goto(2)
+    if next_disabled:
+        st.caption("Select the demo portfolio or upload a CSV to continue.")
+
 
 # ---------------------------------------------------------------------------
-# Tab 2: run configurations
+# Step 2: parameters
 # ---------------------------------------------------------------------------
-with tab_config:
+def render_step_parameters() -> None:
+    st.header("2. Parameters")
     defaults = load_base_defaults()
 
-    st.subheader("Build a configuration")
-    run_name = st.text_input("Run name (becomes a workspace subfolder — avoid `/`)", value="my_run")
+    mode = st.radio(
+        "How should this run be configured?",
+        ["Recommended defaults", "Customize parameters"],
+        key="param_mode",
+    )
 
-    with st.expander("Scenario & inputs — prepare_scenario_asset_and_company_inputs", expanded=True):
+    params: dict = {}
+    alignment_invalid = False
+
+    if mode == "Recommended defaults":
+        st.info(
+            "Uses the model's built-in defaults (baseline/target scenario, "
+            "shock timing, cost assumptions, ...) with no changes — a "
+            "reasonable starting point for a first run."
+        )
+    else:
         baseline_options = load_baseline_scenario_options()
         default_baseline = defaults.get("baseline_scenario")
         baseline_index = (
-            baseline_options.index(default_baseline)
-            if default_baseline in baseline_options
-            else 0
+            baseline_options.index(default_baseline) if default_baseline in baseline_options else 0
         )
         baseline_scenario = st.selectbox(
             "Baseline scenario (no-transition reference pathway)",
-            baseline_options,
-            index=baseline_index,
-            key="form_baseline_scenario",
+            baseline_options, index=baseline_index, key="p_baseline",
         )
 
         target_options = load_target_scenario_options(baseline_scenario)
@@ -232,273 +219,238 @@ with tab_config:
         target_scenario = st.selectbox(
             "Target scenario — restricted to scenarios from the same "
             f"provider as the baseline ('{scenario_utils.scenario_provider(baseline_scenario)}')",
-            target_options,
-            index=target_index,
-            key=f"form_target_scenario__{baseline_scenario}",
+            target_options, index=target_index, key=f"p_target__{baseline_scenario}",
         )
 
-        col1, col2 = st.columns(2)
-        with col1:
-            ccs_default_label = CCS_LABELS_BY_VALUE.get(defaults.get("ccs_on"), "Without CCS (False)")
-            ccs_label = st.selectbox(
-                "ccs_on", list(CCS_OPTIONS.keys()),
-                index=list(CCS_OPTIONS.keys()).index(ccs_default_label),
-            )
-            ccs_on = CCS_OPTIONS[ccs_label]
-        with col2:
-            reduce_granularity = st.checkbox(
-                "reduce_granularity_from_asset_to_company_level",
-                value=bool(defaults.get("reduce_granularity_from_asset_to_company_level", False)),
-                help="Major impact — aggregates to one synthetic row per company/technology before the model runs.",
-            )
-
-        max_forecast_horizon = st.number_input(
-            "max_forecast_horizon", min_value=1, max_value=30,
-            value=int(defaults.get("max_forecast_horizon", 5)), step=1,
-        )
-
-    with st.expander("Company trajectory timing — calculate_company_trajectories"):
         col1, col2 = st.columns(2)
         with col1:
             shock_year = st.number_input(
-                "shock_year", min_value=2020, max_value=2100,
-                value=int(defaults.get("shock_year", 2033)), step=1,
+                "Shock year", min_value=2020, max_value=2100,
+                value=int(defaults.get("shock_year", 2033)), step=1, key="p_shock_year",
             )
         with col2:
             alignment_year = st.number_input(
-                "alignment_year", min_value=2020, max_value=2100,
-                value=int(defaults.get("alignment_year", 2035)), step=1,
+                "Alignment year", min_value=2020, max_value=2100,
+                value=int(defaults.get("alignment_year", 2035)), step=1, key="p_alignment_year",
             )
-        if alignment_year < shock_year:
-            st.error("alignment_year must be >= shock_year (this is asserted by the pipeline).")
+        alignment_invalid = alignment_year < shock_year
+        if alignment_invalid:
+            st.error("Alignment year must be ≥ shock year.")
 
-    with st.expander("Asset allocation & retirement — allocate_company_trajectories_to_assets"):
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            apply_retirement_baseline = st.checkbox(
-                "apply_retirement_baseline", value=bool(defaults.get("apply_retirement_baseline", True))
-            )
-        with col2:
-            apply_retirement_shock = st.checkbox(
-                "apply_retirement_shock", value=bool(defaults.get("apply_retirement_shock", True))
-            )
-        with col3:
-            apply_decreasing_staggered_shock = st.checkbox(
-                "apply_decreasing_staggered_shock",
-                value=bool(defaults.get("apply_decreasing_staggered_shock", False)),
-            )
-        col4, col5 = st.columns(2)
-        staggered_defaults = defaults.get("staggered_shock", {})
-        with col4:
-            staggered_g_k = st.number_input(
-                "staggered_shock.g_k", value=float(staggered_defaults.get("g_k", 6.0))
-            )
-        with col5:
-            staggered_n_quantiles = st.number_input(
-                "staggered_shock.n_quantiles", min_value=1,
-                value=int(staggered_defaults.get("n_quantiles", 3)), step=1,
-            )
-
-    with st.expander("Earnings — calculate_asset_earnings"):
-        market_passthrough = st.slider(
-            "market_passthrough (fraction of carbon price passed through)",
-            0.0, 1.0, float(defaults.get("market_passthrough", 0.0)),
-        )
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            include_growth_capex = st.checkbox(
-                "include_growth_capex", value=bool(defaults.get("include_growth_capex", False))
-            )
-        with col2:
-            include_replacement_capex = st.checkbox(
-                "include_replacement_capex", value=bool(defaults.get("include_replacement_capex", False))
-            )
-        with col3:
-            include_decom_costs = st.checkbox(
-                "include_decom_costs", value=bool(defaults.get("include_decom_costs", False))
-            )
-        col4, col5 = st.columns(2)
-        with col4:
-            apply_continued_om_baseline = st.checkbox(
-                "apply_continued_om_baseline", value=bool(defaults.get("apply_continued_om_baseline", False))
-            )
-        with col5:
-            apply_continued_om_shock = st.checkbox(
-                "apply_continued_om_shock", value=bool(defaults.get("apply_continued_om_shock", True))
-            )
-
-    with st.expander("Valuation / DCF — calculate_asset_and_company_npv"):
-        dcf_defaults = defaults.get("dcf", {})
-        col1, col2 = st.columns(2)
-        with col1:
-            discount_rate_baseline = st.number_input(
-                "dcf.discount_rate_baseline", value=float(dcf_defaults.get("discount_rate_baseline", 0.07)),
-                format="%.3f",
-            )
-        with col2:
-            discount_rate_shock = st.number_input(
-                "dcf.discount_rate_shock", value=float(dcf_defaults.get("discount_rate_shock", 0.07)),
-                format="%.3f",
-            )
-        terminal_defaults = dcf_defaults.get("terminal_value", {})
         col3, col4 = st.columns(2)
         with col3:
-            terminal_value_method = st.selectbox(
-                "dcf.terminal_value.method", ["perpetuity", "none"],
-                index=["perpetuity", "none"].index(terminal_defaults.get("method", "perpetuity")),
+            ccs_default_label = CCS_LABELS_BY_VALUE.get(defaults.get("ccs_on"), "Without CCS (False)")
+            ccs_label = st.selectbox(
+                "CCS handling", list(CCS_OPTIONS.keys()),
+                index=list(CCS_OPTIONS.keys()).index(ccs_default_label), key="p_ccs",
             )
+            ccs_on = CCS_OPTIONS[ccs_label]
         with col4:
-            g_real_default = st.number_input(
-                "dcf.terminal_value.g_real_default",
-                value=float(terminal_defaults.get("g_real_default", 0.02)), format="%.3f",
+            reduce_granularity = st.checkbox(
+                "Aggregate to company level (faster, less detail)",
+                value=bool(defaults.get("reduce_granularity_from_asset_to_company_level", False)),
+                key="p_granularity",
             )
 
-    with st.expander("Reporting / plots — plot_transition_risk_results (only used with the `reporting` tag)"):
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            plot_log_scale = st.checkbox(
-                "plot_staggered_shock_use_log_scale",
-                value=bool(defaults.get("plot_staggered_shock_use_log_scale", False)),
-            )
-        with col2:
-            plot_shock_absorption = st.checkbox(
-                "plot_staggered_shock_show_shock_absorption",
-                value=bool(defaults.get("plot_staggered_shock_show_shock_absorption", False)),
-            )
-        with col3:
-            reporting_dpi = st.number_input(
-                "reporting.plots.dpi", min_value=50,
-                value=int(defaults.get("reporting", {}).get("plots", {}).get("dpi", 160)), step=10,
-            )
+        market_passthrough = st.slider(
+            "Carbon price passthrough to market prices", 0.0, 1.0,
+            float(defaults.get("market_passthrough", 0.0)), key="p_passthrough",
+        )
 
-    add_disabled = alignment_year < shock_year or not run_name.strip()
-    if st.button("Add this configuration", type="primary", disabled=add_disabled):
-        st.session_state.run_configurations[run_name.strip()] = {
+        params = {
             "baseline_scenario": baseline_scenario,
             "target_scenario": target_scenario,
-            "ccs_on": ccs_on,
-            "max_forecast_horizon": int(max_forecast_horizon),
-            "reduce_granularity_from_asset_to_company_level": bool(reduce_granularity),
             "shock_year": int(shock_year),
             "alignment_year": int(alignment_year),
-            "apply_retirement_baseline": bool(apply_retirement_baseline),
-            "apply_retirement_shock": bool(apply_retirement_shock),
-            "apply_decreasing_staggered_shock": bool(apply_decreasing_staggered_shock),
-            "staggered_shock": {
-                "g_k": float(staggered_g_k),
-                "n_quantiles": int(staggered_n_quantiles),
-            },
+            "ccs_on": ccs_on,
+            "reduce_granularity_from_asset_to_company_level": bool(reduce_granularity),
             "market_passthrough": float(market_passthrough),
-            "include_growth_capex": bool(include_growth_capex),
-            "include_replacement_capex": bool(include_replacement_capex),
-            "include_decom_costs": bool(include_decom_costs),
-            "apply_continued_om_baseline": bool(apply_continued_om_baseline),
-            "apply_continued_om_shock": bool(apply_continued_om_shock),
-            "dcf": {
-                "discount_rate_baseline": float(discount_rate_baseline),
-                "discount_rate_shock": float(discount_rate_shock),
-                "terminal_value": {
-                    "method": terminal_value_method,
-                    "g_real_default": float(g_real_default),
-                },
-            },
-            "plot_staggered_shock_use_log_scale": bool(plot_log_scale),
-            "plot_staggered_shock_show_shock_absorption": bool(plot_shock_absorption),
-            "reporting": {"plots": {"dpi": int(reporting_dpi)}},
         }
-        st.success(f"Added configuration '{run_name.strip()}'.")
 
-    st.divider()
-    st.subheader("Or start from the example configurations")
-    st.caption(
-        "The six runs from notebooks/generate_results.ipynb (all pairing the "
-        "AIM/CGE 2.2 baseline/target scenario, varying granularity, "
-        "retirement, and continued O&M cost assumptions)."
-    )
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("Load example configurations (6 runs)"):
-            example_configs = yaml.safe_load(EXAMPLE_CONFIG_PATH.read_text())
-            st.session_state.run_configurations.update(example_configs)
-            st.success(f"Loaded {len(example_configs)} example configurations.")
-    with col2:
-        st.download_button(
-            "Download example config template (YAML)",
-            data=EXAMPLE_CONFIG_PATH.read_bytes(),
-            file_name="example_run_configurations.yml",
-            mime="text/yaml",
-        )
-
-    uploaded_config = st.file_uploader(
-        "...or upload a previously downloaded config YAML/JSON to merge in", type=["yml", "yaml", "json"]
-    )
-    if uploaded_config is not None:
-        loaded = yaml.safe_load(uploaded_config.getvalue().decode("utf-8"))
-        if isinstance(loaded, dict):
-            st.session_state.run_configurations.update(loaded)
-            st.success(f"Merged {len(loaded)} configurations from {uploaded_config.name}.")
-
-    st.divider()
-    st.subheader(f"Current run configurations ({len(st.session_state.run_configurations)})")
-
-    if not st.session_state.run_configurations:
-        st.info("No configurations yet — add one above or load the examples.")
-    else:
-        summary_rows = []
-        for name, params in st.session_state.run_configurations.items():
-            summary_rows.append(
-                {
-                    "run_name": name,
-                    "baseline_scenario": params.get("baseline_scenario"),
-                    "target_scenario": params.get("target_scenario"),
-                    "granularity": "company" if params.get("reduce_granularity_from_asset_to_company_level") else "asset",
-                    "shock_year": params.get("shock_year"),
-                    "max_forecast_horizon": params.get("max_forecast_horizon"),
-                }
+        with st.expander("Advanced settings (optional)"):
+            max_forecast_horizon = st.number_input(
+                "max_forecast_horizon", min_value=1, max_value=30,
+                value=int(defaults.get("max_forecast_horizon", 5)), step=1, key="p_horizon",
             )
-        st.dataframe(pd.DataFrame(summary_rows), width='stretch')
 
-        to_remove = st.selectbox(
-            "Remove a configuration", ["(none)"] + list(st.session_state.run_configurations.keys())
-        )
-        if to_remove != "(none)" and st.button(f"Remove '{to_remove}'"):
-            del st.session_state.run_configurations[to_remove]
-            st.rerun()
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                apply_retirement_baseline = st.checkbox(
+                    "apply_retirement_baseline",
+                    value=bool(defaults.get("apply_retirement_baseline", True)), key="p_retire_base",
+                )
+            with col2:
+                apply_retirement_shock = st.checkbox(
+                    "apply_retirement_shock",
+                    value=bool(defaults.get("apply_retirement_shock", True)), key="p_retire_shock",
+                )
+            with col3:
+                apply_decreasing_staggered_shock = st.checkbox(
+                    "apply_decreasing_staggered_shock",
+                    value=bool(defaults.get("apply_decreasing_staggered_shock", False)), key="p_staggered",
+                )
+            staggered_defaults = defaults.get("staggered_shock", {})
+            col4, col5 = st.columns(2)
+            with col4:
+                staggered_g_k = st.number_input(
+                    "staggered_shock.g_k", value=float(staggered_defaults.get("g_k", 6.0)), key="p_g_k",
+                )
+            with col5:
+                staggered_n_quantiles = st.number_input(
+                    "staggered_shock.n_quantiles", min_value=1,
+                    value=int(staggered_defaults.get("n_quantiles", 3)), step=1, key="p_n_quantiles",
+                )
 
-        with st.expander("Full parameter values (JSON)"):
-            st.json(st.session_state.run_configurations)
+            col6, col7, col8 = st.columns(3)
+            with col6:
+                include_growth_capex = st.checkbox(
+                    "include_growth_capex", value=bool(defaults.get("include_growth_capex", False)), key="p_growth_capex",
+                )
+            with col7:
+                include_replacement_capex = st.checkbox(
+                    "include_replacement_capex", value=bool(defaults.get("include_replacement_capex", False)), key="p_repl_capex",
+                )
+            with col8:
+                include_decom_costs = st.checkbox(
+                    "include_decom_costs", value=bool(defaults.get("include_decom_costs", False)), key="p_decom",
+                )
+            col9, col10 = st.columns(2)
+            with col9:
+                apply_continued_om_baseline = st.checkbox(
+                    "apply_continued_om_baseline",
+                    value=bool(defaults.get("apply_continued_om_baseline", False)), key="p_om_base",
+                )
+            with col10:
+                apply_continued_om_shock = st.checkbox(
+                    "apply_continued_om_shock",
+                    value=bool(defaults.get("apply_continued_om_shock", True)), key="p_om_shock",
+                )
 
-        st.download_button(
-            "Download current configuration (YAML)",
-            data=yaml.dump(st.session_state.run_configurations, sort_keys=False),
-            file_name="run_configurations.yml",
-            mime="text/yaml",
-        )
+            dcf_defaults = defaults.get("dcf", {})
+            col11, col12 = st.columns(2)
+            with col11:
+                discount_rate_baseline = st.number_input(
+                    "dcf.discount_rate_baseline",
+                    value=float(dcf_defaults.get("discount_rate_baseline", 0.07)), format="%.3f", key="p_disc_base",
+                )
+            with col12:
+                discount_rate_shock = st.number_input(
+                    "dcf.discount_rate_shock",
+                    value=float(dcf_defaults.get("discount_rate_shock", 0.07)), format="%.3f", key="p_disc_shock",
+                )
+            terminal_defaults = dcf_defaults.get("terminal_value", {})
+            col13, col14 = st.columns(2)
+            with col13:
+                terminal_value_method = st.selectbox(
+                    "dcf.terminal_value.method", ["perpetuity", "none"],
+                    index=["perpetuity", "none"].index(terminal_defaults.get("method", "perpetuity")), key="p_terminal_method",
+                )
+            with col14:
+                g_real_default = st.number_input(
+                    "dcf.terminal_value.g_real_default",
+                    value=float(terminal_defaults.get("g_real_default", 0.02)), format="%.3f", key="p_g_real",
+                )
+
+            params.update({
+                "max_forecast_horizon": int(max_forecast_horizon),
+                "apply_retirement_baseline": bool(apply_retirement_baseline),
+                "apply_retirement_shock": bool(apply_retirement_shock),
+                "apply_decreasing_staggered_shock": bool(apply_decreasing_staggered_shock),
+                "staggered_shock": {
+                    "g_k": float(staggered_g_k),
+                    "n_quantiles": int(staggered_n_quantiles),
+                },
+                "include_growth_capex": bool(include_growth_capex),
+                "include_replacement_capex": bool(include_replacement_capex),
+                "include_decom_costs": bool(include_decom_costs),
+                "apply_continued_om_baseline": bool(apply_continued_om_baseline),
+                "apply_continued_om_shock": bool(apply_continued_om_shock),
+                "dcf": {
+                    "discount_rate_baseline": float(discount_rate_baseline),
+                    "discount_rate_shock": float(discount_rate_shock),
+                    "terminal_value": {
+                        "method": terminal_value_method,
+                        "g_real_default": float(g_real_default),
+                    },
+                },
+            })
+
+    st.session_state.custom_params = params
+
+    st.divider()
+    col_back, col_next = st.columns(2)
+    with col_back:
+        if st.button("← Back", key="back_2"):
+            _goto(1)
+    with col_next:
+        if st.button("Next →", type="primary", disabled=alignment_invalid, key="next_2"):
+            _goto(3)
+
 
 # ---------------------------------------------------------------------------
-# Tab 3: run & results
+# Step 3: run & results
 # ---------------------------------------------------------------------------
-with tab_run:
-    n_configs = len(st.session_state.run_configurations)
-    n_companies = len(st.session_state.company_ids) if st.session_state.company_ids else None
+def render_results(run_dir: Path) -> None:
+    npv_path = run_dir / "company_npv.csv"
+    if npv_path.exists():
+        npv_df = pd.read_csv(npv_path)
 
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Companies", len(npv_df))
+        col2.metric("Avg NPV change", f"{npv_df['npv_change'].mean():.1%}")
+        col3.metric("Assets covered", int(npv_df["asset_count"].sum()))
+
+        st.subheader("Company NPV impact")
+        st.caption("baseline_npv / latesudden_npv are discounted cash flows; npv_change is the % difference.")
+        display_df = npv_df.sort_values("npv_change").reset_index(drop=True)
+        st.dataframe(display_df, width="stretch", height=320)
+
+        most_affected = display_df.reindex(
+            display_df["npv_change"].abs().sort_values(ascending=False).index
+        ).head(25)
+        st.bar_chart(most_affected.set_index("company_name")["npv_change"])
+
+    plots_dir = run_dir / "companies_trajectories_plots"
+    if plots_dir.exists():
+        images = sorted(plots_dir.glob("*.png"))[:4]
+        if images:
+            st.subheader("Sample plots")
+            cols = st.columns(len(images))
+            for col, img_path in zip(cols, images):
+                col.image(str(img_path), caption=img_path.stem, width="stretch")
+
+    st.divider()
+    st.download_button(
+        "Download all results (zip)",
+        data=_zip_directory_bytes(run_dir),
+        file_name=f"{run_dir.name}_results.zip",
+        mime="application/zip",
+        type="primary",
+        key="download_results",
+    )
+
+
+def render_step_run() -> None:
+    st.header("3. Run & results")
+
+    n_companies = len(st.session_state.company_ids) if st.session_state.company_ids else 0
     col1, col2 = st.columns(2)
-    col1.metric("Configurations queued", n_configs)
-    col2.metric("Companies selected", n_companies if n_companies is not None else "All")
+    col1.metric("Companies", n_companies)
+    col2.metric("Parameters", st.session_state.param_mode)
 
-    default_workspace = f"workspace/results_streamlit_{datetime.now():%Y%m%d_%H%M%S}"
-    workspace_dir = st.text_input("Workspace directory (relative to the repo root)", value=default_workspace)
-    tags = st.multiselect(
-        "Kedro tags to run", ["altrisk", "reporting"], default=["altrisk"],
-        help="'reporting' also produces plots but only runs after 'altrisk' outputs exist.",
-    )
-    allow_cross_provider = st.checkbox(
-        "Allow baseline/target scenarios from different providers (advanced — normally rejected)",
-        value=False,
-    )
+    include_plots = st.checkbox("Also generate plots (slower)", value=False, key="include_plots")
 
-    run_disabled = n_configs == 0 or not tags
-    if st.button("Run batch", type="primary", disabled=run_disabled):
+    st.divider()
+    col_back, col_run = st.columns(2)
+    with col_back:
+        if st.button("← Back", key="back_3"):
+            _goto(2)
+    run_clicked = col_run.button("Run model", type="primary", key="run_button")
+
+    if run_clicked:
+        tags = ["altrisk"] + (["reporting"] if include_plots else [])
+        workspace_dir = PROJECT_ROOT / "workspace" / f"results_streamlit_{datetime.now():%Y%m%d_%H%M%S}"
+
         log_box = st.empty()
         log_lines: list[str] = []
 
@@ -506,59 +458,53 @@ with tab_run:
             log_lines.append(message)
             log_box.code("\n".join(log_lines[-200:]))
 
-        with st.status("Running kedro batch...", expanded=True) as status:
+        with st.status("Running the model...", expanded=True) as status:
             try:
                 summary = run_batch(
-                    st.session_state.run_configurations,
-                    workspace_dir=PROJECT_ROOT / workspace_dir,
+                    {"run": st.session_state.custom_params},
+                    output_dir=workspace_dir,
                     tags=tags,
                     company_ids=st.session_state.company_ids,
                     scenarios_csv=str(SCENARIOS_CSV),
-                    allow_cross_provider=allow_cross_provider,
                     log=log,
                 )
-                st.session_state.last_summary = summary
-                st.session_state.last_workspace_dir = PROJECT_ROOT / workspace_dir
-                n_success = int((summary["status"] == "success").sum())
+                st.session_state.run_summary = summary
+                row = summary.iloc[0]
                 status.update(
-                    label=f"Done: {n_success}/{len(summary)} runs succeeded.",
-                    state="complete" if n_success == len(summary) else "error",
+                    label="Done." if row["status"] == "success" else f"Run failed: {row['error']}",
+                    state="complete" if row["status"] == "success" else "error",
                 )
-            except Exception as exc:  # surfaced via status + rethrow-free message
-                status.update(label=f"Batch failed to start: {exc}", state="error")
+            except Exception as exc:
+                status.update(label=f"Run failed to start: {exc}", state="error")
                 st.exception(exc)
 
-    if st.session_state.last_summary is not None:
+    if st.session_state.run_summary is not None:
+        row = st.session_state.run_summary.iloc[0]
+        if row["status"] == "success":
+            st.divider()
+            render_results(Path(row["run_dir"]))
+        else:
+            st.error(f"Run failed: {row['error']}")
+
         st.divider()
-        st.subheader("Last batch results")
-        st.dataframe(st.session_state.last_summary, width='stretch')
+        if st.button("Start over"):
+            _start_over()
+            st.rerun()
 
-        workspace_path = st.session_state.last_workspace_dir
-        for _, row in st.session_state.last_summary.iterrows():
-            if row["status"] != "success":
-                continue
-            run_dir = Path(row["output_dir"])
-            with st.expander(f"{row['run_name']} — {run_dir}"):
-                files = sorted(p.name for p in run_dir.glob("*.csv"))
-                st.write(files)
-                npv_path = run_dir / "company_npv.csv"
-                if npv_path.exists():
-                    st.caption("company_npv.csv preview")
-                    st.dataframe(pd.read_csv(npv_path).head(20), width='stretch')
-                st.download_button(
-                    f"Download all outputs for '{row['run_name']}' (zip)",
-                    data=_zip_directory_bytes(run_dir),
-                    file_name=f"{run_dir.name}.zip",
-                    mime="application/zip",
-                    key=f"zip_{run_dir.name}",
-                )
 
-        if workspace_path is not None:
-            manifest_path = workspace_path / "run_manifest.csv"
-            if manifest_path.exists():
-                st.download_button(
-                    "Download run manifest (CSV)",
-                    data=manifest_path.read_bytes(),
-                    file_name="run_manifest.csv",
-                    mime="text/csv",
-                )
+# ---------------------------------------------------------------------------
+# Page
+# ---------------------------------------------------------------------------
+_init_state()
+
+st.title("ALTR Model")
+st.caption("Pick a portfolio, pick parameters, run the model, download the results.")
+render_stepper()
+st.divider()
+
+if st.session_state.step == 1:
+    render_step_portfolio()
+elif st.session_state.step == 2:
+    render_step_parameters()
+else:
+    render_step_run()

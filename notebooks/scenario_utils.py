@@ -39,7 +39,14 @@ def scenario_provider(scenario_name: str) -> str:
 
 @lru_cache(maxsize=4)
 def _load_scenario_types(scenarios_csv: str) -> pd.DataFrame:
-    df = pd.read_csv(scenarios_csv, usecols=["scenario", "scenario_type"])
+    # Some scenarios.csv deliveries use "scenario_name" instead of "scenario"
+    # for the scenario identifier column - support both without loading the
+    # full (multi-GB) file just to check.
+    header = pd.read_csv(scenarios_csv, nrows=0).columns
+    scenario_col = "scenario" if "scenario" in header else "scenario_name"
+    df = pd.read_csv(scenarios_csv, usecols=[scenario_col, "scenario_type"])
+    if scenario_col != "scenario":
+        df = df.rename(columns={scenario_col: "scenario"})
     df = df.drop_duplicates().reset_index(drop=True)
     df["provider"] = df["scenario"].map(scenario_provider)
     return df
