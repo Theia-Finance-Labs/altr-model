@@ -1,112 +1,59 @@
 # Using ALTR Model
 
-This is a guide for running the climate transition risk model end-to-end.
-For contributing to the codebase itself, see the [README](../README.md).
+This guide covers installing and running ALTR Model end-to-end, from raw input data to results and plots.
 
-## Contents
+## 1. Install
 
-1. [Kedro quickstart](#1-kedro-quickstart)
-2. [Install](#2-install)
-3. [Getting the data](#3-getting-the-data)
-4. [Running the model](#4-running-the-model)
-5. [Pipeline reference](#5-pipeline-reference)
-   - [a. `prepare_scenario_asset_and_company_inputs`](#prepare_scenario_asset_and_company_inputs)
-   - [b. `calculate_company_trajectories`](#calculate_company_trajectories)
-   - [c. `allocate_company_trajectories_to_assets`](#allocate_company_trajectories_to_assets)
-   - [d. `calculate_asset_earnings`](#calculate_asset_earnings)
-   - [e. `calculate_asset_and_company_npv`](#calculate_asset_and_company_npv)
-   - [f. `plot_transition_risk_results`](#plot_transition_risk_results)
-6. [Model outputs](#6-model-outputs)
-7. [(Optional) Troubleshooting / kedro-viz](#7-optional-troubleshooting--kedro-viz)
+### For non-technical users (Docker)
 
-## 1. Kedro quickstart
+You only need [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed and running — no Python, no git.
 
-ALTR Model is a [Kedro](https://kedro.org) project. The concepts that
-matter for using it:
+1. Download the project: on the [GitHub repo page](https://github.com/Theia-Finance-Labs/altr-model), click the green **Code** button → **Download ZIP**, then unzip it anywhere on your computer.
+2. Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) if you don't already have it, and make sure it's running.
+3. Open a terminal in the unzipped folder and run:
 
-- **Nodes** are Python functions; **pipelines** wire nodes together.
-- The **catalog** (`conf/base/catalog.yml`) declares where each dataset
-  lives and how to read/write it. A catalog entry can point at a local CSV
-  *or* a live source (a database, a warehouse table) — the pipeline code
-  doesn't change either way, only the catalog entry does.
-- **Parameters** (`conf/base/parameters*.yml`) are the model's tunable
-  inputs, injected into nodes as `params:some_key`.
-- Kedro runs are **batch** — you invoke `kedro run`, it executes the graph
-  once, end to end, and exits. There's no long-running service.
-- **Environments** (`conf/<env>/`) let you override catalog/parameter
-  entries per context. `conf/base/` is the shared default; `conf/local/`
-  (gitignored) is for your own machine — personal overrides. Kedro merges
-  `base` with whichever environment you pass via `--env` (default: `local`,
-  silently falling back to `base`-only values where `local` doesn't
-  override anything).
-- **The model doesn't depend on Kedro to run.** Nodes are plain Python
-  functions (`pipelines/*/nodes.py`) that take DataFrames/params in and
-  return DataFrames out — Kedro's role is orchestration (wiring, the
-  catalog, `kedro run`), not the modeling logic itself. If you ever want to
-  drop the framework, the node functions can be called directly from a
-  script or notebook with plain pandas DataFrames; nothing in the modeling
-  code itself is Kedro-specific.
+```shell
+docker compose up --build
+```
 
-> 📸 *Screenshot idea: `kedro viz` pipeline graph, annotated with the
-> environment/catalog concept.*
+4. Once the logs settle, open [http://localhost:8501](http://localhost:8501) in your browser — this is the batch-runner app (see [Running the model](#3-running-the-model) for what to do with it).
+5. Put the three input CSVs (see [Input Data](#2-input-data) below) in the `data/05_model_input/` folder inside the unzipped project. `docker compose` mounts `data/` and `workspace/` from your local folder into the app, so anything you place there is visible to it, and any results it writes land back in those same local folders.
 
-## 2. Install
+### For developers (uv)
 
-Requires Python 3.10 (3.11+ is not supported due to dependency constraints).
-We use [uv](https://docs.astral.sh/uv/) for both installing Python and
-managing the project's virtual environment — no `pyenv` needed, `uv sync`
-downloads and pins the right Python version automatically from
-`requires-python` in `pyproject.toml`.
+Requires Python 3.10 (3.11+ isn't supported due to dependency constraints). We use [uv](https://docs.astral.sh/uv/) for both installing Python and managing the project's virtual environment — no separate Python install needed, `uv sync` downloads and pins the right version automatically.
 
-### macOS / Linux
+#### macOS / Linux
 
-```bash
+```shell
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-git clone <repo-url>
+git clone https://github.com/Theia-Finance-Labs/altr-model
 cd altr-model
 
 uv sync
 source .venv/bin/activate
 ```
 
-### Windows (PowerShell)
+#### Windows (PowerShell)
 
-```powershell
+```shell
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 
-git clone <repo-url>
+git clone https://github.com/Theia-Finance-Labs/altr-model
 cd altr-model
 
 uv sync
 .venv\Scripts\activate
 ```
 
-## 3. Getting the data
-
-This is the part that matters most for most readers of this doc.
+## 2. Input Data
 
 The model needs exactly three CSV files, placed in `data/05_model_input/`:
 
-| File | Schema |
-|---|---|
-| `scenarios.csv` | see [below](#scenarioscsv) |
-| `assets_forecasts.csv` | see [below](#assets_forecastscsv) |
-| `companies_ownerships.csv` | see [below](#companies_ownershipscsv) |
+### `assets_forecasts.csv`
 
-### Where the data comes from
-
-> ⚠️ **TODO (fill in):** describe the actual delivery channel — e.g. shared
-> drive link, secure transfer, internal portal — and who to contact for
-> access or a refresh.
-
-### Schemas
-
-#### `assets_forecasts.csv`
-
-Physical power-generation assets (plants) and their technical
-characteristics — capacity, technology, location, age — one row per asset
-per forecast year.
+Physical power-generation assets (plants) and their technical characteristics — capacity, technology, location, age — one row per asset per forecast year.
 
 | Column | Type | Meaning |
 |---|---|---|
@@ -126,10 +73,9 @@ per forecast year.
 | `capacity_factor` | float | Fraction of nameplate capacity the asset is expected to run at. |
 | `emission_factor` | float | Emissions per unit of output for this asset/technology. |
 
-#### `companies_ownerships.csv`
+### `companies_ownerships.csv`
 
-Which companies own which assets, and to what degree — one row per
-asset-company ownership link per year.
+Which companies own which assets, and to what degree. One row per asset-company ownership link per year.
 
 | Column | Type | Meaning |
 |---|---|---|
@@ -142,12 +88,9 @@ asset-company ownership link per year.
 | `asset_name` | string | Human-readable name of the asset. |
 | `company_name` | string | Human-readable name of the owning company. |
 
-#### `scenarios.csv`
+### `scenarios.csv`
 
-Climate transition scenario pathways — projected prices, capacity,
-efficiency, and cost assumptions per scenario/technology/geography/year.
-These are the reference trajectories that assets and companies are
-measured against.
+Climate transition scenario pathways — projected prices, capacity, efficiency, and cost assumptions per scenario/technology/geography/year. These are the reference trajectories used to extend assets' and companies' production trajectories, and to calculate their forecasted profits.
 
 | Column | Type | Meaning |
 |---|---|---|
@@ -169,22 +112,18 @@ measured against.
 | `carbon_price_usd_per_tco2` | float | Carbon price assumed under this scenario, per tonne of CO2. |
 | `scrap_usd_per_mw` | float | Decommissioning scrap value per MW of capacity. |
 
-## 4. Running the model
+## 3. Running the model
 
-### Tags
+ALTR runs on [Kedro](https://kedro.org) for orchestration — tags, `kedro run`, and the batch runners below all build on it. If you want the underlying concepts (nodes, catalog, parameters, environments) first, jump to [Kedro quickstart](#5-kedro-quickstart).
 
-Use `--tags` to run the model stages as a group, or `--pipeline` with one of
-the explicit namespace names in the pipeline reference below to run a single
-stage:
+### Standard Kedro run
 
-- `altrisk`: the actual model — inputs through valuation (NPV). This is
-  the minimum to get results.
-- `reporting`: produces plots from `altrisk` outputs (`asset_earnings`,
-  `company_trajectories`, `yearly_npv_trajectories`) — no compliance
-  tables, no separate validation step, just plots. Depends on `altrisk`
-  having already run.
+Use `--tags` to run the model stages as a group:
 
-```bash
+- `altrisk`: the actual model — inputs through valuation (NPV). This is the minimum to get results.
+- `reporting`: produces plots from `altrisk` outputs. Depends on `altrisk` having already run.
+
+```shell
 # results only
 kedro run --tags=altrisk
 
@@ -192,39 +131,24 @@ kedro run --tags=altrisk
 kedro run --tags=altrisk,reporting
 ```
 
-VS Code users: `.vscode/launch.json` has matching debug configs ("Kedro
-Run AltRisk (Debug)", "Kedro Run AltRisk with reporting (Debug)").
+The configuration used is the one defined in `conf/base/`. By default this restricts the run to the ~24 example companies listed under the `company_ids` parameter (see [Pipeline reference](#4-pipeline-reference) below) — clear that list to process every company in your input data.
 
 ### Notebook (batch runs)
 
-`notebooks/generate_results.ipynb` runs multiple parameterized configs in
-one go — useful for comparing scenarios or granularities without editing
-`conf/base/` between runs.
+`notebooks/generate_results.ipynb` runs multiple parameterized configs in one go — useful for comparing scenarios or granularities without editing `conf/base/` between runs.
 
-- `runs_configuration`: a dict of `{run_name: {param_overrides}}`. Each
-  entry becomes one `kedro run` with those parameters overridden on top of
-  `conf/base/`.
-- `workspace_dir` (`workspace/results_<version>/`): each run's outputs and
-  plots are copied here under `workspace_dir/<run_name>/`, so multiple runs
-  don't overwrite each other in `data/`.
-- Company vs. asset granularity is controlled by two parameters, set per
-  run in `runs_configuration` — see
-  [`reduce_granularity_from_asset_to_company_level`](#5-pipeline-reference)
-  and its effect on outputs in [section 6](#6-model-outputs).
-- The notebook only runs the `altrisk` tag and saves the `07_model_output`
-  CSVs per run — it doesn't run `reporting` or copy any plots. If you want
-  plots for a specific run, run it separately via the CLI
-  (`--tags=altrisk,reporting`, see below) with that run's parameters.
+- `runs_configuration`: a dict of `{run_name: {param_overrides}}`. Each entry becomes one `kedro run` with those parameters overridden on top of `conf/base/`.
+- `workspace_dir` (`workspace/results_<version>/`): each run's outputs and plots are copied here under `workspace_dir/<run_name>/`, so multiple runs don't overwrite each other in `data/`.
+- Company vs. asset granularity is controlled by parameters set per run in `runs_configuration` — see [`reduce_granularity_from_asset_to_company_level`](#4-pipeline-reference) in the pipeline reference below.
+- The notebook only runs the `altrisk` tag and saves the `07_model_output` CSVs per run — it doesn't run `reporting` or copy any plots. If you want plots for a specific run, run it separately via the CLI (`--tags=altrisk,reporting`, see above) with that run's parameters.
 
 > 📸 *Screenshot idea: the `runs_configuration` cell with 2-3 example runs.*
 
 ### Batch runs without a notebook
 
-`notebooks/run_kedro_batch.py` is the script form of the same pattern —
-useful for headless/CI-style batch runs, or as the engine behind the
-Streamlit app below:
+`notebooks/run_kedro_batch.py` is the script form of the same pattern — useful for headless/CI-style batch runs, or as the engine behind the Streamlit app below:
 
-```bash
+```shell
 python notebooks/run_kedro_batch.py \
     --run-configurations notebooks/example_run_configurations.yml \
     --company-ids notebooks/example_company_selection.csv \
@@ -232,58 +156,28 @@ python notebooks/run_kedro_batch.py \
     --tags altrisk
 ```
 
-- `--run-configurations`: a YAML/JSON file shaped like the notebook's
-  `runs_configuration` dict. `notebooks/example_run_configurations.yml`
-  reproduces the six configs (including the ones left commented out) from
-  `generate_results.ipynb`.
-- `--company-ids`: a CSV (`company_id` column), plain text (one id per
-  line), or YAML/JSON list, applied to every run in the file.
-  `notebooks/example_company_selection.csv` is a sample of 30 large
-  companies picked to cover all four alignment × carbon-intensity
-  quadrants (`aligned`/`misaligned` × `high_carbon`/`low_carbon`) — see the
-  file's own columns for how each was classified.
-- Baseline/target scenario pairs are validated to come from the same IAM
-  provider before a run starts (see `notebooks/scenario_utils.py`) — the
-  pipeline itself only warns and silently intersects geographies/
-  technologies on a mismatch, which otherwise fails quietly rather than
-  loudly. Pass `--allow-cross-provider-scenarios` to bypass this.
-- Same output-copying behavior as the notebook, plus a `run_manifest.csv`
-  per batch summarizing which runs succeeded.
+- `--run-configurations`: a YAML/JSON file shaped like the notebook's `runs_configuration` dict. `notebooks/example_run_configurations.yml` reproduces the six example configs from `generate_results.ipynb`.
+- `--company-ids`: a CSV (`company_id` column), plain text (one id per line), or YAML/JSON list, applied to every run in the file. `notebooks/example_company_selection.csv` is a sample of 30 large companies picked to cover all four alignment × carbon-intensity quadrants (`aligned`/`misaligned` × `high_carbon`/`low_carbon`).
+- Baseline/target scenario pairs are validated to come from the same IAM provider before a run starts (see `notebooks/scenario_utils.py`) — the pipeline itself only warns and silently intersects geographies/technologies on a mismatch. Pass `--allow-cross-provider-scenarios` to bypass this.
+- Same output-copying behavior as the notebook, plus a `run_manifest.csv` per batch summarizing which runs succeeded.
 
-`notebooks/streamlit_app.py` wraps the same script in a form-based UI —
-build configurations interactively (with the scenario dropdown already
-constrained to same-provider pairs), upload or paste a company selection,
-download the resulting config YAML, and run the batch with live progress
-and per-run download buttons:
+`notebooks/streamlit_app.py` wraps the same script in a form-based UI — build configurations interactively (with the scenario dropdown already constrained to same-provider pairs), upload or paste a company selection, download the resulting config YAML, and run the batch with live progress and per-run download buttons. If you installed via Docker above, this is already running at [http://localhost:8501](http://localhost:8501). To launch it without Docker:
 
-```bash
+```shell
 uv sync --group streamlit
 uv run streamlit run notebooks/streamlit_app.py
 ```
 
-## 5. Pipeline reference
+## 4. Pipeline reference
 
-Each project pipeline is namespaced, with its own inputs, outputs, and
-parameters file under `conf/base/`. Datasets are catalog entry names (see
-`conf/base/catalog.yml`); parameters are keys from the pipeline's
-`parameters_<pipeline>.yml`, injected as `params:<key>`.
-
-The six namespaces expose grain-specific tables; scenario pathways and wide
-allocation frames remain internal datasets and do not cross pipeline boundaries.
-The letters a–f show their execution order in the end-to-end workflow. They are
-documentation labels only and are not part of the Kedro pipeline names used with
-`kedro run --pipeline`.
+Each pipeline is namespaced under `conf/base/`, with its own inputs, outputs, and parameters file. Datasets are catalog entry names (`conf/base/catalog.yml`); parameters are keys from the pipeline's `parameters_<pipeline>.yml`, injected as `params:<key>`. The six pipelines below run in this order.
 
 ### `prepare_scenario_asset_and_company_inputs`
 
-**Workflow stage: a — input preparation.** This stage consolidates the
-input-processing and post-processing responsibilities that were previously
-visible in the pipeline names `inputs_processing` and `inputs_postproc`: it
-turns raw scenarios, asset forecasts, and ownership data into the model-ready
-asset and company inputs used by every downstream stage.
-
-- **Inputs:** `assets`, `companies_ownerships`, `scenarios`
+- **Inputs:** `assets_forecasts`, `companies_ownerships`, `scenarios`
 - **Outputs:** `asset_forecast_panel`, `company_projection_inputs`
+
+Turns the three raw input files into two model-ready tables. It filters the baseline/target scenario pathways, matches every asset to a scenario geography and to the CCS/non-CCS technology variant, and attaches each asset to its owning company. `asset_forecast_panel` is one row per physical asset per year (or, if `reduce_granularity_from_asset_to_company_level` is on, already collapsed to one row per company-technology). `company_projection_inputs` is one row per company/technology/geography/year, with the baseline and target scenario assumptions — price, cost, capacity factor, and so on — attached side by side, ready for the trajectory calculation in the next pipeline.
 
 | Parameter | Type | Meaning and impact |
 |---|---|---|
@@ -292,81 +186,14 @@ asset and company inputs used by every downstream stage.
 | `company_ids` | list of strings (optional) | Restricts the run to these companies; empty/unset processes all companies in the input data. Directly controls run size and runtime. |
 | `ccs_on` | bool or null | Whether to use the with-CCS or without-CCS scenario variant for Coal/Gas/Biomass technologies (`null` = no distinction). Changes which technology rows are matched from `scenarios.csv`. |
 | `max_forecast_horizon` | int | Number of years of forecast kept per asset/company. Larger = longer trajectories but more low-confidence out-years. |
-| `reduce_granularity_from_asset_to_company_level` | bool | **Major impact.** `True` aggregates inputs to one synthetic row per company-technology before the rest of the pipeline runs; `False` keeps real per-asset granularity. Changes the row count, identifiers, and structure of every downstream output — see [section 6](#6-model-outputs). |
-
-#### How assets get matched to a scenario geography
-
-Every asset is assigned exactly one `scenario_geography` (used as a merge/
-groupby key for the rest of the pipeline), via `country_iso2` against the
-geography → country mapping implied by `country_iso2_list` in
-`scenarios.csv`:
-
-1. **Most specific match wins.** If a country is covered by more than one
-   scenario geography (e.g. a single-country entry *and* a multi-country
-   regional bucket), the geography with the *fewest* countries is used — an
-   exact-country geography beats a 10-country region, which beats a
-   100-country region.
-2. **A true tie is a hard error.** If two geographies cover the same country
-   with the same specificity, the run fails with
-   `ValueError: Ambiguous scenario geography assignment detected...` rather
-   than picking one arbitrarily.
-3. **Global fallback.** Any asset whose country isn't covered by *any*
-   specific geography is assigned to the scenario's global geography — the
-   one `scenario_geography` row whose `country_iso2_list` is empty/NaN (e.g.
-   a row named `Global`).
-4. **A scenario without a global row is a hard requirement, not optional.**
-   If no such global-fallback row exists in the (filtered) scenario data and
-   some asset's country still isn't covered, the run fails with
-   `AssertionError: Some assets are not assigned to a scenario geography`.
-   In other words: any scenario used as `baseline_scenario` or
-   `target_scenario` must include a no-country-restriction geography *unless*
-   every possible asset country is explicitly listed somewhere.
-5. **Watch for the geography silently disappearing first.** `filter_scenarios`
-   (used to build both `baseline_scenario` and `target_scenario` into one
-   working dataset) intersects the geographies common to both and only
-   *warns* on a mismatch (see the cross-provider note further down this doc).
-   If the global geography exists in only one of the two scenarios, it gets
-   dropped before the matching above ever runs — which then surfaces as the
-   `AssertionError` above rather than as an obviously-related warning.
-
-#### Asset retirement age: refurbishment wrap-around, not a hard cutoff
-
-An asset's observed age is not used as-is. At its first valid observation,
-age is wrapped modulo the technology's `lifetime_years`, then ages linearly
-from there — i.e. the model assumes assets are refurbished on a rolling
-lifetime cycle rather than permanently retired the first time they exceed
-their nominal lifetime. This changes which assets the model treats as "old"
-(near their *next* retirement point) versus "recently refurbished," and
-therefore which assets are subject to retirement-driven capacity drop-off
-under `apply_retirement_baseline`/`apply_retirement_shock`.
-
-#### Fixed assumptions baked into `scenarios.csv` upstream
-
-`fuel_price` (zeroed for non-fuel technologies: Solar, Wind, Hydro, Nuclear,
-Geothermal), `scenario_capacity_factor` (defaults to `1.0` when missing),
-`carbon_price_usd_per_tco2` (defaults to `0.0` when missing), and
-`scrap_usd_per_mw` (derived as `-capital_cost_usd_per_mw / 2`, not sourced
-from raw scenario data) are no longer computed by this pipeline — they are
-applied in the data warehouse by `int_scn_kapsarc_financial_surface_defaults`
-before `scenarios.csv` is exported. `prepare_scenario_pathways` just carries
-these columns through under their model-facing names.
+| `reduce_granularity_from_asset_to_company_level` | bool | `True` aggregates inputs to one synthetic row per company-technology before the rest of the pipeline runs; `False` keeps real per-asset granularity. Changes the row count, identifiers, and structure of every downstream output — see [Granularity changes the shape of every output](#granularity-changes-the-shape-of-every-output). |
 
 ### `calculate_company_trajectories`
-
-**Workflow stage: b — shock mechanism.** This is the model's company-level
-shock mechanism: it builds baseline and target pathways, classifies companies
-by alignment and technology direction, and applies the late-sudden transition
-shock. Before the pipelines were consolidated, this role was more explicit in
-the names `create_baseline_and_target_trajectories` and
-`create_late_sudden_trajectories`.
 
 - **Inputs:** `company_projection_inputs`
 - **Outputs:** `company_pathways_pre_allocation`
 
-Kedro Viz shows alignment classification followed by four separate methodology
-nodes: aligned/misaligned × increasing/decreasing technology. A final node
-combines those four case outputs and activates baseline assumptions before the
-shock year and target assumptions from the shock year onward.
+This is where the transition shock is defined at the company level. Every company/technology is classified into one of four cases — aligned or misaligned with its target pathway, crossed with whether the technology's output is increasing or decreasing under the scenario (e.g. renewables build-out vs. coal phase-down). Each case gets its own trajectory rule; the four are then combined into one path that follows baseline assumptions up to `shock_year` and target assumptions from `shock_year` through `alignment_year` — the "late-sudden" transition shock. `company_pathways_pre_allocation` has one row per company/geography/sector/technology/year/trajectory-type, where trajectory-type is `baseline`, `target`, or `late_sudden_requested` — the company-level path implied by the shock, before it's spread across individual assets in the next pipeline.
 
 | Parameter | Type | Meaning and impact |
 |---|---|---|
@@ -375,24 +202,10 @@ shock year and target assumptions from the shock year onward.
 
 ### `allocate_company_trajectories_to_assets`
 
-**Workflow stage: c — asset-level impact allocation.** This stage carries
-the company-level shock down to individual assets, including staggered-shock
-and retirement logic, then reconciles the realized asset paths back to company
-totals. That role was formerly expressed by the pipeline name
-`distribute_impacts_to_asset_level`.
-
 - **Inputs:** `asset_forecast_panel`, `company_pathways_pre_allocation`
 - **Outputs:** `asset_trajectories`, `company_trajectories`
 
-`asset_trajectories` is long at asset/year/type grain and contains
-`baseline` and `latesudden`. `company_trajectories` is long at
-company/geography/sector/technology/year/type grain and contains `baseline`,
-`target`, `late_sudden_requested`, and `late_sudden_realized`; the realized
-series is the sum of post-allocation asset capacity.
-
-The graph shows the technology-direction split, separate decreasing and
-increasing allocation nodes, their explicit recombination, the long asset-table
-construction, and company-level reconciliation as distinct steps.
+Spreads the company-level shock down to individual assets — deciding, asset by asset, how much of a company's decline (or growth) each of its plants absorbs. Assets in decreasing technologies can retire on schedule and can have the shock staggered across them via a quantile curve rather than applied uniformly; assets in increasing technologies get topped up with a synthetic new-build asset for whatever capacity the company's real fleet can't deliver (see [Synthetic assets for increasing technologies](#synthetic-assets-for-increasing-technologies)). `asset_trajectories` is one row per asset/year/trajectory-type and contains `baseline` and `latesudden`. `company_trajectories` adds `late_sudden_realized` on top of `baseline`, `target`, and `late_sudden_requested` — the sum of post-allocation asset capacity, so you can compare how much of the requested shock the asset fleet could actually absorb.
 
 | Parameter | Type | Meaning and impact |
 |---|---|---|
@@ -404,119 +217,49 @@ construction, and company-level reconciliation as distinct steps.
 | `staggered_shock.g_k` | float | Curve-shape parameter for the staggered shock (steepness of the quantile allocation curve). |
 | `staggered_shock.n_quantiles` | int | Number of quantile buckets the staggered shock is split across. |
 
-#### Synthetic assets for increasing technologies
-
-For technologies whose scenario pathway is *increasing* (e.g. renewables
-build-out), a company's real assets are left at business-as-usual capacity,
-and any gap versus the company's target trajectory is filled by a single
-**synthetic** top-up asset:
-
-- **A synthetic asset can only appear where the company already has a real
-  one.** This isn't an explicit check in the synthetic-asset builder itself —
-  it's a structural consequence of an earlier step
-  (`prepare_company_projection_inputs`) that only produces a company
-  trajectory for `(company, scenario_geography, sector, technology)`
-  combinations where the company already has at least one real asset there.
-  A company can never get a synthetic asset in a country/technology it has no
-  real presence in at all.
-- From `shock_year` onward, the synthetic asset's capacity in year *t* is
-  `max(0, company_target[t] - sum(real_assets[t]))` — it fills exactly the
-  gap between the company-level target and what real assets already deliver,
-  so real + synthetic always reconciles to the company total.
-- Exactly **one** synthetic asset id is created per
-  `company × sector × technology × geography` group (not one per year),
-  named `NEW_{company_id}_{sector}_{technology}_{geography}`, flagged
-  `is_synthetic = True`.
-- Synthetic rows for renewable technologies (Solar, Wind, Hydro, Nuclear,
-  Geothermal) get `emission_factor` forced to `0.0` when it would otherwise
-  be missing.
-- This is a second, independent source of `is_synthetic = True` rows — it
-  happens regardless of the `reduce_granularity_from_asset_to_company_level`
-  setting discussed in [section 6](#granularity-changes-the-shape-of-every-output).
-
 ### `calculate_asset_earnings`
-
-**Workflow stage: d — earnings model.** This is the asset-level earnings
-model, formerly named `earnings_model`: it converts the physical asset
-trajectories into revenues, operating costs, capital costs, and earnings under
-the baseline and shock cases.
 
 - **Inputs:** `asset_trajectories`
 - **Outputs:** `asset_earnings`
 
-`asset_earnings` retains `late_sudden_phase`, alignment metadata, and the asset
-trajectory value needed by reporting, so reporting does not bypass the earnings
-stage to reload `asset_trajectories`.
+Converts each asset's physical trajectory into money: revenue from output at the scenario price, fuel and carbon costs, fixed O&M, and CapEx (growth, replacement/roll-over, and decommissioning, each individually switchable), netting out to EBITDA and then free cash flow. `asset_earnings` is one row per asset/year/trajectory-type, with production, revenue, cost, EBITDA, and free-cash-flow columns, plus enough identifying and classification columns (alignment type, `is_synthetic`, etc.) that reporting doesn't need to reload `asset_trajectories`.
 
 | Parameter | Type | Meaning and impact |
 |---|---|---|
 | `market_passthrough` | float (0-1) | Fraction of carbon price passed through to market prices. `0` = no passthrough, `1` = full passthrough; changes projected revenue under the shock scenario. |
 | `include_growth_capex` | bool | Whether to include CapEx for new-build capacity growth in the cost stack. |
 | `include_replacement_capex` | bool | Whether to include CapEx for replacing retired eligible assets. |
-| `replacement_capex_rate` | float (0-1) | Share of non-synthetic capacity growth capitalized as roll-over/replacement CapEx. Default `0.05` (5%). See note below. |
+| `replacement_capex_rate` | float (0-1) | Share of non-synthetic capacity growth capitalized as roll-over/replacement CapEx. Default `0.05` (5%). |
 | `include_decom_costs` | bool | Whether to include decommissioning costs for retired assets. |
-| `apply_continued_om_baseline` | bool | Whether fixed O&M keeps being charged (at first-year capacity) after retirement, in the baseline trajectory. **Only affects decreasing (high-carbon) technologies** — see note below. |
-| `apply_continued_om_shock` | bool | Same, for the shock trajectory. **Only affects decreasing (high-carbon) technologies** — see note below. |
-
-The two `apply_continued_om_*` toggles only take effect for
-`misaligned_high_carbon`/`aligned_high_carbon` alignment types (decreasing
-technologies); increasing/low-carbon technologies always use actual capacity
-for O&M regardless of these parameters.
-
-#### Replacement CapEx rate depends on `is_synthetic`
-
-Capacity growth on a **real** (non-synthetic) asset is treated as
-roll-over/replacement and capitalized at the `replacement_capex_rate`
-parameter (default 5%) of the capacity increase; capacity growth on a
-**synthetic** asset (new-build, see the increasing-technology
-synthetic-asset note in
-[section 5](#allocate_company_trajectories_to_assets)) is capitalized at full
-CapEx. This means `is_synthetic` — driven either by
-`reduce_granularity_from_asset_to_company_level` or by the increasing-tech
-synthetic top-up rule — changes the *composition* of the cost stack, not
-just row shape/count.
-
-This is deliberate, not a bug: the capacity-flow identity check that would
-normally validate "flows fully explain the capacity trajectory" is
-intentionally disabled, because the roll-over rate is not meant to add up
-to the full capacity delta. If you're reconciling `capex_total` against
-capacity changes yourself, don't expect them to match exactly for real
-assets.
+| `apply_continued_om_baseline` | bool | Whether fixed O&M keeps being charged (at first-year capacity) after retirement, in the baseline trajectory. Only affects decreasing (high-carbon) technologies. |
+| `apply_continued_om_shock` | bool | Same, for the shock trajectory. Only affects decreasing (high-carbon) technologies. |
 
 ### `calculate_asset_and_company_npv`
 
-**Workflow stage: e — valuation model.** This is the discounted-cash-flow
-valuation model, formerly named `valuation_model`: it converts asset earnings
-into asset, company-technology, and company NPVs and produces yearly NPV
-trajectories.
-
 - **Inputs:** `asset_earnings`
-- **Outputs:** `asset_npv`, `company_npv`, `company_technology_npv`,
-  `yearly_npv_trajectories`
+- **Outputs:** `asset_npv`, `company_npv`, `company_technology_npv`, `yearly_npv_trajectories`
+
+Discounts each asset's free cash flow back to a present value — at one discount rate for baseline cash flows and a higher one for shock cash flows to reflect transition risk — optionally adding a terminal value beyond the forecast horizon, then rolls the result up from asset to company-technology to company level. `yearly_npv_trajectories` keeps the year-by-year discounted detail. `asset_npv` collapses that to one row per asset with `baseline_npv`, `latesudden_npv`, and the percentage `npv_change` between them. `company_technology_npv` and `company_npv` are the same comparison rolled up further, with an `asset_count` column showing how many assets (or synthetic technology buckets) sit behind each number.
 
 | Parameter | Type | Meaning and impact |
 |---|---|---|
 | `dcf.discount_rate_baseline` | float | Real discount rate applied to baseline cash flows in the DCF. Higher = lower NPV. |
 | `dcf.discount_rate_shock` | float | Real discount rate applied to shock (late-sudden) cash flows; typically set higher than baseline to reflect transition risk. |
-| `dcf.terminal_value.method` | string (`"none"` \| `"perpetuity"`) | Whether a terminal value is added beyond the forecast horizon. |
+| `dcf.terminal_value.method` | string (`"none"` or `"perpetuity"`) | Whether a terminal value is added beyond the forecast horizon. |
 | `dcf.terminal_value.g_real_default` | float | Real terminal growth rate used when `method` is `"perpetuity"`. |
-
-`compute_yearly_npv_trajectories` requires every `asset_earnings` row to have
-a resolved `scenario_type` (`"baseline"` or `"target"`); a row that reaches
-this stage without one raises `ValueError: N asset(s) have no scenario_type
-resolved...` rather than being silently excluded from NPV — see
-[troubleshooting](#7-optional-troubleshooting--kedro-viz) if you hit this.
 
 ### `plot_transition_risk_results`
 
-**Workflow stage: f — reporting.** This is the reporting and visualization
-stage, formerly named `reporting`: it turns the trajectory, earnings, and NPV
-outputs into the plots used to inspect transition-risk results.
-
 - **Inputs:** `asset_earnings`, `company_trajectories`, `yearly_npv_trajectories`
-- **Outputs:** `asset_financial_trajectories_plots_dir` (plots for the
-  other two nodes are written directly to disk, not catalog outputs — see
-  [section 6](#plots))
+- **Outputs:** `asset_financial_trajectories_plots_dir`
+
+Turns the trajectory, earnings, and NPV tables above into the charts used to inspect transition-risk results. Plots are **not** catalog datasets — they're written directly to disk under `data/08_reporting/` (so they won't show up in `kedro viz`'s data flow), and some folders are wiped and rewritten on every `reporting` run.
+
+| Plot | Folder | Screenshot |
+|---|---|---|
+| Company trajectories — baseline vs. target vs. realized activity per company/technology. | `companies_trajectories_plots/` | 📸 *(add screenshot, with a caption below it)* |
+| Staggered shock — how the shock is distributed across a company's assets over time. | `companies_staggered_shock_plots/` | 📸 *(add screenshot, with a caption below it)* |
+| Asset financial trajectories — revenue/cost/EBITDA/NPV detail per asset. | `asset_financial_trajectories/` | 📸 *(add screenshot, with a caption below it)* |
 
 | Parameter | Type | Meaning and impact |
 |---|---|---|
@@ -524,96 +267,63 @@ outputs into the plots used to inspect transition-risk results.
 | `plot_staggered_shock_show_shock_absorption` | bool | Overlays a shock-absorption band on the staggered-shock chart. |
 | `reporting.plots.dpi` | int | Resolution (dots per inch) plots are saved at. |
 
-## 6. Model outputs
+## 5. Kedro quickstart
 
-### Tables
+ALTR is written as a [Kedro](https://kedro.org) project. The concepts that matter for using it:
 
-All model result tables live in **`data/07_model_output/`** (NPVs,
-earnings, trajectories) — produced by the `altrisk` pipeline. There is no
-separate compliance/curated table layer today.
+- **Nodes** are Python functions; **pipelines** wire nodes together.
+- The **catalog** (`conf/base/catalog.yml`) declares where each dataset lives and how to read/write it. A catalog entry can point at a local CSV *or* a live source (a database, a warehouse table) — the pipeline code doesn't change either way, only the catalog entry does.
+- **Parameters** (`conf/base/parameters*.yml`) are the model's tunable inputs, injected into nodes as `params:some_key`.
+- **Environments** (`conf/<env>/`) let you override catalog/parameter entries per context. `conf/base/` is the shared default; `conf/local/` (gitignored) is for your own machine — personal overrides. Kedro merges `base` with whichever environment you pass via `--env`.
 
-### Granularity changes the shape of every output
+**The model doesn't depend on Kedro to run.** Nodes are plain Python functions (`pipelines/*/nodes.py`) that take DataFrames/params in and return DataFrames out — Kedro's role is orchestration (wiring, the catalog, `kedro run`), not the modeling logic itself. If you ever want to drop the framework, the node functions can be called directly from a script or notebook with plain pandas DataFrames; nothing in the modeling code itself is Kedro-specific.
 
-`reduce_granularity_from_asset_to_company_level` (see
-[section 5](#5-pipeline-reference)) is the single parameter most likely to
-surprise you: it doesn't just change row counts, it changes what an "asset"
-*is* in the output.
+> 📸 *Screenshot idea: `kedro viz` pipeline graph, annotated with the environment/catalog concept.*
 
-Example, comparing two runs of the same company/scenario under
-`workspace/results_V21/`:
+## 6. (Optional) kedro-viz
 
-- **Asset granularity** (`reduce_granularity_from_asset_to_company_level: False`):
-  `asset_npv.csv`'s `asset_id` is the real physical asset id (e.g.
-  `INTERNAL_A_L100000103087_int_ast_power_gem_stage2_GasCap`), `is_synthetic`
-  is `False`, and `company_npv.csv`'s `asset_count` reflects the true number
-  of physical assets owned by the company (e.g. `74` for Iberdrola SA).
-- **Company granularity** (`reduce_granularity_from_asset_to_company_level: True`):
-  physical assets are aggregated into one synthetic row per
-  company/sector/technology/geography before the model runs.
-  `asset_npv.csv`'s `asset_id` becomes a generated id like
-  `NEW_CN_2023551807935057693_Power_HydroCap_EU`, `is_synthetic` is `True`,
-  and `company_npv.csv`'s `asset_count` drops to the number of
-  technology/geography buckets rather than physical assets (e.g. `11` for
-  the same company).
-
-NPV totals also differ between the two runs (not just their granularity) —
-aggregating before running the model is not equivalent to aggregating the
-model's asset-level output afterwards, because retirement, staggered-shock,
-and continued-O&M logic all operate differently on synthetic
-technology-level "assets" than on real ones. Don't mix outputs from
-different granularity settings when comparing runs, and check
-`run_params.csv` (written per run under `workspace/results_<version>/`) to
-confirm which setting produced a given output.
-
-### Plots
-
-Plots are **not** catalog datasets — they're written directly to disk
-inside reporting nodes via matplotlib (so they won't show up in `kedro
-viz`'s data flow, and some folders are wiped and rewritten on every
-`reporting` run):
-
-| Folder (under `data/08_reporting/`) | Produced by |
-|---|---|
-| `companies_trajectories_plots/` | `plot_late_sudden_trajectories` |
-| `companies_staggered_shock_plots/` | `plot_staggered_shock` |
-| `asset_financial_trajectories/` | `plot_asset_financial_trajectories` |
-
-> 📸 *Screenshot idea: one example plot from each folder above.*
-
-## 7. (Optional) Troubleshooting / kedro-viz
-
-```bash
+```shell
 kedro viz
 ```
 
-Opens a web UI showing the pipeline graph, node inputs/outputs, and data
-lineage — useful for seeing which tag(s) touch which datasets.
+Opens a web UI showing the pipeline graph, node inputs/outputs, and data lineage.
 
-> 📸 *Screenshot idea: kedro-viz graph with the `altrisk` and `reporting`
-> tag filters highlighted.*
+> 📸 *Screenshot idea: kedro-viz graph with the `altrisk` and `reporting` tag filters highlighted.*
 
-### Common issues
+## 7. Additional notes
 
-- **`kedro run` fails immediately on a missing dataset** — usually means
-  one of the three input CSVs isn't in `data/05_model_input/`, or is
-  misnamed. Re-check [section 3](#3-getting-the-data).
-- **`--tags=reporting` alone does nothing / errors** — reporting consumes
-  `altrisk` outputs (`asset_earnings`, `company_trajectories`,
-  `yearly_npv_trajectories`); run `--tags=altrisk,reporting` (or run
-  `altrisk` first).
-- **`ValueError: Ambiguous scenario geography assignment detected`** — two
-  scenario geographies tie for the same country at the same specificity
-  (e.g. two regional buckets both list that country and neither is more
-  granular than the other). Fix the overlap in the scenario data's
-  `country_iso2_list` values. See [the geography-matching note in section
-  5](#how-assets-get-matched-to-a-scenario-geography).
-- **`AssertionError: Some assets are not assigned to a scenario geography`**
-  — the (filtered) scenario data has no global, no-country-restriction
-  geography to fall back to for at least one asset's country. Either add
-  one, or check whether `filter_scenarios`' baseline/target intersection
-  silently dropped it (only a `logger.warning`, easy to miss) — see the same
-  section-5 note.
-- **`ValueError: N asset(s) have no scenario_type resolved`** — one or more
-  `asset_earnings` rows never got tagged `"baseline"` or `"target"` before
-  reaching NPV. Look upstream at alignment classification and scenario
-  geography assignment for the affected `asset_id`s listed in the error.
+### Conditions a scenario has to respect to be economically viable
+
+Not every `scenario` × `technology` × `geography` combination in `scenarios.csv` is economically sane — some combinations imply an asset can never turn a profit under that scenario, no matter how the run parameters are set. Two quick checks worth running against `scenarios.csv` before picking a `baseline_scenario`/`target_scenario` pair:
+
+- **Fixed cost check.** If `om_cost_usd_per_mw_per_yr` is higher than `scenario_capacity_factor` × 8,760 hours × `scenario_price` — i.e. the fixed O&M bill alone exceeds what the asset could earn running at its scenario capacity factor for a full year — EBITDA is guaranteed negative for that row regardless of fuel or carbon costs.
+- **Variable cost check.** If `fuel_price` ÷ `efficiency_decimal` is higher than `scenario_price` — i.e. the fuel cost of producing one more unit of output already exceeds the price received for it — every unit produced loses money before fixed costs are even considered.
+
+Either condition flags a scenario/technology combination the model will dutifully run the numbers on, but that has no realistic economic future — worth a sanity check on your input data rather than a debugging session on the output.
+
+### How assets get matched to a scenario geography
+
+Every asset is assigned exactly one `scenario_geography` (used as a merge/groupby key for the rest of the pipeline), via `country_iso2` against the geography → country mapping implied by `country_iso2_list` in `scenarios.csv`.
+
+The most specific match wins: if a country is covered by more than one scenario geography (e.g. a single-country entry *and* a multi-country regional bucket), the geography with the *fewest* countries is used — an exact-country geography beats a 10-country region, which beats a 100-country region. If two geographies cover the same country with the same specificity, the run fails rather than picking one arbitrarily.
+
+### Granularity changes the shape of every output
+
+The `reduce_granularity_from_asset_to_company_level` parameter (see [Pipeline reference](#4-pipeline-reference)) changes what an "asset" *is* in the output, not just how many rows there are:
+
+1. **Asset granularity** (parameter set to `False`): `company_npv.csv`'s `asset_count` reflects the true number of physical assets owned by the company.
+2. **Company granularity** (parameter set to `True`): physical assets are aggregated into one synthetic row per company/sector/technology/geography before the model runs. `asset_npv.csv`'s `asset_id` becomes a generated id like `NEW_CN_2023551807935057693_Power_HydroCap_EU`, and `company_npv.csv`'s `asset_count` drops to the number of technology/geography buckets rather than physical assets.
+
+Don't mix outputs from different granularity settings when comparing runs — aggregating before running the model is not equivalent to aggregating the model's asset-level output afterwards, since retirement, staggered-shock, and continued-O&M logic all operate differently on synthetic technology-level "assets" than on real ones.
+
+### Asset retirement age: refurbishment wrap-around, not a hard cutoff
+
+An asset's observed age is not used as-is. At its first valid observation, age is wrapped modulo the technology's `lifetime_years`, then ages linearly from there — i.e. the model assumes assets are refurbished on a rolling lifetime cycle rather than permanently retired the first time they exceed their nominal lifetime. This changes which assets the model treats as "old" (near their *next* retirement point) versus "recently refurbished," and therefore which assets are subject to retirement-driven capacity drop-off under `apply_retirement_baseline`/`apply_retirement_shock`.
+
+### Synthetic assets for increasing technologies
+
+For technologies whose scenario pathway is *increasing* (e.g. renewables build-out), a company's real assets are left at business-as-usual capacity, and any gap versus the company's target trajectory is filled by a single **synthetic** top-up asset.
+
+**A synthetic asset can only appear where the company already has a real one.** This is because the model only produces a company trajectory for `(company, scenario_geography, sector, technology)` combinations where the company already has at least one real asset there. A company can never get a synthetic asset in a country/technology it has no real presence in at all.
+
+From `shock_year` onward, the synthetic asset's capacity in year *t* is `max(0, company_target[t] - sum(real_assets[t]))` — it fills exactly the gap between the company-level target and what real assets already deliver, so real + synthetic always reconciles to the company total.
