@@ -453,6 +453,7 @@ stage to reload `asset_trajectories`.
 | `market_passthrough` | float (0-1) | Fraction of carbon price passed through to market prices. `0` = no passthrough, `1` = full passthrough; changes projected revenue under the shock scenario. |
 | `include_growth_capex` | bool | Whether to include CapEx for new-build capacity growth in the cost stack. |
 | `include_replacement_capex` | bool | Whether to include CapEx for replacing retired eligible assets. |
+| `replacement_capex_rate` | float (0-1) | Share of non-synthetic capacity growth capitalized as roll-over/replacement CapEx. Default `0.05` (5%). See note below. |
 | `include_decom_costs` | bool | Whether to include decommissioning costs for retired assets. |
 | `apply_continued_om_baseline` | bool | Whether fixed O&M keeps being charged (at first-year capacity) after retirement, in the baseline trajectory. **Only affects decreasing (high-carbon) technologies** — see note below. |
 | `apply_continued_om_shock` | bool | Same, for the shock trajectory. **Only affects decreasing (high-carbon) technologies** — see note below. |
@@ -462,12 +463,13 @@ The two `apply_continued_om_*` toggles only take effect for
 technologies); increasing/low-carbon technologies always use actual capacity
 for O&M regardless of these parameters.
 
-#### Replacement CapEx is a hardcoded 5% rate, and depends on `is_synthetic`
+#### Replacement CapEx rate depends on `is_synthetic`
 
 Capacity growth on a **real** (non-synthetic) asset is treated as
-roll-over/replacement and capitalized at a fixed 5% of the capacity
-increase; capacity growth on a **synthetic** asset (new-build, see the
-increasing-technology synthetic-asset note in
+roll-over/replacement and capitalized at the `replacement_capex_rate`
+parameter (default 5%) of the capacity increase; capacity growth on a
+**synthetic** asset (new-build, see the increasing-technology
+synthetic-asset note in
 [section 5](#allocate_company_trajectories_to_assets)) is capitalized at full
 CapEx. This means `is_synthetic` — driven either by
 `reduce_granularity_from_asset_to_company_level` or by the increasing-tech
@@ -476,7 +478,7 @@ just row shape/count.
 
 This is deliberate, not a bug: the capacity-flow identity check that would
 normally validate "flows fully explain the capacity trajectory" is
-intentionally disabled, because the 5% roll-over rate is not meant to add up
+intentionally disabled, because the roll-over rate is not meant to add up
 to the full capacity delta. If you're reconciling `capex_total` against
 capacity changes yourself, don't expect them to match exactly for real
 assets.
