@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import shutil
 import sys
 import time
@@ -67,6 +68,26 @@ REPORTING_FOLDERS = [
 
 class ScenarioProviderMismatch(ValueError):
     """Raised when a run's baseline/target scenarios come from different providers."""
+
+
+class _LogCallbackHandler(logging.Handler):
+    """Forwards Kedro's own runtime logging (node/dataset progress) to `log`.
+
+    Kedro logs each dataset load/save and node completion via the stdlib
+    `logging` module as `session.run()` executes, which is otherwise
+    invisible until the run finishes - attaching this to the root logger
+    lets that progress stream into the same `log` callback the Streamlit
+    app already renders into, instead of only the coarse per-run messages
+    this module emits itself.
+    """
+
+    def __init__(self, log: Callable[[str], None]) -> None:
+        super().__init__(level=logging.INFO)
+        self._log = log
+        self.setFormatter(logging.Formatter("%(levelname)s | %(name)s - %(message)s"))
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self._log(self.format(record))
 
 
 def load_run_configurations(path: Path | str) -> dict[str, dict]:
@@ -228,84 +249,96 @@ def run_batch(
     records = []
     total_runs = len(run_configurations)
 
-    for idx, (run_name, base_params) in enumerate(run_configurations.items(), start=1):
-        run_params = dict(base_params)
-        if company_ids is not None:
-            run_params["company_ids"] = company_ids
+    # Only forward Kedro's own logging when a real callback is given - the
+    # CLI's default `log=print` already sees this output via Kedro's own
+    # console handler, so mirroring it here would just duplicate every line.
+    root_logger = logging.getLogger()
+    log_handler = _LogCallbackHandler(log) if log is not print else None
+    if log_handler is not None:
+        root_logger.addHandler(log_handler)
 
-        safe_run_name = _sanitize_run_name(run_name)
-        run_dir = output_dir / safe_run_name
+    try:
+        for idx, (run_name, base_params) in enumerate(run_configurations.items(), start=1):
+            run_params = dict(base_params)
+            if company_ids is not None:
+                run_params["company_ids"] = company_ids
 
-        log("=" * 60)
-        log(f"Run {idx}/{total_runs}: {run_name}")
-        log("=" * 60)
+            safe_run_name = _sanitize_run_name(run_name)
+            run_dir = output_dir / safe_run_name
 
-        start = time.monotonic()
-        try:
-            _validate_scenario_pairing(
-                run_name, run_params, scenarios_csv, allow_cross_provider, log
-            )
+            log("=" * 60)
+            log(f"Run {idx}/{total_runs}: {run_name}")
+            log("=" * 60)
 
-            with KedroSession.create(
-                project_path=project_path,
-                extra_params=run_params,
-            ) as session:
-                session.run(pipeline_name="__default__", tags=tags)
+            start = time.monotonic()
+            try:
+                _validate_scenario_pairing(
+                    run_name, run_params, scenarios_csv, allow_cross_provider, log
+                )
 
-            run_id = uuid.uuid4()
-            run_dir.mkdir(parents=True, exist_ok=True)
+                with KedroSession.create(
+                    project_path=project_path,
+                    extra_params=run_params,
+                ) as session:
+                    session.run(pipeline_name="__default__", tags=tags)
 
-            for filename in MODEL_OUTPUT_FILES:
-                src = MODEL_OUTPUT_DIR / filename
-                if not src.exists():
-                    continue
-                df = pd.read_csv(src)
-                df["run_id"] = run_id
-                df.to_csv(run_dir / filename, index=False)
+                run_id = uuid.uuid4()
+                run_dir.mkdir(parents=True, exist_ok=True)
 
-            run_params_df = pd.DataFrame([run_params])
-            run_params_df["run_id"] = run_id
-            run_params_df["run_name"] = run_name
-            run_params_df.to_csv(run_dir / "run_params.csv", index=False)
-
-            if "reporting" in tags:
-                for folder in REPORTING_FOLDERS:
-                    src_dir = REPORTING_DIR / folder
-                    dst_dir = run_dir / folder
-                    if not src_dir.exists():
+                for filename in MODEL_OUTPUT_FILES:
+                    src = MODEL_OUTPUT_DIR / filename
+                    if not src.exists():
                         continue
-                    if dst_dir.exists():
-                        shutil.rmtree(dst_dir)
-                    shutil.copytree(src_dir, dst_dir)
-                    log(f"Copied {folder} to {dst_dir}")
+                    df = pd.read_csv(src)
+                    df["run_id"] = run_id
+                    df.to_csv(run_dir / filename, index=False)
 
-            elapsed = time.monotonic() - start
-            log(f"Completed {run_name} in {elapsed:.1f}s -> {run_dir}")
-            records.append(
-                {
-                    "run_name": run_name,
-                    "status": "success",
-                    "run_dir": str(run_dir),
-                    "error": None,
-                    "elapsed_seconds": round(elapsed, 1),
-                }
-            )
-        except Exception as exc:
-            elapsed = time.monotonic() - start
-            error_msg = f"{exc}\n{traceback.format_exc()}"
-            error_file = output_dir / f"{safe_run_name}_error.txt"
-            error_file.write_text(error_msg)
-            log(f"FAILED {run_name} after {elapsed:.1f}s - see {error_file}")
-            records.append(
-                {
-                    "run_name": run_name,
-                    "status": "failed",
-                    "run_dir": None,
-                    "error": str(exc),
-                    "elapsed_seconds": round(elapsed, 1),
-                }
-            )
-            continue
+                run_params_df = pd.DataFrame([run_params])
+                run_params_df["run_id"] = run_id
+                run_params_df["run_name"] = run_name
+                run_params_df.to_csv(run_dir / "run_params.csv", index=False)
+
+                if "reporting" in tags:
+                    for folder in REPORTING_FOLDERS:
+                        src_dir = REPORTING_DIR / folder
+                        dst_dir = run_dir / folder
+                        if not src_dir.exists():
+                            continue
+                        if dst_dir.exists():
+                            shutil.rmtree(dst_dir)
+                        shutil.copytree(src_dir, dst_dir)
+                        log(f"Copied {folder} to {dst_dir}")
+
+                elapsed = time.monotonic() - start
+                log(f"Completed {run_name} in {elapsed:.1f}s -> {run_dir}")
+                records.append(
+                    {
+                        "run_name": run_name,
+                        "status": "success",
+                        "run_dir": str(run_dir),
+                        "error": None,
+                        "elapsed_seconds": round(elapsed, 1),
+                    }
+                )
+            except Exception as exc:
+                elapsed = time.monotonic() - start
+                error_msg = f"{exc}\n{traceback.format_exc()}"
+                error_file = output_dir / f"{safe_run_name}_error.txt"
+                error_file.write_text(error_msg)
+                log(f"FAILED {run_name} after {elapsed:.1f}s - see {error_file}")
+                records.append(
+                    {
+                        "run_name": run_name,
+                        "status": "failed",
+                        "run_dir": None,
+                        "error": str(exc),
+                        "elapsed_seconds": round(elapsed, 1),
+                    }
+                )
+                continue
+    finally:
+        if log_handler is not None:
+            root_logger.removeHandler(log_handler)
 
     summary = pd.DataFrame.from_records(records)
     summary.to_csv(output_dir / "run_manifest.csv", index=False)

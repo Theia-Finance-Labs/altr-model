@@ -16,17 +16,24 @@ RUN apt-get update && apt-get install -y \
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# Copy the project files needed to run the Streamlit batch-runner app
-# (data/ and workspace/ are deliberately not copied - see below)
+# Install dependencies first, from only the lock/manifest files. Docker
+# caches this layer, so the slow part - downloading/building every
+# third-party package - is skipped entirely whenever pyproject.toml/uv.lock
+# haven't changed, e.g. after an ordinary code edit.
+ENV UV_PROJECT_ENVIRONMENT="/usr/local"
+COPY pyproject.toml uv.lock README.md ./
+RUN uv sync --frozen --no-dev --group streamlit --no-install-project
+
+# Now copy the project files needed to run the Streamlit batch-runner app
+# (data/ and workspace/ are deliberately not copied - see below). These
+# change on every code edit, so this layer (and everything after it) is
+# never cached - but it's just a fast file copy, not a dependency install.
 COPY src ./src
 COPY conf ./conf
 COPY notebooks ./notebooks
-COPY pyproject.toml uv.lock ./
-COPY README.md ./
 
-# Install dependencies into the system environment, including the
-# streamlit-only dependency group
-ENV UV_PROJECT_ENVIRONMENT="/usr/local"
+# Install the project itself (fast: all its dependencies are already
+# installed by the cached layer above).
 RUN uv sync --frozen --no-dev --group streamlit
 
 # Don't run streamlit's first-launch prompt / usage-stats collection
