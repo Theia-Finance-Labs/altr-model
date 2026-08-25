@@ -27,16 +27,6 @@ from altr_model.pipelines.prepare_scenario_asset_and_company_inputs._input_nodes
     filter_scenarios,
 )
 
-NON_FUEL_TECHNOLOGIES = {
-    "SolarCap - CSP",
-    "SolarCap - PV",
-    "WindCap - Offshore",
-    "WindCap - Onshore",
-    "HydroCap",
-    "NuclearCap",
-    "GeothermalCap",
-}
-
 FINANCIAL_SURFACE_COLUMNS = [
     "scenario",
     "power_price_excarbon_usd_per_mwh",
@@ -57,6 +47,15 @@ def prepare_scenario_pathways(
     baseline_scenario: str,
 ) -> pd.DataFrame:
     """Filter scenarios once and add all downstream trajectory/model fields."""
+    # Some scenarios.csv deliveries use "scenario_name" instead of "scenario"
+    # for the scenario identifier column - support both.
+    if (
+        "scenario" not in downloaded_scenarios.columns
+        and "scenario_name" in downloaded_scenarios.columns
+    ):
+        downloaded_scenarios = downloaded_scenarios.rename(
+            columns={"scenario_name": "scenario"}
+        )
     scenarios = filter_scenarios(
         downloaded_scenarios,
         target_scenario=target_scenario,
@@ -74,17 +73,9 @@ def prepare_scenario_pathways(
 
     scenarios["power_price_excarbon_usd_per_mwh"] = scenarios["scenario_price"]
     scenarios["fuel_price_usd_per_mwh_fuel"] = scenarios["fuel_price"]
-    scenarios.loc[
-        scenarios["technology"].isin(NON_FUEL_TECHNOLOGIES),
-        "fuel_price_usd_per_mwh_fuel",
-    ] = 0.0
-    scenarios["capacity_factor"] = scenarios["scenario_capacity_factor"].fillna(1.0)
+    scenarios["capacity_factor"] = scenarios["scenario_capacity_factor"]
     scenarios["capex_usd_per_mw"] = scenarios["capital_cost_usd_per_mw"]
     scenarios["fom_usd_per_mw_yr"] = scenarios["om_cost_usd_per_mw_per_yr"]
-    scenarios["carbon_price_usd_per_tco2"] = scenarios[
-        "carbon_price_usd_per_tco2"
-    ].fillna(0.0)
-    scenarios["scrap_usd_per_mw"] = -scenarios["capex_usd_per_mw"] / 2
     return scenarios
 
 

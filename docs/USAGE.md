@@ -3,6 +3,22 @@
 This is a guide for running the climate transition risk model end-to-end.
 For contributing to the codebase itself, see the [README](../README.md).
 
+## Contents
+
+1. [Kedro quickstart](#1-kedro-quickstart)
+2. [Install](#2-install)
+3. [Getting the data](#3-getting-the-data)
+4. [Running the model](#4-running-the-model)
+5. [Pipeline reference](#5-pipeline-reference)
+   - [a. `prepare_scenario_asset_and_company_inputs`](#prepare_scenario_asset_and_company_inputs)
+   - [b. `calculate_company_trajectories`](#calculate_company_trajectories)
+   - [c. `allocate_company_trajectories_to_assets`](#allocate_company_trajectories_to_assets)
+   - [d. `calculate_asset_earnings`](#calculate_asset_earnings)
+   - [e. `calculate_asset_and_company_npv`](#calculate_asset_and_company_npv)
+   - [f. `plot_transition_risk_results`](#plot_transition_risk_results)
+6. [Model outputs](#6-model-outputs)
+7. [(Optional) Troubleshooting / kedro-viz](#7-optional-troubleshooting--kedro-viz)
+
 ## 1. Kedro quickstart
 
 ALTR Model is a [Kedro](https://kedro.org) project. The concepts that
@@ -151,6 +167,7 @@ measured against.
 | `om_cost_usd_per_mw_per_yr` | float | Operations & maintenance cost per MW per year. |
 | `capital_cost_usd_per_mw` | float | Capital expenditure per MW of capacity. |
 | `carbon_price_usd_per_tco2` | float | Carbon price assumed under this scenario, per tonne of CO2. |
+| `scrap_usd_per_mw` | float | Decommissioning scrap value per MW of capacity. |
 
 ## 4. Running the model
 
@@ -253,8 +270,17 @@ parameters file under `conf/base/`. Datasets are catalog entry names (see
 
 The six namespaces expose grain-specific tables; scenario pathways and wide
 allocation frames remain internal datasets and do not cross pipeline boundaries.
+The letters a–f show their execution order in the end-to-end workflow. They are
+documentation labels only and are not part of the Kedro pipeline names used with
+`kedro run --pipeline`.
 
 ### `prepare_scenario_asset_and_company_inputs`
+
+**Workflow stage: a — input preparation.** This stage consolidates the
+input-processing and post-processing responsibilities that were previously
+visible in the pipeline names `inputs_processing` and `inputs_postproc`: it
+turns raw scenarios, asset forecasts, and ownership data into the model-ready
+asset and company inputs used by every downstream stage.
 
 - **Inputs:** `assets`, `companies_ownerships`, `scenarios`
 - **Outputs:** `asset_forecast_panel`, `company_projection_inputs`
@@ -314,22 +340,25 @@ their nominal lifetime. This changes which assets the model treats as "old"
 therefore which assets are subject to retirement-driven capacity drop-off
 under `apply_retirement_baseline`/`apply_retirement_shock`.
 
-#### Defaults silently applied while building the scenario financial surface
+#### Fixed assumptions baked into `scenarios.csv` upstream
 
-`prepare_scenario_pathways` derives several cost/price columns from
-`scenarios.csv`, filling gaps with fixed assumptions rather than leaving them
-missing — worth knowing since a missing input value is then indistinguishable
-from an intentionally-zero one:
-
-- `fuel_price_usd_per_mwh_fuel` is forced to `0.0` for a fixed list of
-  non-fuel technologies (Solar, Wind, Hydro, Nuclear, Geothermal).
-- `capacity_factor` defaults to `1.0`, and `carbon_price_usd_per_tco2`
-  defaults to `0.0`, whenever missing from the input data.
-- `scrap_usd_per_mw` (decommissioning scrap value) is always derived as
-  `-capex_usd_per_mw / 2` — a fixed assumption that decommissioning recovers
-  exactly 50% of capital cost, not a value read from `scenarios.csv`.
+`fuel_price` (zeroed for non-fuel technologies: Solar, Wind, Hydro, Nuclear,
+Geothermal), `scenario_capacity_factor` (defaults to `1.0` when missing),
+`carbon_price_usd_per_tco2` (defaults to `0.0` when missing), and
+`scrap_usd_per_mw` (derived as `-capital_cost_usd_per_mw / 2`, not sourced
+from raw scenario data) are no longer computed by this pipeline — they are
+applied in the data warehouse by `int_scn_kapsarc_financial_surface_defaults`
+before `scenarios.csv` is exported. `prepare_scenario_pathways` just carries
+these columns through under their model-facing names.
 
 ### `calculate_company_trajectories`
+
+**Workflow stage: b — shock mechanism.** This is the model's company-level
+shock mechanism: it builds baseline and target pathways, classifies companies
+by alignment and technology direction, and applies the late-sudden transition
+shock. Before the pipelines were consolidated, this role was more explicit in
+the names `create_baseline_and_target_trajectories` and
+`create_late_sudden_trajectories`.
 
 - **Inputs:** `company_projection_inputs`
 - **Outputs:** `company_pathways_pre_allocation`
@@ -345,6 +374,12 @@ shock year and target assumptions from the shock year onward.
 | `alignment_year` | int | Year by which requested trajectories reach the target pathway. |
 
 ### `allocate_company_trajectories_to_assets`
+
+**Workflow stage: c — asset-level impact allocation.** This stage carries
+the company-level shock down to individual assets, including staggered-shock
+and retirement logic, then reconciles the realized asset paths back to company
+totals. That role was formerly expressed by the pipeline name
+`distribute_impacts_to_asset_level`.
 
 - **Inputs:** `asset_forecast_panel`, `company_pathways_pre_allocation`
 - **Outputs:** `asset_trajectories`, `company_trajectories`
@@ -401,6 +436,11 @@ and any gap versus the company's target trajectory is filled by a single
 
 ### `calculate_asset_earnings`
 
+**Workflow stage: d — earnings model.** This is the asset-level earnings
+model, formerly named `earnings_model`: it converts the physical asset
+trajectories into revenues, operating costs, capital costs, and earnings under
+the baseline and shock cases.
+
 - **Inputs:** `asset_trajectories`
 - **Outputs:** `asset_earnings`
 
@@ -443,6 +483,11 @@ assets.
 
 ### `calculate_asset_and_company_npv`
 
+**Workflow stage: e — valuation model.** This is the discounted-cash-flow
+valuation model, formerly named `valuation_model`: it converts asset earnings
+into asset, company-technology, and company NPVs and produces yearly NPV
+trajectories.
+
 - **Inputs:** `asset_earnings`
 - **Outputs:** `asset_npv`, `company_npv`, `company_technology_npv`,
   `yearly_npv_trajectories`
@@ -461,6 +506,10 @@ resolved...` rather than being silently excluded from NPV — see
 [troubleshooting](#7-optional-troubleshooting--kedro-viz) if you hit this.
 
 ### `plot_transition_risk_results`
+
+**Workflow stage: f — reporting.** This is the reporting and visualization
+stage, formerly named `reporting`: it turns the trajectory, earnings, and NPV
+outputs into the plots used to inspect transition-risk results.
 
 - **Inputs:** `asset_earnings`, `company_trajectories`, `yearly_npv_trajectories`
 - **Outputs:** `asset_financial_trajectories_plots_dir` (plots for the
