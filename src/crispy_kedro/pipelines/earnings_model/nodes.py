@@ -1584,6 +1584,13 @@ def compute_ops_block(
         )
 
     if dynamic_marginal_ef:
+        # NOTE (2026-08-20): this scaling is inert under carbon_cost_method=
+        # 'full_ef' (marginal_ef_static is forced to 0) and when MCPR is
+        # disabled (the surface carries marginal_emission_factor=0). It is
+        # live only under {enable_mcpr: True, carbon_cost_method:
+        # 'differential_ef'} — a combination no production or study config
+        # uses. Kept for the differential-EF path; excluded from the external
+        # update list for that reason.
         # Dynamic marginal_EF: as VRE capacity share grows, the marginal generator
         # shifts from fossil (high EF) toward clean tech (low EF). We model this as:
         #   marginal_ef(t) = marginal_ef_static * (1 - vre_share(t))^2

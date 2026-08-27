@@ -74,6 +74,20 @@ NPV&nbsp;&nbsp;&nbsp;&nbsp;= discounted FCFF + terminal value&nbsp;&nbsp;→&nbs
 <p>After those filters, <strong>25 providers</strong> survive — that is the "all scenarios" universe, and the April isolation study ran every one of them (125 runs). The <strong>MCPR v2 batch used only 5 of the 25</strong> (COFFEE, GCAM 5.2, IMAGE 3.0, MESSAGEix-GLOBIOM, WITCH) for a different reason: each pipeline run takes 5–8 minutes, and MCPR v2 was in an edit-run-fix loop where a full 25-provider × 3-config sweep (~8 hours) per iteration was not practical. The 5 were chosen to span IAM philosophies (partial-equilibrium, energy-system, hybrid). The full-provider rerun is the queued canonical rebuild (decision OP2).</p>
 
 <div class="upd">
+<h2><span class="n">U0</span>From one provider to twenty-five — the measurement apparatus</h2>
+<p><span class="lbl">commit 13707f2 (2025-09)</span><span class="lbl">commit 49efb56 (2026-04)</span><span class="lbl">scenario_manifest.json</span></p>
+<p><strong>The issue.</strong> Through most of 2025 the model could run on exactly one scenario provider — WITCH — because three things pinned it there: a single hardcoded scenario pair in the config, one hand-enriched data extract (the raw scenario table lacked the fuel, CapEx, O&amp;M and efficiency columns the cash-flow model needs), and a fatal assertion that required baseline and target scenarios to cover <em>identical</em> geographies. Most AR6 providers report baseline and target at different regional breakdowns, so even with data they crashed on arrival. One provider means no robustness evidence: every result was conditional on WITCH's modeling philosophy.</p>
+<p><strong>What changed.</strong> Three steps. (1) Sept 2025: the geography assertion became an intersection — providers now run on the regions their scenario pairs share, with a warning listing what was dropped. (2) A cost-enriched all-provider AR6 extract with pre-computed viability flags replaced the hand-built WITCH file. (3) April 2026: automated pair discovery (<code>discover_scenario_pairs.py</code> scores every scenario name for baseline-likeness, carbon budget, and data sufficiency) plus a batch runner that writes per-provider config overrides and runs Kedro unattended — one command instead of hand-edited YAML per provider.</p>
+<p><strong>Differential impact.</strong> Coverage, not direction:</p>
+<table>
+  <tr><th></th><th class="r">Before</th><th class="r">After</th></tr>
+  <tr><td>Scenario providers runnable</td><td class="r num">1 (WITCH)</td><td class="r num pos">25</td></tr>
+  <tr><td>Runs per comparison campaign</td><td class="r num">1, manual</td><td class="r num pos">125 (isolation study) / 30 (single-vintage rebuild), unattended</td></tr>
+</table>
+<p class="dim" style="font-size:.85rem">Why it leads this document: every measured impact in U1–U7 exists because of this apparatus — no other update could have been <em>tested</em> without it. Honest limit: 25 is not "all of AR6"; it is every provider surviving the input requirements (matched policy pair, power-sector cost variables, overlapping geographies, ≥500 rows).</p>
+</div>
+
+<div class="upd">
 <h2><span class="n">U1</span>Technology-differentiated discount spreads (D1)</h2>
 <p><span class="lbl">commit 056d1f6</span><span class="lbl">config iso_d1</span></p>
 <p><strong>The issue.</strong> The December model discounted every asset at the same flat 7% — a coal plant and a solar farm carried identical risk pricing. Markets demonstrably price carbon exposure into the cost of capital, so a flat rate systematically overvalued brown assets relative to green ones, muting or flipping the very shocks the test is supposed to measure.</p>
@@ -141,21 +155,7 @@ NPV&nbsp;&nbsp;&nbsp;&nbsp;= discounted FCFF + terminal value&nbsp;&nbsp;→&nbs
 </div>
 
 <div class="upd">
-<h2><span class="n">U4</span>Dynamic emission factor</h2>
-<p><span class="lbl">commit 056d1f6</span><span class="lbl">config iso_dynamic_ef</span></p>
-<p><strong>The issue.</strong> A fixed emission factor freezes each asset's carbon intensity at its starting value even as the scenario's grid decarbonizes around it. That misstates carbon costs in the later decades of the horizon — exactly when scenario carbon prices are at their highest and the cost matters most.</p>
-<p><strong>What changed.</strong> Emission factor evolves with the scenario's technology mix rather than staying fixed at the asset's initial value.</p>
-<p><strong>Differential impact:</strong></p>
-<table>
-  <tr><th>Scope</th><th class="r">Δ carbontech (pp)</th><th class="r">Δ greentech (pp)</th></tr>
-  <tr><td>All 25 providers, isolated</td><td class="r num">0.0</td><td class="r num">0.0</td></tr>
-</table>
-<p>Exactly zero everywhere, by design: an EF adjustment only matters once carbon-pricing mechanisms bind. Its effect lives entirely inside the combined config — keep it, but never present it as a standalone improvement.</p>
-<p class="dim" style="font-size:.85rem">Extended impact: identical to vanilla on every metric — baseline/shock viability, direction, median ΔNPV — and in every region. Zero isolated effect, as designed.</p>
-</div>
-
-<div class="upd">
-<h2><span class="n">U5</span>Full-EF carbon costing mode</h2>
+<h2><span class="n">U4</span>Full-EF carbon costing mode</h2>
 <p><span class="lbl">config iso_full_ef</span></p>
 <p><strong>The issue.</strong> The original carbon-cost formula charged only emissions <em>above</em> the marginal generator's — which means the marginal technology itself, gas, paid no carbon cost at all. That is defensible when carbon costs are already embedded in the scenario's electricity prices, but in scenarios where they are not, it lets the most exposed bridge fuel escape carbon costs entirely.</p>
 <p><strong>What changed.</strong> Two carbon-cost modes: <code>full_ef</code> (every tonne pays — current default) vs <code>differential_ef</code> (only emissions above the marginal generator pay; for scenarios whose prices already embed carbon).</p>
@@ -168,7 +168,7 @@ NPV&nbsp;&nbsp;&nbsp;&nbsp;= discounted FCFF + terminal value&nbsp;&nbsp;→&nbs
   <tr><td>IMAGE 3.0</td><td class="r num">93.6</td><td class="r num">93.6</td><td class="r num">0.0</td></tr>
   <tr><td>MESSAGEix-GLOBIOM 1.1</td><td class="r num">85.3</td><td class="r num">85.3</td><td class="r num">0.0</td></tr>
 </table>
-<p>Its real role is correctness — preventing carbon double-counting — rather than direction improvement; the auto-detection guard (U7) decides when it applies. (*WITCH vintage caveat, §9.)</p>
+<p>Its real role is correctness — preventing carbon double-counting — rather than direction improvement; the auto-detection guard (U6) decides when it applies. (*WITCH vintage caveat, §9.)</p>
 <h3>Extended impact — pooled across the 5 providers (vanilla → iso_full_ef)</h3>
 <table>
   <tr><th>Class</th><th class="r">Baseline NPV&gt;0</th><th class="r">Shock NPV&gt;0</th><th class="r">Expected direction</th><th class="r">Median ΔNPV</th></tr>
@@ -179,7 +179,7 @@ NPV&nbsp;&nbsp;&nbsp;&nbsp;= discounted FCFF + terminal value&nbsp;&nbsp;→&nbs
 </div>
 
 <div class="upd">
-<h2><span class="n">U6</span>MCPR v1 — market-clearing price floor</h2>
+<h2><span class="n">U5</span>MCPR v1 — market-clearing price floor</h2>
 <p><span class="lbl">pre-existing, retuned in 056d1f6</span><span class="lbl">config iso_mcpr</span></p>
 <p><strong>The issue.</strong> AR6 scenarios report a separate LCOE-like price per technology instead of one market-clearing price, and against those prices some technologies never make money even in the baseline. A stress test needs a viable baseline business to destroy — you cannot measure a transition shock on an asset the model says was never profitable to begin with.</p>
 <p><strong>What changed.</strong> Lifts technology-differentiated (LCOE-like) IAM electricity prices toward a market-clearing level anchored on the marginal (gas) generator, with technology value factors.</p>
@@ -204,7 +204,7 @@ NPV&nbsp;&nbsp;&nbsp;&nbsp;= discounted FCFF + terminal value&nbsp;&nbsp;→&nbs
 </div>
 
 <div class="upd">
-<h2><span class="n">U7</span>MCPR v2 — carbon_explicit mode with auto-detection</h2>
+<h2><span class="n">U6</span>MCPR v2 — carbon_explicit mode with auto-detection</h2>
 <p><span class="lbl">commits 49efb56, 5ecdca6</span><span class="lbl">config mcpr_v2_carbon</span></p>
 <p><strong>The issue.</strong> IAM providers are inconsistent about carbon: some embed carbon costs inside their electricity prices, others report explicit carbon prices alongside. Treating both kinds the same either double-counts carbon (charged in the price <em>and</em> as a cost) or omits it entirely — and picking the treatment by hand for every provider doesn't scale and invites silent errors, one of which (order-dependent VRE baselines) was already in the code.</p>
 <p><strong>What changed.</strong> For scenarios with explicit carbon prices: gas-anchored clearing price paired with <code>full_ef</code> costing; auto-detection selects the mode from carbon-price coverage; a runtime warning guards the pairing; the VRE baseline was made order-independent (a silent wrong-results bug).</p>
@@ -229,7 +229,7 @@ NPV&nbsp;&nbsp;&nbsp;&nbsp;= discounted FCFF + terminal value&nbsp;&nbsp;→&nbs
 </div>
 
 <div class="upd" style="border-color:var(--accent)">
-<h2><span class="n">U8</span>MCPR v2 — merit_order_decline mode <span class="neg">(new finding: direction collapse)</span></h2>
+<h2><span class="n">U7</span>MCPR v2 — merit_order_decline mode <span class="neg">(new finding: direction collapse)</span></h2>
 <p><span class="lbl">commits 49efb56, 7b7546a</span><span class="lbl">config mcpr_v2_merit</span></p>
 <p><strong>The issue.</strong> For scenarios <em>without</em> explicit carbon prices, the model still needs a price mechanism that reflects the transition — and a static clearing price misses the best-documented one: as zero-marginal-cost renewables grow, they push the clearing price down (the merit-order effect). Without it, fossil revenues in high-renewable futures are overstated.</p>
 <p><strong>What changed.</strong> Clearing price declines with renewable penetration (IMF elasticity), applied to the clearing price <em>before</em> value factors so the price floor cannot silently negate it (the 7b7546a fix).</p>
@@ -249,7 +249,7 @@ NPV&nbsp;&nbsp;&nbsp;&nbsp;= discounted FCFF + terminal value&nbsp;&nbsp;→&nbs
   <tr><td>High-carbon</td><td class="r num">57.5 → 57.5%</td><td class="r num warn">37.5 → 60.0%</td><td class="r num neg">70.5 → 42.9%</td><td class="r num neg">−55.8 → +7.3%</td></tr>
   <tr><td>Low-carbon</td><td class="r num">97.9 → 97.9%</td><td class="r num">98.7 → 98.7%</td><td class="r num">89.3 → 89.4%</td><td class="r num">+90.4 → +91.0%</td></tr>
 </table>
-<p class="dim" style="font-size:.85rem">Same pathology as U6, worse: baselines untouched, but shock-scenario viability jumps 37.5→60.0% and the typical carbon shock flips from −55.8% to <strong>+7.3%</strong> — fossil assets end up better off under the shock than the baseline. Regional carbon direction: Advanced 66.6→43.2 · China 77.8→48.9 · <strong>Middle East 48.2→1.3</strong>.</p>
+<p class="dim" style="font-size:.85rem">Same pathology as U5, worse: baselines untouched, but shock-scenario viability jumps 37.5→60.0% and the typical carbon shock flips from −55.8% to <strong>+7.3%</strong> — fossil assets end up better off under the shock than the baseline. Regional carbon direction: Advanced 66.6→43.2 · China 77.8→48.9 · <strong>Middle East 48.2→1.3</strong>.</p>
 <div class="callout">
 <p><strong>Resolved (2026-07-25).</strong> The rescue experiment — a clean single-vintage rebuild of all six configs on the 5 providers (30/30 runs passed) — shows the suite does <em>not</em> rescue merit mode: 43.9% carbon direction with the full valuation suite vs 42.9% isolated (MCPR v1's equivalent interaction was +19.5pp), MESSAGEix stuck at 19.5%, Middle East at 1.0%. The pathology is structural: the gas-anchored clearing uplift dominates the VRE decline in shock scenarios, so fossil shock NPVs get rescued (median ΔNPV +4.7%). <strong>Decision: merit → paper track; <code>carbon_explicit</code> is the only production v2 mode; <code>mcpr_mode: auto</code> must fall back to carbon_explicit, never merit. Headline configs, both labeled: <code>mcpr_v2_carbon_full</code> as production (72.6% direction, green 90.8%, baselines intact) and <code>adjusted</code> as direction-optimized sensitivity (86.5%, −77.7% median shock).</strong></p>
 </div>
