@@ -507,12 +507,26 @@ def apply_mcpr_adjustment(
             cp_coverage = (target_rows[cp_col].fillna(0) > 0).mean()
         else:
             cp_coverage = 0.0
-        resolved_mode = "carbon_explicit" if cp_coverage > 0.5 else "merit_order_decline"
-        logger.info(
-            "MCPR mode=auto: carbon price coverage=%.1f%% → resolved to '%s'",
-            cp_coverage * 100,
-            resolved_mode,
-        )
+        # OP9 (2026-08-20): auto NEVER resolves to merit_order_decline. The
+        # single-vintage rebuild (30/30 runs) showed merit reverses the stress
+        # test direction (carbon expected-negative 43.9% vs 72.6% for
+        # carbon_explicit); the valuation suite does not rescue it (+1.0pp vs
+        # MCPR v1's +19.5pp interaction). Merit remains available only as an
+        # explicit, paper-track setting.
+        resolved_mode = "carbon_explicit"
+        if cp_coverage > 0.5:
+            logger.info(
+                "MCPR mode=auto: carbon price coverage=%.1f%% → resolved to 'carbon_explicit'",
+                cp_coverage * 100,
+            )
+        else:
+            logger.warning(
+                "MCPR mode=auto: carbon price coverage=%.1f%% is LOW — still "
+                "resolving to 'carbon_explicit' (merit_order_decline is "
+                "paper-track only, OP9). Consider a shadow carbon price for "
+                "this scenario.",
+                cp_coverage * 100,
+            )
     else:
         resolved_mode = mcpr_mode
         logger.info("MCPR mode='%s' (explicitly set)", resolved_mode)
