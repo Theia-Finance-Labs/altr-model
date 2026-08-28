@@ -32,5 +32,8 @@ RUN poetry config virtualenvs.create false \
 # Expose Kedro Viz port
 EXPOSE 4141
 
-# Launch Kedro Viz
-ENTRYPOINT ["kedro", "viz", "--host", "0.0.0.0", "--port", "4141", "--no-browser"]
+# Launch Kedro Viz in --lite mode: skips importing the project package and
+# instantiating catalog datasets. Required because catalog.yml contains
+# ibis.TableDataset BigQuery entries whose connection attempts at boot
+# exceed the Cloud Run PORT=4141 startup probe window.
+ENTRYPOINT ["kedro", "viz", "run", "--lite", "--host", "0.0.0.0", "--port", "4141", "--no-browser"]
