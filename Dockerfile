@@ -32,5 +32,8 @@ RUN poetry config virtualenvs.create false \
 # Expose Kedro Viz port
 EXPOSE 4141
 
-# Launch Kedro Viz
-ENTRYPOINT ["kedro", "viz", "--host", "0.0.0.0", "--port", "4141", "--no-browser"]
+# Launch Kedro Viz in --lite mode so startup does not import project modules
+# or instantiate catalog datasets. The catalog has ibis.TableDataset BigQuery
+# entries that block boot inside Cloud Run, causing the PORT=4141 health check
+# to time out.
+ENTRYPOINT ["kedro", "viz", "run", "--lite", "--host", "0.0.0.0", "--port", "4141", "--no-browser"]
