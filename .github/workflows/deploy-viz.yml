@@ -50,4 +50,5 @@ jobs:
         run: |
           gcloud run services update kedro-viz \
             --image=${IMAGE_BASE}:${GIT_SHA} \
-            --region=${REGION}
+            --region=${REGION} \
+            --cpu-boost
