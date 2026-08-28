@@ -59,6 +59,9 @@ class ConfigVariant:
     name: str
     earnings_params: dict[str, Any]
     valuation_params: dict[str, Any]
+    # Optional overrides for parameters_create_late_sudden_trajectories.yml
+    # (shock_year / alignment_year sensitivity). Empty dict = leave base as-is.
+    trajectory_params: dict[str, Any] = field(default_factory=dict)
 
 
 def _vanilla_earnings() -> dict[str, Any]:
@@ -222,6 +225,37 @@ CONFIG_VARIANTS["mcpr_v2_merit"] = ConfigVariant(
     earnings_params=_mcpr_v2m_earn,
     valuation_params=_vanilla_valuation(),
 )
+
+# 12. suite_no_mcpr — full suite WITHOUT any MCPR price adjustment.
+# Tests the "keep it simple" option: raw scenario-level prices + D1 spreads +
+# terminal package + full_ef carbon + retirement economics. Quantifies what
+# dropping MCPR entirely costs vs `adjusted` (which embeds MCPR v1).
+_suite_no_mcpr_earn = _adjusted_earnings()
+_suite_no_mcpr_earn["enable_mcpr"] = False
+CONFIG_VARIANTS["suite_no_mcpr"] = ConfigVariant(
+    name="suite_no_mcpr",
+    earnings_params=_suite_no_mcpr_earn,
+    valuation_params=_adjusted_valuation(),
+)
+
+# 13. Shock-timing sensitivity grid on the production candidate (suite_no_mcpr).
+# Center point (shock 2033 / alignment 2038) is the suite_no_mcpr run itself.
+# Grid A: shock year ±3 with the 5-year window held fixed.
+# Grid B: shock fixed at 2033, alignment window 3 / 8 years.
+for _sname, _traj in [
+    ("shock2030_w5", {"shock_year": 2030, "alignment_year": 2035}),
+    ("shock2036_w5", {"shock_year": 2036, "alignment_year": 2041}),
+    ("align_w3", {"shock_year": 2033, "alignment_year": 2036}),
+    ("align_w8", {"shock_year": 2033, "alignment_year": 2041}),
+]:
+    _e = _adjusted_earnings()
+    _e["enable_mcpr"] = False
+    CONFIG_VARIANTS[_sname] = ConfigVariant(
+        name=_sname,
+        earnings_params=_e,
+        valuation_params=_adjusted_valuation(),
+        trajectory_params=_traj,
+    )
 
 # 10. mcpr_v2_carbon_full — carbon_explicit pricing + full valuation suite.
 # Same earnings as mcpr_v2_carbon; only the valuation changes, so the delta
@@ -430,6 +464,18 @@ def write_param_overrides(
         yaml.dump(valuation_merged, f, default_flow_style=False)
     written.append(valuation_path)
 
+    # Late-sudden trajectory params (shock/alignment year sensitivity):
+    # only written when the config overrides them.
+    if config.trajectory_params:
+        traj_base_path = conf_base_dir / "parameters_create_late_sudden_trajectories.yml"
+        with open(traj_base_path) as f:
+            traj_base = yaml.safe_load(f) or {}
+        traj_merged = _deep_merge(traj_base, config.trajectory_params)
+        traj_path = conf_local_dir / "parameters_create_late_sudden_trajectories.yml"
+        with open(traj_path, "w") as f:
+            yaml.dump(traj_merged, f, default_flow_style=False)
+        written.append(traj_path)
+
     log.info("Wrote param overrides for config '%s' to %s", config.name, conf_local_dir)
     return written
 
@@ -607,6 +653,7 @@ def cleanup_overrides(conf_local_dir: Path) -> None:
         "parameters_earnings_model.yml",
         "parameters_valuation_model.yml",
         "parameters_inputs_processing.yml",
+        "parameters_create_late_sudden_trajectories.yml",
         "catalog.yml",
     ]
     for filename in override_files:

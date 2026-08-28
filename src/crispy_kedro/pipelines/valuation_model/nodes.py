@@ -158,6 +158,29 @@ def compute_yearly_npv_trajectories(
         "trajectory_type",
     ]
 
+    # Collapse CapEx flow-split rows to ONE row per asset-year before any
+    # row-indexed logic runs. Upstream, compute_capacity_flows emits separate
+    # component rows per (asset, year) — operating, decommissioning, rollover —
+    # and their FCFFs sum correctly for present value, but the terminal-value
+    # anchor (last N ROWS), the normalization window and the stranding check
+    # (N consecutive loss rows) all assume one row per year. In the 2026-08
+    # WITCH audit 38% of asset-trajectories carried duplicate years in the
+    # anchor zone, corrupting 3,414 nonzero terminal values.
+    agg_map = {col: "sum" for col in available_financial_cols}
+    agg_map["discount_rate"] = "first"
+    pre_rows = len(npv_data)
+    npv_data = (
+        npv_data.groupby(group_keys + ["year"], dropna=False, as_index=False)
+        .agg(agg_map)
+    )
+    if len(npv_data) != pre_rows:
+        logger.info(
+            "Collapsed %d flow-split rows into %d unique asset-year rows "
+            "before terminal-value computation",
+            pre_rows,
+            len(npv_data),
+        )
+
     yearly_results = []
 
     for key, g in tqdm(
