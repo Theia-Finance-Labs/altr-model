@@ -697,4 +697,49 @@ The Kotz retraction creates a methodological vacuum directly affecting any physi
 
 > **CRISK changes the conversation about what a climate risk measure can be.** Instead of periodic scenario-dependent exercises, CRISK provides continuous market-implied monitoring. If ALTR builds M1 as a Merton layer, it should offer both modes: (1) scenario-based for regulatory compliance (EBA), (2) CRISK-style for real-time supervisory monitoring.
 
+---
+
+## June 2026 Update — MCPR v2 Forensics and Synergy Finding
+
+Status of RC5 (gas as marginal generator with zero differential carbon cost) has moved from **Open** to **Partial**. The MCPR v2 redesign (`docs/superpowers/specs/2026-04-14-mcpr-v2-redesign.md`) split MCPR into two modes routed by IAM carbon-price availability:
+
+- `carbon_explicit` — forces `carbon_cost_method: full_ef` so fossil units pay the full carbon bill rather than the differential. Applies to 18/25 providers.
+- `merit_order_decline` — `P = P_max × (1 − α·ΔVRE_share)`, α=0.006, floor at 0.5. Applies to 7/25 providers without carbon prices.
+
+### Empirical results from the 15-run focused test matrix (vs vanilla)
+
+| Provider | iso_d1 | mcpr_v2_carbon | mcpr_v2_merit |
+|---|---|---|---|
+| WITCH 5.0 | **+8.7pp** | +7.9pp | n/a |
+| MESSAGEix-GLOBIOM 1.1 | ~0 | **-5.4pp** | n/a |
+| IMAGE 3.0 | ~0 | tbc | n/a |
+| GCAM 5.2 | ~0 | n/a | tbc |
+| COFFEE 1.1 | ~0 | tbc | tbc |
+
+### Key updates to the brief's framing
+
+1. **The +19.5pp interaction term from the 150-run analysis is NOT a D1 artifact.** Only WITCH responds to D1 in isolation. The other four providers show ~0 carbon-neg delta under `iso_d1`. This re-validates the brief's "5 interacting distortions" thesis: NPV paradox resolution is *synergistic*, not the sum of independent fixes.
+
+2. **Mode 1 is not a clean win.** `mcpr_v2_carbon` (forced `full_ef`) helps WITCH (+7.9pp) but hurts MESSAGEix (-5.4pp). The MCPR clearing-price lift can still overwhelm the carbon cost where carbon-price magnitudes don't scale with the price lift. **This means RC5 needs a partner mechanism (D1, dynamic value factors, or the merit-order-decline route) — it cannot be solved by carbon-cost routing alone.**
+
+3. **Carbon prices were already flowing.** The original brief assumed `carbon_price_usd_per_tco2` was NaN across the board. In fact WITCH C1 carries $200-722/tCO2 explicitly, and 18/25 providers have non-zero values. The "carbon channel silence" problem is therefore narrower than the brief originally implied: it applies to 7 providers, not all of them, and to the WITCH BigQuery snapshot at the time of the original analysis (since superseded).
+
+4. **Carbon cost / revenue ratios of 5-14x for fossil plants under high carbon prices are correct 1.5C economics**, not a pathology. Robustness section of the paper should note this explicitly so it isn't flagged as a bug by reviewers.
+
+### Paper-writing binding
+
+Frame the adjustment suite as a coherent synergistic system:
+
+> "The combination of market-clearing pricing (MCPR), carbon cost pass-through (full_ef for IAMs with explicit prices, merit-order decline for those without), discount-rate differentiation (D1), and unconditional terminal value produces a consistent carbon-negative improvement that none achieves alone. The +19.5pp interaction term documented in the 150-run analysis is a genuine systemic effect, not an artifact of any single mechanism."
+
+### Updated NPV paradox status table
+
+| Root Cause | Description | Status (June 2026) | Lever |
+|---|---|---|---|
+| RC1 | Carbon prices all NaN from BigQuery | **Closed** | Updated AR6 snapshot; 18/25 providers have prices |
+| RC2 | Decommissioning cost sign bug | **Closed** | abs(scrap) fix; 52% -> 67% carbontech negative |
+| RC3 | Terminal value `final_fcff > 0` gate | **Closed** | Removed gate + N=3 FCFF average |
+| RC4 | Near-term price windfall | **Open** | Smooth shock surface or carbon-aware MCPR clearing |
+| RC5 | Gas as marginal generator | **Partial** | MCPR v2 Mode 1 helps some providers, hurts others |
+
 > **The NGFS credibility crisis (Kotz retraction + narrow GDP range) strengthens ALTR's value proposition.** ALTR is bottom-up and asset-level, making it less dependent on aggregate damage functions than top-down models. But ALTR should explicitly offer multi-scenario sensitivity (S6) to address the scenario design concerns raised by NTTL, Carbon Tracker, and Finance Watch.
