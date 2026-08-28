@@ -33,4 +33,8 @@ RUN poetry config virtualenvs.create false \
 EXPOSE 4141
 
 # Launch Kedro Viz
-ENTRYPOINT ["kedro", "viz", "--host", "0.0.0.0", "--port", "4141", "--no-browser"]
+# NOTE: the `run` subcommand is required. `kedro viz` (bare) only works with
+# zero arguments in kedro-viz >=11; passing options without `run` makes Click
+# reject `--host` as an unknown group option, so the container exits at startup
+# and never binds to $PORT (Cloud Run health check then times out).
+ENTRYPOINT ["kedro", "viz", "run", "--host", "0.0.0.0", "--port", "4141", "--no-browser"]
