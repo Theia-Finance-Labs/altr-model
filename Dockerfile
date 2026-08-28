@@ -32,5 +32,8 @@ RUN poetry config virtualenvs.create false \
 # Expose Kedro Viz port
 EXPOSE 4141
 
-# Launch Kedro Viz
-ENTRYPOINT ["kedro", "viz", "--host", "0.0.0.0", "--port", "4141", "--no-browser"]
+# Launch Kedro Viz in --lite mode so startup does not import project deps or
+# instantiate ibis/BigQuery TableDatasets from the catalog. Without --lite,
+# catalog instantiation blocks the Cloud Run PORT=4141 startup probe and the
+# revision is killed before it can bind.
+ENTRYPOINT ["kedro", "viz", "run", "--lite", "--host", "0.0.0.0", "--port", "4141", "--no-browser"]
