@@ -32,5 +32,7 @@ RUN poetry config virtualenvs.create false \
 # Expose Kedro Viz port
 EXPOSE 4141
 
-# Launch Kedro Viz
-ENTRYPOINT ["kedro", "viz", "--host", "0.0.0.0", "--port", "4141", "--no-browser"]
+# Launch Kedro Viz in --lite mode so startup does not require importing project
+# dependencies or instantiating catalog datasets (BigQuery/ibis resources are
+# not available inside the Cloud Run container).
+ENTRYPOINT ["kedro", "viz", "run", "--lite", "--host", "0.0.0.0", "--port", "4141", "--no-browser"]
