@@ -781,10 +781,16 @@ def main(
         scenario_csv_path = temp_scenarios_dir / f"{safe_provider}_scenarios.csv"
 
         try:
-            if scenario_csv_path.exists() and scenario_csv_path.stat().st_size > 0:
-                # Reuse cached extract (same manifest pair) — keeps inputs
-                # byte-identical with earlier batches and tolerates a
-                # missing/empty AR6 source file.
+            cache_ok = scenario_csv_path.exists() and scenario_csv_path.stat().st_size > 0
+            # A cached extract from a DIFFERENT AR6 source must not be reused:
+            # the cache key is the manifest pair only, so without this the runner
+            # silently ignores --ar6-path and re-runs the previous vintage.
+            if cache_ok and ar6_path.exists():
+                cache_ok = ar6_path.stat().st_mtime <= scenario_csv_path.stat().st_mtime
+            if cache_ok:
+                # Reuse cached extract (same manifest pair, source no newer) —
+                # keeps inputs byte-identical with earlier batches and tolerates
+                # a missing/empty AR6 source file.
                 with open(scenario_csv_path) as f:
                     row_count = sum(1 for _ in f) - 1
                 log.info(
