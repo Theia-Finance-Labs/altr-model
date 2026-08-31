@@ -489,14 +489,15 @@ def compute_asset_baseline_trajectories(
                 "eff_retirement_year"
             ].clip(lower=int(alignment_year) + 1)
 
-        # Merge retirement info with output DataFrame
-        # Use left merge to keep all rows from out, adding retirement info where available
+        # Merge retirement info into `out` itself: the merge result carries a
+        # fresh RangeIndex while `out` still holds the permuted labels from the
+        # earlier sort, so mask and assignment must live on the same frame.
         # Convert asset_id to string temporarily for consistent merging
-        out_asset_id_original = out["asset_id"]
+        out_asset_id_original = out["asset_id"].to_numpy()
         out["asset_id"] = out["asset_id"].astype(str)
 
         try:
-            out_with_retirement = out.merge(
+            out = out.merge(
                 retirement_df[
                     [
                         "company_id",
@@ -515,21 +516,22 @@ def compute_asset_baseline_trajectories(
                     "asset_id",
                 ],
                 how="left",
+                validate="many_to_one",
                 suffixes=("", "_retirement"),
             )
         finally:
-            # Restore original asset_id dtype
+            # Restore original asset_id dtype (row order is preserved by the merge)
             out["asset_id"] = out_asset_id_original
 
         # Vectorized mask: zero out rows where year >= effective retirement year
-        retirement_mask = out_with_retirement["eff_retirement_year"].notna() & (
-            out_with_retirement["year"] >= out_with_retirement["eff_retirement_year"]
+        retirement_mask = out["eff_retirement_year"].notna() & (
+            out["year"] >= out["eff_retirement_year"]
         )
 
         # Apply retirement zeroing using vectorized assignment
-        # retirement_mask has the same index as out (left merge preserves left index)
         out.loc[retirement_mask, "asset_baseline_trajectory"] = 0.0
         out.loc[retirement_mask, "asset_activity"] = 0.0
+        out.drop(columns=["eff_retirement_year"], inplace=True)
 
     # Clean up helper column
     out.drop(columns=["_company_baseline"], inplace=True)
@@ -895,12 +897,13 @@ def _prop_scale_decreasing_fast(
     logger=None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Proportional-scaling for decreasing techs (fast), with retirement-compensation uplift:
+    Proportional-scaling for decreasing techs (fast), with retirement applied once:
       - Shares fixed at shock-year (w). AFTER[t] = w * C_adj[t] for t >= shock_year.
-      - If an asset retires at year t (> alignment_year), we *pre-uplift* C_adj[t+1..]
-        by (freed_t / remaining_years), where freed_t ≈ w_retiring * C_adj[t].
-      - We still zero retired assets afterward (no redistribution semantics unchanged).
-      - Returns (asset_level_df, company_corrections_df) where correction = C_adj - C_base.
+      - If an asset retires at year t (> alignment_year), it is zeroed from t onwards
+        AFTER allocation; its capacity is lost, never redistributed. C_adj is not
+        pre-reduced as well, which would charge the retired share twice.
+      - Returns (asset_level_df, company_corrections_df) where the adjusted company
+        trajectory is the post-retirement asset total per year.
     """
     # Expect melted input; filter to latesudden
     if "trajectory_type" in lsc.columns:
@@ -1019,32 +1022,9 @@ def _prop_scale_decreasing_fast(
         S = float(numer.sum())
         w = (numer / S) if S > 0.0 else np.zeros(A, dtype=np.float64)
 
-        # NEW: Reduce C_adj when assets retire (instead of redistributing capacity)
-        # When an asset retires, we subtract its proportional share from C_adj for future years
-        # This ensures the company total decreases by the retired asset's capacity
-        if apply_retirement and ret_map_by_key:
-            raw_ret = ret_map_by_key.get(asset_key, {})
-            if raw_ret:
-                eff_idx_by_asset: Dict[int, int] = {}
-                for j, aid in enumerate(asset_ids):
-                    yr = raw_ret.get(str(aid))
-                    if yr is None or pd.isna(yr):
-                        continue
-                    eff = int(yr)
-                    if alignment_year is not None:
-                        eff = max(eff, int(alignment_year) + 1)
-                    hit = np.where(years == eff)[0]
-                    if hit.size > 0:
-                        eff_idx_by_asset[j] = int(hit[0])
-
-                # Reduce C_adj from retirement year onwards by the retiring asset's share
-                for t in range(0, len(years)):
-                    retiring_js = [j for j, ti in eff_idx_by_asset.items() if ti == t]
-                    if not retiring_js:
-                        continue
-                    # Subtract the retiring assets' proportional share from this year onwards
-                    freed_t = float(np.sum(w[retiring_js]) * C_adj[t])
-                    C_adj[t:] = C_adj[t:] - freed_t
+        # Retirement is applied ONCE, by zeroing retired assets after allocation
+        # (below). C_adj must stay at C_base here: pre-reducing it by the retiring
+        # share as well would leave the survivors carrying (1 - r)^2 * C.
 
         # Build BEFORE/AFTER (no retirement applied yet)
         T = years.shape[0]
@@ -1149,7 +1129,14 @@ def _prop_scale_decreasing_fast(
         )
         adj_df = base_df.copy()
         adj_df["trajectory_type"] = "latesudden_adjusted"
-        adj_df["company_trajectory"] = C_adj
+        # Adjusted company path: the original series pre-shock (so the
+        # asset-vs-company residual diagnostic stays informative there),
+        # spliced to the capacity actually held by the assets from the shock
+        # year on, so capacity lost to retirement shows up at company level.
+        adjusted_traj = C_base.copy()
+        if t0 is not None:
+            adjusted_traj[t0:] = after_mat[t0:, :].sum(axis=1)
+        adj_df["company_trajectory"] = adjusted_traj
         corr_parts.append(pd.concat([base_df, adj_df], ignore_index=True))
 
     assets_df = pd.concat(out_parts, ignore_index=True)
@@ -1680,7 +1667,8 @@ def create_frozen_capacity_at_retirement(
         "capacity_after_shock"
     ]
 
-    # Keep only the columns we need for the lookup
+    # Keep only the columns we need for the lookup (retirement_year is already
+    # merged in above - keep it instead of re-looking it up per asset)
     retirement_capacity = retirement_capacity[
         [
             "asset_id",
@@ -1688,6 +1676,7 @@ def create_frozen_capacity_at_retirement(
             "scenario_geography",
             "sector",
             "technology",
+            "retirement_year",
             "frozen_capacity_at_retirement",
         ]
     ].drop_duplicates()
@@ -1695,38 +1684,25 @@ def create_frozen_capacity_at_retirement(
     # Get all unique years from the asset data to extend through
     all_years = sorted(assets["year"].unique())
 
-    # Create a complete timeline for each retiring asset
-    frozen_records = []
-    for _, row in retirement_capacity.iterrows():
-        asset_retirement_year = assets_retirement_dates[
-            (assets_retirement_dates["asset_id"] == row["asset_id"])
-            & (assets_retirement_dates["company_id"] == row["company_id"])
-            & (
-                assets_retirement_dates["scenario_geography"]
-                == row["scenario_geography"]
-            )
-            & (assets_retirement_dates["sector"] == row["sector"])
-            & (assets_retirement_dates["technology"] == row["technology"])
-        ]["retirement_year"].iloc[0]
+    # Complete timeline per retiring asset: cross-join years, keep year >= retirement
+    frozen_capacity_df = retirement_capacity.merge(
+        pd.DataFrame({"year": all_years}), how="cross"
+    )
+    frozen_capacity_df = frozen_capacity_df[
+        frozen_capacity_df["year"] >= frozen_capacity_df["retirement_year"]
+    ][
+        [
+            "asset_id",
+            "company_id",
+            "scenario_geography",
+            "sector",
+            "technology",
+            "year",
+            "frozen_capacity_at_retirement",
+        ]
+    ]
 
-        # Create rows for retirement year and all subsequent years
-        for year in all_years:
-            if year >= asset_retirement_year:
-                frozen_records.append(
-                    {
-                        "asset_id": row["asset_id"],
-                        "company_id": row["company_id"],
-                        "scenario_geography": row["scenario_geography"],
-                        "sector": row["sector"],
-                        "technology": row["technology"],
-                        "year": year,
-                        "frozen_capacity_at_retirement": row[
-                            "frozen_capacity_at_retirement"
-                        ],
-                    }
-                )
-
-    if not frozen_records:
+    if frozen_capacity_df.empty:
         logger.warning("No frozen capacity records created - returning empty dataframe")
         return pd.DataFrame(
             columns=[
@@ -1739,8 +1715,6 @@ def create_frozen_capacity_at_retirement(
                 "frozen_capacity_at_retirement",
             ]
         )
-
-    frozen_capacity_df = pd.DataFrame(frozen_records)
 
     # Sort for consistency
     frozen_capacity_df = frozen_capacity_df.sort_values(
