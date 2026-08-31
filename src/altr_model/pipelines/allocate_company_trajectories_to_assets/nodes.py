@@ -58,10 +58,20 @@ def extend_asset_panel_and_attach_retirement(
         "scenario_end_year",
     ]
     extended = extended.sort_values(group_columns + ["year"])
+    # Extension rows leave carried bool columns as object (bool + NaN); nullable
+    # dtypes keep ffill/bfill from object-downcasting (FutureWarning, pandas >=2.2).
+    object_columns = [c for c in carried_columns if extended[c].dtype == object]
+    for column in object_columns:
+        extended[column] = extended[column].convert_dtypes()
     for column in carried_columns:
         extended[column] = extended.groupby(group_columns, sort=False)[
             column
         ].transform(lambda values: values.ffill().bfill())
+    for column in object_columns:
+        if extended[column].notna().all():
+            extended[column] = extended[column].astype(
+                asset_forecast_panel[column].dtype
+            )
 
     lifetime_table = (
         extended[["sector", "technology", "asset_lifetime_years"]]
