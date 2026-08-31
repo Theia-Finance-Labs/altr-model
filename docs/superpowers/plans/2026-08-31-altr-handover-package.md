@@ -65,7 +65,7 @@ Expected: `0.19.12`
 
 **Interfaces:**
 - Consumes: main tree `data/05_model_input/{downloaded_assets.csv,downloaded_companies.csv}` and the scenarios CSV named by `conf/base/catalog.yml` `downloaded_scenarios.filepath`.
-- Produces: `tests/fixtures/data/downloaded_assets.csv`, `downloaded_companies.csv`, `downloaded_scenarios.csv` — schema-identical slices; ~5 companies, scenario pair `AR6_REMIND-MAgPIE 2.1-4.2_EN_NPi2020_3000` / `..._EN_NPi2020_500`.
+- Produces: `tests/fixtures/data/downloaded_assets.csv`, `downloaded_companies.csv`, `downloaded_scenarios.csv` — schema-identical slices; ~5 companies, scenario pair `AR6_WITCH 5.0_CO_CurPol` (baseline) / `AR6_WITCH 5.0_CO_2Deg2030` (target) — present in the current working scenarios file (`data/05_model_input/downloaded_scenarios.csv`, WITCH scenarios). Fallback pair if the run rejects it: `CO_BAU` / `CO_2Deg2020`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -100,8 +100,8 @@ def test_fixture_scenarios_contain_both_pair_members():
     df = pd.read_csv(DATA / "downloaded_scenarios.csv")
     col = "scenario" if "scenario" in df.columns else "scenario_name"
     names = set(df[col].unique())
-    assert any("EN_NPi2020_3000" in n for n in names)
-    assert any("EN_NPi2020_500" in n for n in names)
+    assert any("CO_CurPol" in n or "CO_BAU" in n for n in names)
+    assert any("CO_2Deg2030" in n or "CO_2Deg2020" in n for n in names)
 
 def test_fixture_companies_have_assets():
     comp = pd.read_csv(DATA / "downloaded_companies.csv")
@@ -132,7 +132,7 @@ import pandas as pd
 
 HERE = Path(__file__).parent
 OUT = HERE / "data"
-SCENARIO_SUBSTRINGS = ("EN_NPi2020_3000", "EN_NPi2020_500")
+SCENARIO_SUBSTRINGS = ("CO_CurPol", "CO_2Deg2030", "CO_BAU", "CO_2Deg2020")
 N_COMPANIES = 5
 
 
@@ -218,8 +218,8 @@ Then enumerate every OUTPUT dataset in `conf/base/catalog.yml` that has a `filep
 - [ ] **Step 2: Write fixture parameters** — `conf/fixture/parameters_inputs_processing.yml`:
 
 ```yaml
-baseline_scenario: "AR6_REMIND-MAgPIE 2.1-4.2_EN_NPi2020_3000"
-target_scenario: "AR6_REMIND-MAgPIE 2.1-4.2_EN_NPi2020_500"
+baseline_scenario: "AR6_WITCH 5.0_CO_CurPol"
+target_scenario: "AR6_WITCH 5.0_CO_2Deg2030"
 company_ids: []   # slice already filtered
 ```
 
