@@ -37,6 +37,12 @@ markdown_extensions:
   - def_list
   - md_in_html
   - pymdownx.details
+  # Mermaid diagrams: ```mermaid fences render as SVG here and on GitHub.
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - toc:
       permalink: true
 
@@ -54,6 +60,6 @@ nav:
       - "Stage 6 — earnings_model": pipelines/earnings_model.md
       - "Stage 7 — valuation_model": pipelines/valuation_model.md
       - "Stage 8 — reporting": pipelines/reporting.md
-  # Architecture / data-flow diagram slots in here.
+  - Architecture: architecture.md
   - Scenario catalog: scenario_catalog.md
   - Troubleshooting: troubleshooting.md
