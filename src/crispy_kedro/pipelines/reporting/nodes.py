@@ -1261,13 +1261,28 @@ def build_reporting_views(
     # 1. Asset explainability view (per asset-year)
     logger.info("Building asset explainability view...")
 
+    # Assets can be co-owned: the same asset_id appears once per owning company.
+    # asset_npv is keyed by the full ownership key (see calculate_npv_per_asset
+    # group_keys), so merging/grouping on asset_id alone fans rows out and mixes
+    # owners' cash flows.
+    owner_keys = [
+        "asset_id",
+        "company_id",
+        "scenario_geography",
+        "sector",
+        "technology",
+    ]
+
     # Merge earnings with NPV data to get discount rates
     asset_explain = asset_earnings_validated.query(
         "trajectory_type == 'latesudden'"
     ).merge(
-        asset_npv_validated[["asset_id", "latesudden_discount_rate", "latesudden_npv"]],
-        on="asset_id",
+        asset_npv_validated[
+            [*owner_keys, "latesudden_discount_rate", "latesudden_npv"]
+        ],
+        on=owner_keys,
         how="left",
+        validate="many_to_one",
     )
 
     # Calculate discount factors and present values per year
@@ -1275,8 +1290,11 @@ def build_reporting_views(
     # RFC: With taxes enabled, add PV_Depreciation and PV_TaxShield components
     base_year = asset_explain["year"].min()
     asset_explain["years_from_base"] = asset_explain["year"] - base_year
+    # calculate_npv_per_asset pivots to wide, which yields object-dtype columns;
+    # coerce (raising on genuine non-numerics) so the PV columns stay float and
+    # can be aggregated with vectorized groupby ops.
     asset_explain["discount_factor"] = (
-        1 + asset_explain["latesudden_discount_rate"]
+        1 + pd.to_numeric(asset_explain["latesudden_discount_rate"])
     ) ** (-asset_explain["years_from_base"])
     asset_explain["PV_FCFF"] = asset_explain["FCFF"] * asset_explain["discount_factor"]
     asset_explain["PV_EBITDA"] = (
@@ -1289,37 +1307,27 @@ def build_reporting_views(
         asset_explain["carbon_cost_net"] * asset_explain["discount_factor"]
     )
 
-    # Calculate cumulative discounted sums per asset
+    # Calculate cumulative discounted sums per asset-owner
     logger.info("Calculating cumulative present values for all assets...")
-    asset_explain = asset_explain.sort_values(["asset_id", "year"])
-    total_assets = len(asset_explain["asset_id"].unique())
+    asset_explain = asset_explain.sort_values([*owner_keys, "year"])
+    asset_explain[
+        ["cum_PV_EBITDA", "cum_PV_CapEx", "cum_PV_Carbon", "cum_PV_FCFF"]
+    ] = asset_explain.groupby(owner_keys, dropna=False)[
+        ["PV_EBITDA", "PV_CapEx", "PV_Carbon", "PV_FCFF"]
+    ].cumsum()
 
-    for i, asset_id in enumerate(asset_explain["asset_id"].unique()):
-        if i % 100 == 0:  # Log progress every 100 assets
-            logger.info(
-                f"Cumulative PV calculation progress: {i}/{total_assets} assets processed"
-            )
-
-        asset_mask = asset_explain["asset_id"] == asset_id
-        asset_explain.loc[asset_mask, "cum_PV_EBITDA"] = asset_explain.loc[
-            asset_mask, "PV_EBITDA"
-        ].cumsum()
-        asset_explain.loc[asset_mask, "cum_PV_CapEx"] = asset_explain.loc[
-            asset_mask, "PV_CapEx"
-        ].cumsum()
-        asset_explain.loc[asset_mask, "cum_PV_Carbon"] = asset_explain.loc[
-            asset_mask, "PV_Carbon"
-        ].cumsum()
-        asset_explain.loc[asset_mask, "cum_PV_FCFF"] = asset_explain.loc[
-            asset_mask, "PV_FCFF"
-        ].cumsum()
-
-    # 2. Asset NPV decomposition (per asset)
+    # 2. Asset NPV decomposition (per asset-owner)
     logger.info("Building asset NPV decomposition...")
 
-    # Calculate PV components by asset
+    # Calculate PV components by asset-owner
     pv_components = (
-        asset_explain.groupby("asset_id")
+        asset_explain.assign(
+            PV_Revenue=asset_explain["revenue"] * asset_explain["discount_factor"],
+            PV_VarCost=asset_explain["var_cost"] * asset_explain["discount_factor"],
+            PV_FixedCost=asset_explain["fixed_cost"]
+            * asset_explain["discount_factor"],
+        )
+        .groupby(owner_keys, dropna=False, as_index=False)
         .agg(
             {
                 "PV_EBITDA": "sum",
@@ -1329,29 +1337,12 @@ def build_reporting_views(
                 "revenue": "sum",
                 "var_cost": "sum",
                 "fixed_cost": "sum",
+                "PV_Revenue": "sum",
+                "PV_VarCost": "sum",
+                "PV_FixedCost": "sum",
             }
         )
-        .reset_index()
     )
-
-    # Calculate PV of revenue components
-    logger.info("Calculating PV of revenue components for all assets...")
-    for i, asset_id in enumerate(pv_components["asset_id"]):
-        if i % 100 == 0:  # Log progress every 100 assets
-            logger.info(
-                f"Revenue PV calculation progress: {i}/{len(pv_components)} assets processed"
-            )
-
-        asset_data = asset_explain[asset_explain["asset_id"] == asset_id]
-        pv_components.loc[pv_components["asset_id"] == asset_id, "PV_Revenue"] = (
-            asset_data["revenue"] * asset_data["discount_factor"]
-        ).sum()
-        pv_components.loc[pv_components["asset_id"] == asset_id, "PV_VarCost"] = (
-            asset_data["var_cost"] * asset_data["discount_factor"]
-        ).sum()
-        pv_components.loc[pv_components["asset_id"] == asset_id, "PV_FixedCost"] = (
-            asset_data["fixed_cost"] * asset_data["discount_factor"]
-        ).sum()
 
     # Merge with NPV data (support new wide naming)
     # Both latesudden_npv and baseline_npv should always exist
@@ -1367,20 +1358,17 @@ def build_reporting_views(
         if c in asset_npv_validated.columns
     ]
     asset_npv_decomp = pv_components.merge(
-        asset_npv_validated[["asset_id", *npv_cols_available]], on="asset_id"
+        asset_npv_validated[[*owner_keys, *npv_cols_available]],
+        on=owner_keys,
+        validate="one_to_one",
     )
 
     # Define a canonical NPV column equivalent to legacy behavior (latesudden_npv replaces old NPV)
     asset_npv_decomp["NPV"] = asset_npv_decomp["latesudden_npv"]
     asset_npv_decomp["discount_rate"] = asset_npv_decomp["latesudden_discount_rate"]
 
-    # Add asset metadata
-    asset_npv_decomp = asset_npv_decomp.merge(
-        asset_earnings_validated[
-            ["asset_id", "company_id", "scenario_geography", "sector", "technology"]
-        ].drop_duplicates(),
-        on="asset_id",
-    )
+    # Asset metadata (company_id, scenario_geography, sector, technology) already
+    # travels on the ownership key, so no metadata re-merge is needed here.
 
     # Check NPV reconciliation (tax-neutral: NPV = PV_EBITDA - PV_CapEx)
     # RFC: With taxes, reconcile as NPV = PV_EBIT*(1-tax_rate) + PV_Depreciation*tax_rate - PV_CapEx
