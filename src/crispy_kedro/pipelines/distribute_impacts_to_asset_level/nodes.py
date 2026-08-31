@@ -868,7 +868,15 @@ def _stagger_decreasing_fast(
         )
         adj_df = base_df.copy()
         adj_df["trajectory_type"] = "latesudden_adjusted"
-        adj_df["company_trajectory"] = C_adj
+        # Same convention as _prop_scale_decreasing_fast: original series
+        # pre-shock, capacity actually held by the assets from the shock year
+        # on, so retirement losses show up at company level in both modes.
+        adjusted_traj = C_base.copy()
+        post_idx = np.where(years >= int(shock_year))[0]
+        if post_idx.size > 0:
+            t0_adj = int(post_idx[0])
+            adjusted_traj[t0_adj:] = after_mat[t0_adj:, :].sum(axis=1)
+        adj_df["company_trajectory"] = adjusted_traj
         corr_parts.append(pd.concat([base_df, adj_df], ignore_index=True))
 
     assets_df = pd.concat(out_parts, ignore_index=True)

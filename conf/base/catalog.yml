@@ -59,7 +59,7 @@ ar6_carbon_prices:
 # The raw BigQuery scenarios table only has prices/pathways/capacity_factors.
 downloaded_scenarios:
   type: pandas.CSVDataset
-  filepath: downloaded_scenarios_witch_full.csv
+  filepath: data/05_model_input/downloaded_scenarios.csv
 
 downloaded_assets:
   type: pandas.CSVDataset
