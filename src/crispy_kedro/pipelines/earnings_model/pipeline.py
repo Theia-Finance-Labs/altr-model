@@ -3,19 +3,16 @@ Comprehensive earnings model pipeline with 10 nodes implementing
 full financial methodology including synthetic assets and tranche logic.
 """
 
-from kedro.pipeline import node, Pipeline, pipeline
+from kedro.pipeline import Pipeline, node, pipeline
 
-from .nodes import (
-    validate_and_standardize_inputs,
+from .capacity import assemble_asset_panel, compute_flow_based_capex
+from .mcpr import (
+    apply_mcpr_adjustment,
     build_scenario_surfaces,
     compute_scenario_vre_share,
-    apply_mcpr_adjustment,
-    assemble_asset_panel,
-    compute_flow_based_capex,
-    compute_ops_block,
-    compute_fcff,
-    write_asset_earnings_series,
 )
+from .ops import compute_fcff, compute_ops_block, write_asset_earnings_series
+from .validation import validate_and_standardize_inputs
 
 
 def create_pipeline(**kwargs) -> Pipeline:
