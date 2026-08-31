@@ -1,12 +1,19 @@
-"""
-This is a boilerplate pipeline 'inputs_processing'
-generated using Kedro 0.19.12
+"""Scenario, company and asset input processing (stage 1 of the ALTR pipeline).
+
+Turns the three ``downloaded_*`` tables into the model's working inputs: the
+baseline/target scenario pair is filtered out and interpolated to an annual
+grid, its electricity price is scaled for CapEx recovery and its carbon prices
+are injected from the AR6 database; companies are filtered by id and ownership
+type; assets get the CCS suffix, the forecast-horizon cut, a scenario geography
+and their ownership allocation to companies. It also derives the per-technology
+direction (increasing/decreasing) and lifetime used downstream. See the ALTR
+Documentation, input processing section.
 """
 
-import pandas as pd
-from typing import List, Tuple
-import numpy as np
 import logging
+
+import numpy as np
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -141,7 +148,7 @@ def filter_scenarios(
 
 def filter_companies(
     companies_ownership_tree: pd.DataFrame,
-    company_ids: List[str],
+    company_ids: list[str],
     ownership_type: str,
 ) -> pd.DataFrame:
 
@@ -337,7 +344,7 @@ def filter_assets(
 
     # Log how many unique assets we have
     unique_assets = len(filtered_assets_forecasts["asset_id"].unique())
-    print(
+    print(  # noqa: T201 — operator-facing run diagnostic, kept on stdout
         f"Found {unique_assets:,} unique assets after filtering by ownership and time range"
     )
 
@@ -458,7 +465,7 @@ def assign_scenario_geographies_to_assets(
 
         if len(global_geographies) > 0:
             global_geography = global_geographies[0]
-            print(
+            print(  # noqa: T201 — operator-facing run diagnostic, kept on stdout
                 f"Assigning {unassigned_mask.sum()} unassigned assets to global geography: {global_geography}"
             )
             assets_with_geography.loc[unassigned_mask, "scenario_geography"] = (
@@ -559,7 +566,7 @@ def allocate_assets_to_companies(
     if backfill_records:
         backfill_df = pd.DataFrame(backfill_records)
         merged_data = pd.concat([merged_data, backfill_df], ignore_index=True)
-        print(
+        print(  # noqa: T201 — operator-facing run diagnostic, kept on stdout
             f"Backfilled {len(backfill_records)} company-asset-year records with zero capacity"
         )
 
@@ -568,7 +575,7 @@ def allocate_assets_to_companies(
     # selected upstream sums to ~100 per asset-year (see check_ownership_tier in
     # notebooks/prepare_new_inputs.py) -- so divide by 100 to get the fraction.
     max_ownership = merged_data["ownership_percentage"].max()
-    if pd.notna(max_ownership) and max_ownership <= 1.5:
+    if pd.notna(max_ownership) and max_ownership <= 1.5:  # noqa: PLR2004 — 0-1 vs 0-100 scale sentinel
         raise ValueError(
             f"ownership_percentage looks like a 0-1 fraction (max={max_ownership}), "
             "not the expected 0-100 percent scale; dividing by 100 would shrink "
@@ -672,7 +679,7 @@ def interpolate_scenarios_annually(scenarios_pathways: pd.DataFrame) -> pd.DataF
 
     # Group by main identifiers and interpolate within each group
     for _, group_df in scenarios_pathways.groupby(group_cols, dropna=False):
-        group_df = group_df.sort_values("year").copy()
+        group_df = group_df.sort_values("year").copy()  # noqa: PLW2901 — deliberate per-group rebind
 
         # Get the year range for this group
         min_year = int(group_df["year"].min())

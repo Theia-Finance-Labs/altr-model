@@ -7,7 +7,6 @@ regulatory reporting. See the ALTR Documentation, reporting section.
 
 import logging
 from pathlib import Path
-from typing import Dict
 
 import pandas as pd
 
@@ -18,8 +17,8 @@ def export_reporting_tables(
     company_npv_validated: pd.DataFrame,
     view_company_tech: pd.DataFrame,
     view_asset_npv_decomp: pd.DataFrame,
-    reporting_params: Dict,
-) -> Dict[str, pd.DataFrame]:
+    reporting_params: dict,
+) -> dict[str, pd.DataFrame]:
     """
     Node 5: Export compliance-ready tables for regulators and QC.
     """

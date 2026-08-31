@@ -5,11 +5,13 @@ regulator-facing authority pack, and the per-asset financial component
 trajectories built from the DCF outputs. See the ALTR Documentation, valuation
 and reporting sections.
 """
+# ruff: noqa: PLR0912, PLR0915 — long matplotlib routines, kept whole
+# ruff: noqa: PLC0415, PLW2901 — deferred import and loop rebinds left as written
+# ruff: noqa: F841 — unused locals kept; removing them is a code change (see handover notes)
 
 import logging
 import re
 from pathlib import Path
-from typing import Dict
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -23,7 +25,7 @@ logger = logging.getLogger(__name__)
 def plot_earnings_inner_workings(
     view_asset_explain: pd.DataFrame,
     view_asset_npv_decomp: pd.DataFrame,
-    reporting_params: Dict,
+    reporting_params: dict,
 ) -> str:
     """
     Node 3: Plot earnings model inner workings for engineering/explainability.
@@ -275,7 +277,7 @@ def plot_valuation_authority_pack(
     company_npv_validated: pd.DataFrame,
     view_company_tech: pd.DataFrame,
     view_deltas: pd.DataFrame,
-    reporting_params: Dict,
+    reporting_params: dict,
 ) -> str:
     """
     Node 4: Generate authority-ready valuation plots and reports.
@@ -432,7 +434,7 @@ def plot_valuation_authority_pack(
 def plot_asset_financial_trajectories(
     yearly_npv_trajectories: pd.DataFrame,
     asset_level_staggered_shock_melted: pd.DataFrame,
-    reporting_params: Dict,
+    reporting_params: dict,
 ) -> str:
     """
     Plot financial component trajectories for each asset, comparing trajectory types.

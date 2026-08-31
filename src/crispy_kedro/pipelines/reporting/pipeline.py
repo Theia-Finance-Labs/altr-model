@@ -2,7 +2,7 @@
 Comprehensive reporting pipeline for financial model outputs and NPV analysis.
 """
 
-from kedro.pipeline import node, Pipeline, pipeline
+from kedro.pipeline import Pipeline, node, pipeline
 
 from .exports import export_reporting_tables
 from .plots_financials import (

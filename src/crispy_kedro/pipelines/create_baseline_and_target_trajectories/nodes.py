@@ -1,12 +1,17 @@
-"""
-This is a boilerplate pipeline 'create_baseline_and_target_trajectories'
-generated using Kedro 0.19.12
+"""Company baseline and target capacity paths (stage 3 of the ALTR pipeline).
+
+Aggregates the asset forecasts to company-technology level, converts each
+scenario pathway into a Technology Market Share Rate (TMSR) growth factor
+relative to its first year, and applies those factors to every company's
+starting capacity to obtain its baseline and target trajectories. See the ALTR
+Documentation, target-setting section.
 """
 
-import pandas as pd
-import numpy as np
-from typing import Tuple, cast
 import logging
+from typing import cast
+
+import numpy as np
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 

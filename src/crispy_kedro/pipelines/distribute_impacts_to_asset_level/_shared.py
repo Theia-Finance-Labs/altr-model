@@ -4,7 +4,7 @@ Used by both the decreasing- and increasing-technology staggering modules:
 group indexing of the asset panel and the capped reduction allocator that
 spreads a company-level cut across assets without driving any below zero.
 """
-from typing import Dict, Tuple
+# ruff: noqa: PLR2004 — 1e-12 is the float tolerance used throughout this module
 
 import numpy as np
 import pandas as pd
@@ -68,7 +68,7 @@ def _allocate_reduction_with_caps_array(
 # ========= NEW: fast asset indexing & fast emitter =========
 def _index_assets_by_group(
     assets: pd.DataFrame,
-) -> Dict[Tuple[str, str, str, str], pd.DataFrame]:
+) -> dict[tuple[str, str, str, str], pd.DataFrame]:
     GROUP_COLS = ["company_id", "scenario_geography", "sector", "technology"]
     need = GROUP_COLS + ["asset_id", "year", "asset_activity", "asset_age"]
     miss = [c for c in need if c not in assets.columns]

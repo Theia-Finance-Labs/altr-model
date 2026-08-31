@@ -5,7 +5,6 @@ before staggering, concatenates the two asset-level results afterwards, and
 melts the wide asset frame into the long form downstream stages consume.
 """
 import logging
-from typing import List, Tuple
 
 import pandas as pd
 
@@ -14,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 def split_late_sudden_trajectories_by_alignment_type(
     companies_late_sudden_trajectories: pd.DataFrame,
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Return (decreasing_df, increasing_df) filtered to L&S only.
 
     Expects a melted structure with columns including 'trajectory_type' and
@@ -52,7 +51,7 @@ def concatenate_staggered_shock_results(
     increasing_tech_late_sudden_trajectories: pd.DataFrame,  # company-level (increasing)
     decreasing_tech_late_sudden_trajectories_corrected: pd.DataFrame,  # company-level corrections (decreasing)
     original_companies_late_sudden_trajectories: pd.DataFrame,  # company-level original trajectories
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Returns:
       - assets_staggered_late_sudden: concatenated asset-level outputs (dec + inc).
@@ -181,7 +180,7 @@ def melt_asset_staggered_trajectories(
         ("baseline", "asset_baseline_trajectory"),
     ]
 
-    melted_parts: List[pd.DataFrame] = []
+    melted_parts: list[pd.DataFrame] = []
     for ttype, col in value_map:
         sub = df[id_cols].copy()
         sub["trajectory_type"] = ttype

@@ -4,8 +4,8 @@ Scales company baseline trajectories down to individual assets over the full
 horizon, fills missing asset activity, and optionally zeroes retired
 asset-years. Also holds the age-based g-weight core used when staggering.
 """
+# ruff: noqa: PLR0915 — long numeric routine, kept whole to stay behaviour-identical
 import logging
-from typing import Dict, Tuple
 
 import numpy as np
 import pandas as pd
@@ -62,7 +62,7 @@ def _compute_g_weights_array(
 
 def _index_company_by_year(
     df_company: pd.DataFrame,
-) -> Dict[Tuple[str, str, str, str], pd.DataFrame]:
+) -> dict[tuple[str, str, str, str], pd.DataFrame]:
     GROUP_COLS = [
         "company_id",
         "company_name",

@@ -2,13 +2,13 @@
 Valuation model pipeline for converting earnings to NPV using DCF methodology.
 """
 
-from kedro.pipeline import node, Pipeline, pipeline
+from kedro.pipeline import Pipeline, node, pipeline
 
 from .nodes import (
-    compute_yearly_npv_trajectories,
-    calculate_npv_per_asset,
-    aggregate_to_company_technology_npv,
     aggregate_to_company_npv,
+    aggregate_to_company_technology_npv,
+    calculate_npv_per_asset,
+    compute_yearly_npv_trajectories,
 )
 
 

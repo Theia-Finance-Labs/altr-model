@@ -4,8 +4,9 @@ Two modes: proportional scaling with shock-year shares, or age-staggered
 allocation via g-weights with capped reductions. Both emit asset-level
 capacities plus the company-level original/adjusted correction table.
 """
+# ruff: noqa: PLR0912, PLR0913, PLR0915, PLR0917 — long allocation routines, kept whole
+# ruff: noqa: PLR2004 — -1e-12 is the float tolerance used throughout this module
 import logging
-from typing import List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -28,7 +29,7 @@ def _stagger_decreasing_fast(
     g_k: float,
     n_quantiles: int,
     logger=None,
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Vectorized staggered allocation for decreasing technologies, with retirement-compensation:
       - When an asset retires at year t (> alignment_year), the freed capacity at t is
@@ -53,8 +54,8 @@ def _stagger_decreasing_fast(
         logger.info("Indexing assets by group (fast)")
     assets_by_key = _index_assets_by_group(assets_bau)
 
-    out_parts: List[pd.DataFrame] = []
-    corr_parts: List[pd.DataFrame] = []
+    out_parts: list[pd.DataFrame] = []
+    corr_parts: list[pd.DataFrame] = []
 
     if logger:
         logger.info(
@@ -300,7 +301,7 @@ def _prop_scale_decreasing_fast(
     alignment_year: int = None,
     apply_retirement: bool = False,
     logger=None,
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Proportional-scaling for decreasing techs (fast), with retirement applied once:
       - Shares fixed at shock-year (w). AFTER[t] = w * C_adj[t] for t >= shock_year.
@@ -330,8 +331,8 @@ def _prop_scale_decreasing_fast(
         else {}
     )
 
-    out_parts: List[pd.DataFrame] = []
-    corr_parts: List[pd.DataFrame] = []
+    out_parts: list[pd.DataFrame] = []
+    corr_parts: list[pd.DataFrame] = []
 
     for key, comp_years in tqdm(
         comp_by_key.items(), desc="Prop-scale decreasing", unit="company"
@@ -576,7 +577,7 @@ def stagger_decreasing_technologies(
     apply_decreasing_staggered_shock: bool,
     g_k: float = 6.0,
     n_quantiles: int = 3,
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Decreasing techs.
 

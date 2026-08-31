@@ -1,11 +1,16 @@
-"""
-This is a boilerplate pipeline 'inputs_postproc'
-generated using Kedro 0.19.12
+"""Post-processing of the processed inputs (stage 2 of the ALTR pipeline).
+
+Takes the ownership-allocated asset forecasts from stage 1 and prepares them for
+the trajectory stages: optionally collapsing asset-level rows to company level,
+extending each company's forecast to the full scenario horizon, and deriving the
+retirement year of every asset from its age and technology lifetime. See the
+ALTR Documentation, input processing section.
 """
 
-import pandas as pd
-import numpy as np
 import logging
+
+import numpy as np
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 

@@ -5,6 +5,9 @@ against the post-shock asset forecasts and visualises the per-year shock
 residuals left by the staggered allocation. See the ALTR Documentation, shock
 distribution section.
 """
+# ruff: noqa: PLR0912, PLR0913, PLR0915, PLR0917 — long matplotlib routine, kept whole
+# ruff: noqa: PLC0415, PLW2901, PLR2004 — deferred imports, loop rebinds and plot constants
+# ruff: noqa: T201 — operator-facing plot diagnostics, kept on stdout
 
 import os
 import re
@@ -449,7 +452,7 @@ def plot_staggered_shock(
                     ax1.set_ylim(bottom=bottom, top=top)
 
                     # Add detailed log scale graduations
-                    from matplotlib.ticker import LogLocator, LogFormatter
+                    from matplotlib.ticker import LogFormatter, LogLocator
 
                     major_locator = LogLocator(base=10, numticks=20)
                     ax1.yaxis.set_major_locator(major_locator)

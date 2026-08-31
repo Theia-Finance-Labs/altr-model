@@ -5,7 +5,6 @@ permanently phased out by the shock, and freezes the last active capacity of a
 retiring asset for downstream reference (ALTR methodology: retirement).
 """
 import logging
-from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -54,7 +53,7 @@ def flag_phased_out_assets_as_retired(
     key_cols = GROUP_COLS + ["asset_id"]
 
     # Collect rows (by index) to set as retirement
-    to_mark_idx: List[int] = []
+    to_mark_idx: list[int] = []
 
     for _, g in real.groupby(key_cols, sort=False):
         g_sorted = g.sort_values("year")
@@ -99,7 +98,7 @@ def flag_phased_out_assets_as_retired(
 
 def _build_retirement_map(
     assets_retirement_dates: pd.DataFrame,
-) -> Dict[Tuple[str, str, str, str], Dict[str, int]]:
+) -> dict[tuple[str, str, str, str], dict[str, int]]:
     """
     Returns: { (cid, geo, sector, tech): {asset_id: retirement_year_int, ...}, ... }
     Full retirement: capacity must be 0 for y >= retirement_year.
@@ -112,7 +111,7 @@ def _build_retirement_map(
     if miss:
         raise ValueError(f"assets_retirement_dates missing columns: {miss}")
 
-    ret_map: Dict[Tuple[str, str, str, str], Dict[str, int]] = {}
+    ret_map: dict[tuple[str, str, str, str], dict[str, int]] = {}
     tmp = assets_retirement_dates[need_cols].copy()
 
     for key, sub in tmp.groupby(GROUP_COLS, sort=False):

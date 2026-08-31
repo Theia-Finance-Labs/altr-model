@@ -4,8 +4,8 @@ Real assets pass through on their BAU path; a synthetic build-out asset per
 company/technology tops the group up to the company late-and-sudden series
 from the shock year onwards.
 """
+# ruff: noqa: PLR0912, PLR0915 — long allocation routine, kept whole
 import logging
-from typing import List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -20,7 +20,7 @@ def stagger_increasing_technologies(
     late_sudden_trajectories: pd.DataFrame,
     assets_with_baseline_trajectory: pd.DataFrame,
     shock_year: int,
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Increasing techs:
       - Real assets: BAU passthrough (alloc=0, before=after=BAU).
@@ -81,8 +81,8 @@ def stagger_increasing_technologies(
         # Pre-check for baseline column
         has_baseline = "asset_baseline_trajectory" in assets_bau.columns
 
-        asset_parts: List[pd.DataFrame] = []
-        company_parts: List[pd.DataFrame] = []
+        asset_parts: list[pd.DataFrame] = []
+        company_parts: list[pd.DataFrame] = []
 
         for key, comp_years in tqdm(
             comp_by_key.items(), desc="Stagger increasing", unit="company"

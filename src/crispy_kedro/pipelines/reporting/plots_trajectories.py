@@ -5,6 +5,10 @@ company-technology-geography, overlaying the late & sudden, baseline and target
 trajectories with the alignment phase spans described in the ALTR
 Documentation, late & sudden section.
 """
+# ruff: noqa: PLR0912, PLR0915 — long matplotlib routine, kept whole
+# ruff: noqa: PLC0415 — deferred import left as written
+# ruff: noqa: T201 — operator-facing plot diagnostics, kept on stdout
+# ruff: noqa: F841 — unused locals kept; removing them is a code change (see handover notes)
 
 import re
 from pathlib import Path

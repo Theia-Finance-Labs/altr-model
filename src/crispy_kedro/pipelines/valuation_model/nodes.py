@@ -1,21 +1,28 @@
-"""
-Valuation model pipeline nodes for converting earnings to NPV using DCF methodology.
+"""Discounted-cash-flow valuation (stage 7 of the ALTR pipeline).
+
+Converts the per-asset FCFF series from the earnings model into present values:
+yearly discounted trajectories plus a terminal value (perpetuity, finite
+annuity or stranding-aware, per the ``dcf`` parameter block), then the asset
+NPV under each trajectory type and its aggregation to company-technology and
+company level. See the ALTR Documentation, valuation section; the NPV sign
+conventions are spelled out in the handover user guide.
 """
 
-import pandas as pd
-import numpy as np
 import logging
+
+import numpy as np
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
 
-def compute_yearly_npv_trajectories(
+def compute_yearly_npv_trajectories(  # noqa: PLR0912, PLR0913, PLR0915, PLR0917
     asset_earnings: pd.DataFrame,
     discount_rate_baseline: float = 0.07,
     discount_rate_shock: float = 0.08,
     terminal_growth_rate: float = 0.02,
-    terminal_growth_rate_brown: float = None,
-    terminal_growth_rate_green: float = None,
+    terminal_growth_rate_brown: float | None = None,
+    terminal_growth_rate_green: float | None = None,
     terminal_method: str = "perpetuity",
     terminal_normalization_window: int = 1,
     brown_discount_spread: float = 0.0,
@@ -407,7 +414,7 @@ def compute_yearly_npv_trajectories(
     return yearly_df
 
 
-def calculate_npv_per_asset(
+def calculate_npv_per_asset(  # noqa: PLR0912
     yearly_npv_trajectories: pd.DataFrame,
 ) -> pd.DataFrame:
     """
@@ -486,7 +493,7 @@ def calculate_npv_per_asset(
     npv_wide.columns = npv_wide.columns.to_flat_index()
     rename_map = {}
     for col in npv_wide.columns:
-        if isinstance(col, tuple) and len(col) == 2:
+        if isinstance(col, tuple) and len(col) == 2:  # noqa: PLR2004 — (value, trajectory_type) pair
             value_name, trajectory_type = col
             # Handle single-level columns (they become ('column_name', ''))
             if trajectory_type == "":
@@ -502,7 +509,7 @@ def calculate_npv_per_asset(
                     rename_map[col] = "baseline_discount_rate"
                 elif trajectory_type == "latesudden":
                     rename_map[col] = "latesudden_discount_rate"
-            else:
+            else:  # noqa: PLR5501 — comment documents the branch; left as-is
                 # Handle financial components
                 if trajectory_type == "baseline":
                     rename_map[col] = f"baseline_{value_name}"

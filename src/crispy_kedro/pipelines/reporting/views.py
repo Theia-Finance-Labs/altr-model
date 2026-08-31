@@ -8,7 +8,6 @@ Documentation, reporting section.
 """
 
 import logging
-from typing import Dict
 
 import numpy as np
 import pandas as pd
@@ -20,8 +19,8 @@ def reporting_validate_inputs(
     asset_earnings: pd.DataFrame,
     asset_npv: pd.DataFrame,
     company_npv: pd.DataFrame,
-    reporting_params: Dict,
-) -> Dict[str, pd.DataFrame]:
+    reporting_params: dict,
+) -> dict[str, pd.DataFrame]:
     """
     Node 1: Validate inputs and check basis alignment.
 
@@ -140,8 +139,8 @@ def build_reporting_views(
     asset_earnings_validated: pd.DataFrame,
     asset_npv_validated: pd.DataFrame,
     company_npv_validated: pd.DataFrame,
-    reporting_params: Dict,
-) -> Dict[str, pd.DataFrame]:
+    reporting_params: dict,
+) -> dict[str, pd.DataFrame]:
     """
     Node 2: Pre-compute tidy tables used by both plotting nodes.
 
@@ -345,7 +344,7 @@ def build_reporting_views(
 def reporting_qc_summary(
     view_asset_npv_decomp: pd.DataFrame,
     view_asset_explain: pd.DataFrame,
-    reporting_params: Dict,
+    reporting_params: dict,
 ) -> pd.DataFrame:
     """
     Node 7: Quality control checks and reporting diagnostics.

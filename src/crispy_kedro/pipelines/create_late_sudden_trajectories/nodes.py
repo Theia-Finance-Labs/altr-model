@@ -1,17 +1,21 @@
-"""
-This is a boilerplate pipeline 'create_late_sudden_trajectories'
-generated using Kedro 0.19.12
+"""Late & sudden shock trajectories (stage 4 of the ALTR pipeline).
+
+Classifies every company-technology pathway as aligned or misaligned with the
+target scenario, then builds its late & sudden trajectory: production follows
+the baseline until ``shock_year``, after which it bends steeply so that the
+cumulative target is still met by ``alignment_year``. The four company buckets
+(misaligned/aligned x high/low carbon) each get their own shock shape before
+being concatenated. See the ALTR Documentation, late & sudden section.
 """
 
-import pandas as pd
-from typing import Tuple, Union
 import numpy as np
+import pandas as pd
 
 
 def determine_companies_technologies_alignment(
     companies_trajectories: pd.DataFrame,
     increasing_or_decreasing_techs: pd.DataFrame,
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     Decide whether each company-technology pathway is aligned with the target
     scenario and split results into four buckets.
@@ -498,7 +502,9 @@ def late_sudden_aligned_high_carbon_companies(
     return result
 
 
-def _baseline_shock_anchor(baseline, years, shock_year):
+def _baseline_shock_anchor(
+    baseline: np.ndarray, years: np.ndarray, shock_year: int
+) -> float:
     """Baseline value at the last grid year <= shock_year-1.
 
     Falls back to the first grid year when the scenario grid starts at/after
@@ -514,7 +520,7 @@ def _baseline_shock_anchor(baseline, years, shock_year):
 def late_sudden_aligned_low_carbon_companies(
     aligned_low_carbon_companies_trajectories: pd.DataFrame,
     shock_year: int,
-    alignment_year: Union[int, None] = None,  # kept only for a uniform signature
+    alignment_year: int | None = None,  # kept only for a uniform signature
 ) -> pd.DataFrame:
     """
     Late-and-sudden pathway for *aligned low-carbon* company-technologies.

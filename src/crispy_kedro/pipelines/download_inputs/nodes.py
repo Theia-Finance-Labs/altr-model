@@ -1,10 +1,13 @@
-"""
-This is a boilerplate pipeline 'download_inputs'
-generated using Kedro 0.19.12
+"""BigQuery ingestion (internal-only; not part of the eight ALTR stages).
+
+Each node executes an ``ibis`` table expression bound by the catalog to a
+BigQuery table and materialises it as the ``downloaded_*`` CSV inputs that
+stage 1 (``inputs_processing``) consumes. External runs skip this pipeline and
+produce the same three files with ``scripts/prepare_inputs.py`` instead.
 """
 
-import pandas as pd
 import ibis
+import pandas as pd
 
 
 def download_scenarios(scenarios: ibis.expr.types.Table) -> pd.DataFrame:
