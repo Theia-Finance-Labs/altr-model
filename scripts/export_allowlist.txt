@@ -1,0 +1,25 @@
+# scripts/export_allowlist.txt — everything shipped to altr-model; nothing else leaves.
+#
+# One path per line, relative to the repository root. A directory entry ships
+# the whole subtree; a file entry ships that one file. Anything not listed here
+# never reaches the export. Trailing `# ...` is a comment.
+#
+# Exclusions applied on top of these entries live in build_export.py
+# (SKIP_RELATIVE / SKIP_DIR_NAMES) so the reasons stay next to the code that
+# rewrites the affected files.
+
+src/crispy_kedro/            # minus pipelines/download_inputs — handled in code
+conf/base/                   # minus parameters_download_inputs.yml — handled in code
+conf/fixture/
+conf/local/.gitkeep
+docs/handover/
+mkdocs.yml
+notebooks/walkthrough.ipynb
+tests/                       # minus pipelines/download_inputs — handled in code
+scripts/prepare_inputs.py
+scripts/gen_param_docs.py
+pyproject.toml
+poetry.lock
+LICENSE
+Dockerfile
+.gitignore
