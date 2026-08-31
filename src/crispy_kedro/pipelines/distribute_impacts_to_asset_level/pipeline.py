@@ -4,16 +4,18 @@ generated using Kedro 0.19.12
 """
 
 from kedro.pipeline import node, Pipeline, pipeline  # noqa
-from .nodes import (
-    compute_asset_baseline_trajectories,
-    split_late_sudden_trajectories_by_alignment_type,
-    stagger_decreasing_technologies,
-    stagger_increasing_technologies,
+from .assembly import (
     concatenate_staggered_shock_results,
-    flag_phased_out_assets_as_retired,
     melt_asset_staggered_trajectories,
-    create_frozen_capacity_at_retirement,
+    split_late_sudden_trajectories_by_alignment_type,
 )
+from .baseline import compute_asset_baseline_trajectories
+from .retirement import (
+    create_frozen_capacity_at_retirement,
+    flag_phased_out_assets_as_retired,
+)
+from .staggering_decrease import stagger_decreasing_technologies
+from .staggering_increase import stagger_increasing_technologies
 
 
 def create_pipeline(**kwargs) -> Pipeline:
