@@ -4,6 +4,8 @@
 # Documentation for this file format can be found in "Parameters"
 # Link: https://docs.kedro.org/en/0.19.12/configuration/parameters.html
 
+# --- Advanced: asset-level distribution knobs. User-facing run configuration
+# lives in conf/base/parameters.yml.
 
 apply_retirement_baseline: True  # Apply retirement to baseline trajectories
 apply_retirement_shock: True     # Apply retirement to shock (late sudden) trajectories

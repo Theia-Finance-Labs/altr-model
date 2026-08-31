@@ -1,5 +1,8 @@
 # Earnings model parameters
-market_passthrough: 0  # 0 => firm absorbs all differential carbon cost (conservative/stress test)
+#
+# --- Advanced: methodology knobs for the earnings stage. The user-facing keys
+# (enable_mcpr, mcpr_mode, market_passthrough, price_ramp, include_growth_capex,
+# include_replacement_capex, include_decom_costs) live in conf/base/parameters.yml.
 
 # ==================================================================================
 # MCPR (Marginal Cost Price Ratio) Adjustment
@@ -15,13 +18,10 @@ market_passthrough: 0  # 0 => firm absorbs all differential carbon cost (conserv
 #   - Ueckerdt et al. (2013), "System LCOE," Energy 63:61-75
 #   - Borenstein, Bushnell & Wolak (2000), J. Industrial Economics 48(2):197-223
 # ==================================================================================
-enable_mcpr: True                    # Enable/disable the MCPR price adjustment
+# The on/off switch (enable_mcpr) and the mode selector (mcpr_mode) are in
+# conf/base/parameters.yml; the knobs below tune the mechanism itself.
 mcpr_method: "marginal_technology"   # Method: "marginal_technology" (max price among dispatchables)
 mcpr_markup_factor: 1.0              # Additional markup over marginal cost (1.0 = no extra markup)
-mcpr_mode: "auto"                    # "auto" | "carbon_explicit" | "merit_order_decline"
-                                     #   auto: selects mode based on carbon price coverage in scenario data
-                                     #   carbon_explicit: forces full_ef carbon cost (for IAMs with carbon prices)
-                                     #   merit_order_decline: clearing price declines with VRE share (for IAMs without)
 mcpr_merit_order_alpha: 0.006        # Merit order price elasticity: -0.6% per 1pp VRE share (IMF WP 2022/220)
 mcpr_merit_order_floor: 0.5          # Min clearing price as fraction of original (scarcity rents floor)
 
@@ -134,15 +134,9 @@ mcpr_regional_value_factors:
     "WindCap - Onshore": 0.98
     "WindCap - Offshore": 0.98
 
-# Price ramp (RC4 fix): blend baseline->target prices over [shock_year, alignment_year]
-# instead of hard-switching at shock_year. Eliminates near-term price windfall where
-# target prices are 30-50% higher than baseline at shock year.
-price_ramp: True  # RC4 fix: blend baseline->target prices over [shock_year, alignment_year]
-
-# Cost element switches for earnings model
-include_growth_capex: False        # OFF: IAM O&M already bundles annualized capital costs (REMIND/WITCH/POLES)
-include_replacement_capex: True    # Include CapEx for replacing retired eligible assets
-include_decom_costs: True          # Include decommissioning costs for retired assets
+# The price ramp switch (price_ramp) and the cost element switches
+# (include_growth_capex, include_replacement_capex, include_decom_costs) are in
+# conf/base/parameters.yml.
 
 # Frozen capacity feature - continued O&M costs on stranded capacity
 apply_continued_om_baseline: False  # Apply continued O&M costs to baseline trajectories

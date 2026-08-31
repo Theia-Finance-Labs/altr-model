@@ -4,7 +4,5 @@
 # Documentation for this file format can be found in "Parameters"
 # Link: https://docs.kedro.org/en/0.19.12/configuration/parameters.html
 
-shock_year: 2033
-alignment_year: 2038  # Extended from 2035 to give 5-year transition window
-                      # Longer window = more realistic phase-out, but still abrupt enough
-                      # for meaningful fossil value destruction
+# --- Advanced: this pipeline currently has no advanced-only parameters.
+# Its user-facing keys (shock_year, alignment_year) live in conf/base/parameters.yml.
