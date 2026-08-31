@@ -1,0 +1,50 @@
+# ALTR model documentation site.
+#
+# Build:   python -m mkdocs build --strict
+# Preview: python -m mkdocs serve
+#
+# Deliberately repo-agnostic: no `repo_url`, no host-specific links, so the site
+# builds identically wherever the package is checked out.
+
+site_name: ALTR Model
+site_description: Asset-level transition-risk valuation model — install, run, interpret.
+docs_dir: docs/handover
+site_dir: site
+use_directory_urls: true
+
+theme:
+  name: material
+  features:
+    - navigation.top
+    - navigation.tracking
+    - toc.follow
+    - content.code.copy
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - md_in_html
+  - pymdownx.details
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Quickstart: quickstart.md
+  - User guide: user_guide.md
+  # Parameters reference and per-pipeline pages slot in here.
+  # Architecture / data-flow diagram slots in here.
+  - Scenario catalog: scenario_catalog.md
+  - Troubleshooting: troubleshooting.md
