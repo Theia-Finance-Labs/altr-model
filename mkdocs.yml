@@ -44,7 +44,16 @@ nav:
   - Home: index.md
   - Quickstart: quickstart.md
   - User guide: user_guide.md
-  # Parameters reference and per-pipeline pages slot in here.
+  - Parameters: parameters.md
+  - Pipelines:
+      - "Stage 1 — inputs_processing": pipelines/inputs_processing.md
+      - "Stage 2 — inputs_postproc": pipelines/inputs_postproc.md
+      - "Stage 3 — create_baseline_and_target_trajectories": pipelines/create_baseline_and_target_trajectories.md
+      - "Stage 4 — create_late_sudden_trajectories": pipelines/create_late_sudden_trajectories.md
+      - "Stage 5 — distribute_impacts_to_asset_level": pipelines/distribute_impacts_to_asset_level.md
+      - "Stage 6 — earnings_model": pipelines/earnings_model.md
+      - "Stage 7 — valuation_model": pipelines/valuation_model.md
+      - "Stage 8 — reporting": pipelines/reporting.md
   # Architecture / data-flow diagram slots in here.
   - Scenario catalog: scenario_catalog.md
   - Troubleshooting: troubleshooting.md
