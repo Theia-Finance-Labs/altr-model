@@ -123,10 +123,37 @@ def filter_scenarios(
     return scenarios_pathways_filtered
 
 
+def _consolidate_ownership_stakes(companies_ownerships: pd.DataFrame) -> pd.DataFrame:
+    """Roll up multiple ownership_type stakes in the same asset into one row.
+
+    A company can hold more than one stake in the same asset (e.g. "direct"
+    and "equity"), recorded as separate rows for the same
+    (company_id, asset_id, year). Total ownership is direct + equity, so
+    those rows are summed here into a single row per
+    (company_id, asset_id, sector, technology, year) - otherwise the
+    duplicate rows survive into the per-company asset pivot later in the
+    pipeline and it fails with "Index contains duplicate entries".
+    """
+    group_cols = [
+        "company_id",
+        "company_name",
+        "asset_id",
+        "asset_name",
+        "sector",
+        "technology",
+        "year",
+    ]
+    return companies_ownerships.groupby(group_cols, as_index=False)[
+        "ownership_percentage"
+    ].sum()
+
+
 def filter_companies(
     companies_ownerships: pd.DataFrame,
     company_ids: List[str],
 ) -> pd.DataFrame:
+    companies_ownerships = _consolidate_ownership_stakes(companies_ownerships)
+
     if company_ids:
         filtered_companies_ownerships = companies_ownerships.loc[
             companies_ownerships.company_id.isin(company_ids), :
