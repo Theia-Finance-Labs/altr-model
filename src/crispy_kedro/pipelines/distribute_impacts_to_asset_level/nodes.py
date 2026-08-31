@@ -451,10 +451,16 @@ def compute_asset_baseline_trajectories(
 
         return group
 
-    # Add progress bar for baseline computation
-    grouped = out.groupby(gcols, sort=False, group_keys=False)
+    # Add progress bar for baseline computation. Selecting only the columns the
+    # fill reads keeps grouping columns out of apply — operating on them is
+    # deprecated in pandas >=2.2, and include_groups= does not exist on the
+    # pinned pandas <2.2. Results are written back via index alignment.
+    apply_cols = ["year", "asset_activity", "_company_baseline"]
+    grouped = out.groupby(gcols, sort=False, group_keys=False)[apply_cols]
     tqdm.pandas(desc="Computing asset baselines and filling activity", unit="asset")
-    out = grouped.progress_apply(_compute_baseline_trajectory_and_fill_activity)
+    filled = grouped.progress_apply(_compute_baseline_trajectory_and_fill_activity)
+    out["asset_activity"] = filled["asset_activity"]
+    out["asset_baseline_trajectory"] = filled["asset_baseline_trajectory"]
 
     # Apply retirement to baseline trajectories if requested
     if (
