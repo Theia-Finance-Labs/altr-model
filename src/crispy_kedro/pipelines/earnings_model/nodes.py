@@ -132,11 +132,10 @@ def validate_and_standardize_inputs(
 
     # Forward-fill emission_factor along each (asset_id, technology) across years
     if not assets.empty:
-        assets = (
-            assets.sort_values(["asset_id", "technology", "year"])
-            .groupby(["asset_id", "technology"], group_keys=False)
-            .apply(lambda g: g.assign(emission_factor=g["emission_factor"].ffill()))
-        )
+        assets = assets.sort_values(["asset_id", "technology", "year"])
+        assets["emission_factor"] = assets.groupby(["asset_id", "technology"])[
+            "emission_factor"
+        ].ffill()
 
     # For newly created renewable synthetic assets, set remaining missing EF to 0
     renewable_techs = {
@@ -260,11 +259,6 @@ def validate_and_standardize_inputs(
                 "Dropped %s rows with NaN years",
                 assets_before_filter - assets_after_filter,
             )
-
-        year_check = assets.groupby(["asset_id", "trajectory_type"])["year"].apply(
-            lambda x: x.sort_values().diff().dropna().unique()
-        )
-        logger.info("Year continuity check completed for %s assets", len(year_check))
     else:
         logger.error(
             "No assets to check for year continuity - assets DataFrame is empty!"
@@ -1198,16 +1192,33 @@ def compute_capacity_flows(asset_panel: pd.DataFrame) -> pd.DataFrame:
     logger.info("Computing capacity flows from capacity changes...")
 
     data = asset_panel.copy()
+    if "scenario_geography" not in data.columns:
+        raise ValueError("compute_capacity_flows expects 'scenario_geography' column")
     data = data.sort_values(
-        ["trajectory_type", "company_id", "asset_id", "technology", "year"]
+        [
+            "trajectory_type",
+            "company_id",
+            "asset_id",
+            "technology",
+            "scenario_geography",
+            "year",
+        ]
     ).reset_index(drop=True)
 
     # Use asset_trajectory (melted capacity)
     if "asset_trajectory" not in data.columns:
         raise ValueError("compute_capacity_flows expects 'asset_trajectory' column")
 
-    # Calculate capacity changes vectorized, per trajectory_type when present
-    group_keys = ["trajectory_type", "company_id", "asset_id", "technology"]
+    # Calculate capacity changes vectorized, per trajectory_type when present.
+    # scenario_geography is part of the key: without it, shift(1) carries the last
+    # row of one geography into the first row of the next for a multi-geography asset.
+    group_keys = [
+        "trajectory_type",
+        "company_id",
+        "asset_id",
+        "technology",
+        "scenario_geography",
+    ]
     data["K_prev"] = data.groupby(group_keys)["asset_trajectory"].shift(1)
     data["capacity_change"] = (data["asset_trajectory"] - data["K_prev"]).fillna(0)
 
