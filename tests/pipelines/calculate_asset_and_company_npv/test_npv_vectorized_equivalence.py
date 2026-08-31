@@ -1,14 +1,15 @@
 """Equivalence guard for the vectorised rewrite of compute_yearly_npv_trajectories.
 
 `_reference_compute` below is a verbatim transcription of the ORIGINAL per-group
-Python loop (nodes.py before the vectorisation), with one deliberate change:
-the main `groupby(group_keys)` carries `dropna=False`. That is the separately
-tested dropna fix (see test_npv_dropna_keys.py); folding it into the reference
-isolates this file to the vectorisation change alone.
+Python loop (nodes.py before the vectorisation), with two deliberate changes:
+the main `groupby(group_keys)` carries `dropna=False`, and the flow-split
+collapse runs ahead of the loop. Both are separately tested fixes (see
+test_npv_dropna_keys.py and test_tv_flow_row_dedup.py); folding them into the
+reference isolates this file to the vectorisation change alone.
 
 Every branch of the terminal-value ladder is exercised: perpetuity, r <= g,
 final_fcff == 0, negative final FCFF, single-row groups,
-terminal_method != "perpetuity", and a NaN group key.
+terminal_method != "perpetuity", flow-split duplicate years, and a NaN group key.
 """
 
 import os
@@ -105,6 +106,12 @@ def _reference_compute(
     available_financial_cols = [c for c in financial_cols if c in npv_data.columns]
 
     group_keys = list(GROUP_KEYS)
+
+    agg_map = {col: "sum" for col in available_financial_cols}
+    agg_map["discount_rate"] = "first"
+    npv_data = npv_data.groupby(
+        group_keys + ["year"], dropna=False, as_index=False
+    ).agg(agg_map)
 
     yearly_results = []
 
@@ -327,6 +334,12 @@ def _fixture_frame() -> pd.DataFrame:
     rows += _asset(
         "A7", "aligned_high_carbon", [(2025, 90.0), (2026, 60.0), (2027, 0.0)]
     )
+    # A8 flow-split duplicate years (must collapse before anchoring)
+    rows += _asset(
+        "A8",
+        "misaligned_high_carbon",
+        [(2028, 60.0), (2029, 65.0), (2030, 100.0), (2030, -30.0)],
+    )
     # A9 two-row group with a mixed-sign run
     rows += _asset("A9", "misaligned_high_carbon", [(2029, -5.0), (2030, 12.0)])
     return pd.DataFrame(rows)
@@ -354,7 +367,7 @@ def test_terminal_rows_are_added_for_the_expected_groups():
     parametrisation would be vacuous for the TV branches."""
     out = compute_yearly_npv_trajectories(_fixture_frame())
     tv = out.loc[pd.to_numeric(out["terminal_value"], errors="coerce") != 0]
-    assert set(tv["asset_id"]) >= {"A1", "A3", "A5", "A9"}
+    assert set(tv["asset_id"]) >= {"A1", "A3", "A5", "A8", "A9"}
     # A4 is loss-making throughout, A7 has final_fcff == 0 -> no terminal row
     assert "A4" not in set(tv["asset_id"])
     assert "A7" not in set(tv["asset_id"])
