@@ -6,7 +6,6 @@ import logging
 
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
@@ -47,9 +46,10 @@ def compute_yearly_npv_trajectories(
         else:
             raise ValueError(f"Invalid scenario type: {scenario_type}")
 
-    npv_data["discount_rate"] = npv_data.apply(
-        lambda row: get_discount_rate(row["scenario_type"]), axis=1
-    )
+    # map() over the column instead of a row-wise apply: same per-value
+    # semantics (including the raise above), one Python call per row instead
+    # of one Series construction per row.
+    npv_data["discount_rate"] = npv_data["scenario_type"].map(get_discount_rate)
 
     # Guard: need trajectory_type and FCFF
     need_cols = ["asset_id", "year", "FCFF", "trajectory_type"]
@@ -86,94 +86,148 @@ def compute_yearly_npv_trajectories(
         "trajectory_type",
     ]
 
-    yearly_results = []
-
-    for key, g in tqdm(
-        list(npv_data.groupby(group_keys)),
-        desc="Computing yearly NPV trajectories",
-        unit="grp",
-    ):
-        g = g.sort_values("year").copy()
-        first_row = g.iloc[0]
-        base_year = int(g["year"].min())
-
-        # Calculate discount factors for each year
-        g["years_from_base"] = g["year"] - base_year
-        g["discount_factor"] = (1 + g["discount_rate"]) ** (-g["years_from_base"])
-        g["pv_fcff"] = g["FCFF"] * g["discount_factor"]
-
-        # Calculate yearly NPV contribution (PV of FCFF only for forecast years)
-        g["terminal_value"] = 0.0
-        g["yearly_npv"] = g["pv_fcff"]  # Only FCFF for forecast years
-
-        # Add terminal value as separate row for year+1
-        if (terminal_method == "perpetuity") and (len(g) > 0):
-            final_fcff = float(g["FCFF"].iloc[-1])
-            final_year = int(g["year"].iloc[-1])
-
-            if final_fcff > 0:
-                terminal_cf = final_fcff * (1 + terminal_growth_rate)
-                final_discount_rate = g.iloc[-1]["discount_rate"]
-                if final_discount_rate > terminal_growth_rate:
-                    terminal_value_nominal = terminal_cf / (
-                        final_discount_rate - terminal_growth_rate
-                    )
-                    years_to_terminal = (final_year + 1) - base_year
-                    terminal_discount_factor = (1 + final_discount_rate) ** (
-                        -years_to_terminal
-                    )
-                    terminal_value = float(
-                        terminal_value_nominal * terminal_discount_factor
-                    )
-
-                    # Create terminal value row for year+1
-                    terminal_row = g.iloc[-1].copy()  # Copy last row as template
-                    terminal_row["year"] = final_year + 1
-                    terminal_row["years_from_base"] = years_to_terminal
-                    terminal_row["discount_factor"] = terminal_discount_factor
-                    terminal_row["pv_fcff"] = 0.0  # No FCFF in terminal year
-                    terminal_row["terminal_value"] = terminal_value
-                    terminal_row["yearly_npv"] = terminal_value
-
-                    # Set financial components to 0 for terminal year (it's just the terminal value)
-                    for fin_col in available_financial_cols:
-                        if fin_col in terminal_row.index:
-                            terminal_row[fin_col] = 0.0
-
-                    # Add terminal row to the group
-                    g = pd.concat([g, terminal_row.to_frame().T], ignore_index=True)
-
-        # Add metadata to each row (including terminal row if added)
-        for col in group_keys:
-            if col not in g.columns:
-                g[col] = first_row.get(col)
-
-        g["base_year"] = base_year
-        g["terminal_method"] = terminal_method
-        g["terminal_growth_rate"] = terminal_growth_rate
-
-        # Select columns for output - ensure all financial components are included
-        output_cols = (
-            group_keys
-            + [
-                "year",
-                "discount_rate",
-                "base_year",
-                "terminal_method",
-                "terminal_growth_rate",
-                "years_from_base",
-                "discount_factor",
-                "pv_fcff",
-                "terminal_value",
-                "yearly_npv",
-            ]
-            + available_financial_cols
+    # Collapse CapEx flow-split rows to ONE row per asset-year before any
+    # row-indexed logic runs. Upstream, compute_capacity_flows emits separate
+    # component rows per (asset, year) — operating, decommissioning, rollover —
+    # and their FCFFs sum correctly for present value, but the terminal-value
+    # anchor (the group's last ROW) assumes one row per year. In the 2026-08
+    # WITCH audit 38% of asset-trajectories carried duplicate years in the
+    # anchor zone, corrupting 3,414 nonzero terminal values.
+    agg_map = {col: "sum" for col in available_financial_cols}
+    agg_map["discount_rate"] = "first"
+    pre_rows = len(npv_data)
+    npv_data = npv_data.groupby(
+        group_keys + ["year"], dropna=False, as_index=False
+    ).agg(agg_map)
+    if len(npv_data) != pre_rows:
+        logger.info(
+            "Collapsed %d flow-split rows into %d unique asset-year rows "
+            "before terminal-value computation",
+            pre_rows,
+            len(npv_data),
         )
-        output_cols = [col for col in output_cols if col in g.columns]
 
-        yearly_results.append(g[output_cols])
+    # ------------------------------------------------------------------
+    # Vectorised trajectory + terminal-value computation.
+    #
+    # This replaces a per-group Python loop measured at ~1.55 ms/group, i.e.
+    # ~60 s per production run at ~40k groups. Semantics are unchanged and
+    # pinned by tests/.../test_npv_vectorized_equivalence.py, which
+    # re-implements the old loop and asserts frame equality.
+    # ------------------------------------------------------------------
 
-    yearly_df = pd.concat(yearly_results, ignore_index=True)
+    # Group ids in the order the old groupby(sort=True) iterated, then sort rows
+    # by (group, year) so every group is one contiguous, year-ordered block.
+    # dropna=False keeps assets whose group keys contain NaN: the downstream
+    # nodes keep them, and pandas' default silently discarded them here.
+    gid = npv_data.groupby(group_keys, dropna=False, sort=True).ngroup().to_numpy()
+    npv_data = npv_data.assign(_gid=gid).sort_values(
+        ["_gid", "year"], kind="stable", ignore_index=True
+    )
+    gid = npv_data["_gid"].to_numpy()
+
+    n_rows = len(npv_data)
+    n_groups = int(gid.max()) + 1 if n_rows else 0
+    sizes = np.bincount(gid, minlength=n_groups)
+    starts = np.zeros(n_groups, dtype=np.int64)
+    if n_groups:
+        starts[1:] = np.cumsum(sizes)[:-1]
+    last_idx = starts + sizes - 1
+
+    # NaN years must fail loudly: the int casts below would silently wrap
+    # NaN to INT64_MIN and produce astronomically wrong terminal values.
+    n_nan_year = int(npv_data["year"].isna().sum())
+    if n_nan_year:
+        raise ValueError(
+            f"asset_earnings contains {n_nan_year} rows with NaN year; "
+            "cannot compute NPV trajectories"
+        )
+    years = npv_data["year"].to_numpy()
+    discount_rate = npv_data["discount_rate"].to_numpy(dtype=np.float64)
+    fcff = npv_data["FCFF"].to_numpy(dtype=np.float64)
+
+    # Rows are year-sorted, so the group's first row carries its minimum year.
+    base_year_per_group = years[starts].astype(np.int64)
+    base_year = base_year_per_group[gid]
+    years_from_base = years - base_year
+    discount_factor = (1.0 + discount_rate) ** (-years_from_base)
+
+    npv_data["base_year"] = base_year
+    npv_data["terminal_method"] = terminal_method
+    npv_data["terminal_growth_rate"] = terminal_growth_rate
+    npv_data["years_from_base"] = years_from_base
+    npv_data["discount_factor"] = discount_factor
+    npv_data["pv_fcff"] = fcff * discount_factor
+    npv_data["terminal_value"] = 0.0
+    npv_data["yearly_npv"] = npv_data["pv_fcff"]  # Only FCFF for forecast years
+
+    # Per-group terminal anchors, all taken from the last (highest-year) row.
+    final_year = years[last_idx].astype(np.int64)
+    final_fcff = fcff[last_idx]
+    final_discount_rate = discount_rate[last_idx]
+    years_to_terminal = (final_year + 1) - base_year_per_group
+
+    # Gordon Growth perpetuity, only where the final FCFF is positive and the
+    # discount rate exceeds the growth rate.
+    terminal_value = np.zeros(n_groups, dtype=np.float64)
+    if terminal_method == "perpetuity" and n_groups:
+        with np.errstate(divide="ignore", invalid="ignore"):
+            perpetuity_tv = (
+                final_fcff
+                * (1.0 + terminal_growth_rate)
+                / (final_discount_rate - terminal_growth_rate)
+            ) * (1.0 + final_discount_rate) ** (-years_to_terminal)
+        has_terminal_value = (final_fcff > 0) & (
+            final_discount_rate > terminal_growth_rate
+        )
+        terminal_value = np.where(has_terminal_value, perpetuity_tv, 0.0)
+
+    # One terminal row per group with a non-zero terminal value, built as a
+    # single frame (the old per-group Series.to_frame().T forced object dtype).
+    add_groups = np.flatnonzero(terminal_value != 0)
+    if len(add_groups):
+        anchors = last_idx[add_groups]
+        group_years_to_terminal = years_to_terminal[add_groups]
+        terminal_rows = npv_data.iloc[anchors].copy()
+        terminal_rows["year"] = final_year[add_groups] + 1
+        terminal_rows["years_from_base"] = group_years_to_terminal
+        terminal_rows["discount_factor"] = (
+            1.0 + final_discount_rate[add_groups]
+        ) ** (-group_years_to_terminal)
+        terminal_rows["pv_fcff"] = 0.0  # No FCFF in terminal year
+        terminal_rows["terminal_value"] = terminal_value[add_groups]
+        terminal_rows["yearly_npv"] = terminal_value[add_groups]
+        # Financial components are 0 in the terminal year (it's just the TV)
+        for fin_col in available_financial_cols:
+            terminal_rows[fin_col] = 0.0
+        npv_data = pd.concat([npv_data, terminal_rows], ignore_index=True).sort_values(
+            ["_gid", "year"], kind="stable", ignore_index=True
+        )
+
+    logger.info(
+        "Computed %d asset-trajectory groups, %d with a terminal-value row",
+        n_groups,
+        len(add_groups),
+    )
+
+    # Select columns for output - ensure all financial components are included
+    output_cols = (
+        group_keys
+        + [
+            "year",
+            "discount_rate",
+            "base_year",
+            "terminal_method",
+            "terminal_growth_rate",
+            "years_from_base",
+            "discount_factor",
+            "pv_fcff",
+            "terminal_value",
+            "yearly_npv",
+        ]
+        + available_financial_cols
+    )
+    yearly_df = npv_data[[col for col in output_cols if col in npv_data.columns]].copy()
 
     logger.info(
         f"Computed yearly NPV trajectories for {len(yearly_df)} asset-year-trajectory combinations"
@@ -234,9 +288,13 @@ def calculate_npv_per_asset(
         if col in data.columns:
             agg_dict[col] = "sum"
 
-    # Aggregate by asset and trajectory type
+    # Aggregate by asset and trajectory type. dropna=False: the trajectory
+    # groupby upstream keeps NaN group keys, so dropping them here would make
+    # those assets disappear between two nodes with no warning.
     aggregated = (
-        data.groupby(group_keys + ["trajectory_type"]).agg(agg_dict).reset_index()
+        data.groupby(group_keys + ["trajectory_type"], dropna=False)
+        .agg(agg_dict)
+        .reset_index()
     )
 
     # Rename yearly_npv to NPV for clarity
@@ -322,7 +380,9 @@ def aggregate_to_company_technology_npv(asset_npv: pd.DataFrame) -> pd.DataFrame
         "asset_id": "count",
     }
 
-    company_tech_npv = asset_npv.groupby(groupby_cols).agg(agg_funcs).reset_index()
+    company_tech_npv = (
+        asset_npv.groupby(groupby_cols, dropna=False).agg(agg_funcs).reset_index()
+    )
 
     # Rename asset count column
     company_tech_npv = company_tech_npv.rename(columns={"asset_id": "asset_count"})
@@ -361,7 +421,9 @@ def aggregate_to_company_npv(company_technology_npv: pd.DataFrame) -> pd.DataFra
     }
 
     company_npv = (
-        company_technology_npv.groupby(groupby_cols).agg(agg_funcs).reset_index()
+        company_technology_npv.groupby(groupby_cols, dropna=False)
+        .agg(agg_funcs)
+        .reset_index()
     )
 
     with np.errstate(divide="ignore", invalid="ignore"):

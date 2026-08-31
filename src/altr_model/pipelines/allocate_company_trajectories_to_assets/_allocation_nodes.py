@@ -894,12 +894,13 @@ def _prop_scale_decreasing_fast(
     logger=None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Proportional-scaling for decreasing techs (fast), with retirement-compensation uplift:
+    Proportional-scaling for decreasing techs (fast), with retirement applied once:
       - Shares fixed at shock-year (w). AFTER[t] = w * C_adj[t] for t >= shock_year.
-      - If an asset retires at year t (> alignment_year), we *pre-uplift* C_adj[t+1..]
-        by (freed_t / remaining_years), where freed_t ≈ w_retiring * C_adj[t].
-      - We still zero retired assets afterward (no redistribution semantics unchanged).
-      - Returns (asset_level_df, company_corrections_df) where correction = C_adj - C_base.
+      - If an asset retires at year t (> alignment_year), it is zeroed from t onwards
+        AFTER allocation; its capacity is lost, never redistributed. C_adj is not
+        pre-reduced as well, which would charge the retired share twice.
+      - Returns (asset_level_df, company_corrections_df) where the adjusted company
+        trajectory is the post-retirement asset total per year.
     """
     # Expect melted input; filter to latesudden
     if "trajectory_type" in lsc.columns:
@@ -1018,32 +1019,9 @@ def _prop_scale_decreasing_fast(
         S = float(numer.sum())
         w = (numer / S) if S > 0.0 else np.zeros(A, dtype=np.float64)
 
-        # NEW: Reduce C_adj when assets retire (instead of redistributing capacity)
-        # When an asset retires, we subtract its proportional share from C_adj for future years
-        # This ensures the company total decreases by the retired asset's capacity
-        if apply_retirement and ret_map_by_key:
-            raw_ret = ret_map_by_key.get(asset_key, {})
-            if raw_ret:
-                eff_idx_by_asset: Dict[int, int] = {}
-                for j, aid in enumerate(asset_ids):
-                    yr = raw_ret.get(str(aid))
-                    if yr is None or pd.isna(yr):
-                        continue
-                    eff = int(yr)
-                    if alignment_year is not None:
-                        eff = max(eff, int(alignment_year) + 1)
-                    hit = np.where(years == eff)[0]
-                    if hit.size > 0:
-                        eff_idx_by_asset[j] = int(hit[0])
-
-                # Reduce C_adj from retirement year onwards by the retiring asset's share
-                for t in range(0, len(years)):
-                    retiring_js = [j for j, ti in eff_idx_by_asset.items() if ti == t]
-                    if not retiring_js:
-                        continue
-                    # Subtract the retiring assets' proportional share from this year onwards
-                    freed_t = float(np.sum(w[retiring_js]) * C_adj[t])
-                    C_adj[t:] = C_adj[t:] - freed_t
+        # Retirement is applied ONCE, by zeroing retired assets after allocation
+        # (below). C_adj must stay at C_base here: pre-reducing it by the retiring
+        # share as well would leave the survivors carrying (1 - r)^2 * C.
 
         # Build BEFORE/AFTER (no retirement applied yet)
         T = years.shape[0]
@@ -1148,7 +1126,14 @@ def _prop_scale_decreasing_fast(
         )
         adj_df = base_df.copy()
         adj_df["trajectory_type"] = "latesudden_adjusted"
-        adj_df["company_trajectory"] = C_adj
+        # Adjusted company path: the original series pre-shock (so the
+        # asset-vs-company residual diagnostic stays informative there),
+        # spliced to the capacity actually held by the assets from the shock
+        # year on, so capacity lost to retirement shows up at company level.
+        adjusted_traj = C_base.copy()
+        if t0 is not None:
+            adjusted_traj[t0:] = after_mat[t0:, :].sum(axis=1)
+        adj_df["company_trajectory"] = adjusted_traj
         corr_parts.append(pd.concat([base_df, adj_df], ignore_index=True))
 
     assets_df = pd.concat(out_parts, ignore_index=True)

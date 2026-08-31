@@ -128,6 +128,19 @@ def determine_companies_technologies_alignment(
     )
 
 
+def _baseline_shock_anchor(baseline, years, shock_year):
+    """Baseline value at the last grid year <= shock_year-1.
+
+    Falls back to the first grid year when the scenario grid starts at/after
+    the shock year (e.g. shock_year=2030 on a 2030-start grid), instead of
+    crashing on an empty selection.
+    """
+    pre_mask = years <= (shock_year - 1)
+    if pre_mask.any():
+        return float(baseline[pre_mask][-1])
+    return float(baseline[0])
+
+
 def late_sudden_misaligned_high_carbon_companies(
     misaligned_high_carbon_companies_trajectories: pd.DataFrame,
     shock_year: int,
@@ -204,7 +217,7 @@ def late_sudden_misaligned_high_carbon_companies(
 
         mask_p3 = (years >= shock_year) & (years <= alignment_year)
 
-        v_start = float(baseline[years == (shock_year - 1)][0])
+        v_start = _baseline_shock_anchor(baseline, years, shock_year)
         v_end = float(target[years == alignment_year][0])
 
         denom = alignment_year - shock_year
@@ -335,7 +348,7 @@ def late_sudden_misaligned_low_carbon_companies(
             mask_p3 = (years >= shock_year) & (years <= alignment_year)
             if mask_p3.any():
                 # Boundary values
-                v_start = float(baseline[years == (shock_year - 1)][0])
+                v_start = _baseline_shock_anchor(baseline, years, shock_year)
                 try:
                     v_end = float(target[years == alignment_year][0])
                 except IndexError:
@@ -458,7 +471,7 @@ def late_sudden_aligned_high_carbon_companies(
         if alignment_year > shock_year:
             mask_p3 = (years >= shock_year) & (years <= alignment_year)
             if mask_p3.any():
-                v_start = float(baseline[years == (shock_year - 1)][0])
+                v_start = _baseline_shock_anchor(baseline, years, shock_year)
                 try:
                     v_end = float(target[years == alignment_year][0])
                 except IndexError:

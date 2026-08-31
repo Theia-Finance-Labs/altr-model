@@ -479,9 +479,29 @@ def allocate_assets_to_companies(
             f"Backfilled {len(backfill_records)} company-asset-year records with zero capacity"
         )
 
-    # Calculate owned asset capacity (allocated capacity based on ownership percentage)
+    # Calculate owned asset capacity (allocated capacity based on ownership
+    # percentage). ownership_percentage is on the 0-100 scale -- the tier
+    # selected upstream sums to ~100 per asset-year (see check_ownership_tier in
+    # notebooks/prepare_new_inputs.py) -- so divide by 100 to get the fraction.
+    max_ownership = merged_data["ownership_percentage"].max()
+    if pd.notna(max_ownership) and max_ownership <= 1.5:
+        raise ValueError(
+            f"ownership_percentage looks like a 0-1 fraction (max={max_ownership}), "
+            "not the expected 0-100 percent scale; dividing by 100 would shrink "
+            "allocated capacity ~100x. Check the ownership extract's scale convention."
+        )
+
+    raw_capacity_total = merged_data["capacity"].sum()
     merged_data["capacity"] = (
-        merged_data["capacity"] * merged_data["ownership_percentage"]
+        merged_data["capacity"] * merged_data["ownership_percentage"] / 100.0
+    )
+    logger.info(
+        "Ownership allocation: raw capacity total %.1f -> allocated %.1f (ratio %.3f)",
+        raw_capacity_total,
+        merged_data["capacity"].sum(),
+        merged_data["capacity"].sum() / raw_capacity_total
+        if raw_capacity_total
+        else float("nan"),
     )
 
     merged_data = merged_data.rename(columns={"capacity": "asset_activity"})
