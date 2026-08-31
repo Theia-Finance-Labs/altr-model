@@ -1521,9 +1521,18 @@ def plot_earnings_inner_workings(
         )
 
         asset_id = asset["asset_id"]
-        asset_data = view_asset_explain[
-            view_asset_explain["asset_id"] == asset_id
-        ].sort_values("year")
+        # Slice by the full owner key: co-owned assets carry one row set per
+        # owning company, and an asset_id-only slice would stack both owners'
+        # series into one panel.
+        owner_slice_keys = [
+            k
+            for k in ("asset_id", "company_id", "scenario_geography", "sector", "technology")
+            if k in view_asset_explain.columns and k in asset.index
+        ]
+        slice_mask = pd.Series(True, index=view_asset_explain.index)
+        for k in owner_slice_keys:
+            slice_mask &= view_asset_explain[k] == asset[k]
+        asset_data = view_asset_explain[slice_mask].sort_values("year")
 
         if len(asset_data) == 0:
             logger.warning(f"No data found for asset {asset_id}, skipping...")
