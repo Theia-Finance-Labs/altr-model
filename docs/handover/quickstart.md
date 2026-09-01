@@ -73,8 +73,11 @@ The model is fed by three CSV files. Put them, unmodified, in `data/01_raw/`:
 | File | Contents |
 | --- | --- |
 | `assets_forecasts.csv` | Physical assets and their per-year technical forecasts (capacity, technology, country, age) |
-| `companies_ownerships.csv` | Which company owns which asset, and the ownership percentage of each stake |
+| `companies_ownerships.csv` | Which company owns which asset, the ownership percentage of each stake, and the `ownership_type` rung it sits on |
 | `scenarios.csv` | IAM scenario pathways, prices, capacity factors and cost assumptions |
+
+The 2026-08-25 deliverables drop predates the `ownership_type` column and step 4
+below refuses it; ask for the re-exported version that includes it.
 
 Column-level dictionaries for all three files, including the units traps
 (`ownership_percentage` is on the 0-100 scale, not a fraction):

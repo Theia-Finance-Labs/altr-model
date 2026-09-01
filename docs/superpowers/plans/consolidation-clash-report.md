@@ -424,6 +424,43 @@ above, plus `"sum"` totalling one company's 50.00% direct and 0.45% equity
 stakes to 50.45%, an equity-only holder that `"tier_filter"` drops and `"sum"`
 keeps, and a `ValueError` naming both options on anything else.
 
+### OWN-2 · The recipient's data has no tier column · **RULED-A-DATA-DEFECT**
+
+| | |
+| --- | --- |
+| Found | The deliverables `companies_ownerships.csv` (2026-08-25 drop) has **8 columns and no tier column at all** — `asset_id`, `company_id`, `year`, `ownership_percentage`, `sector`, `technology`, `asset_name`, `company_name`. Neither `ownership_type` nor `ownership_level` |
+| Why it matters | Every argument in OWN-1 above — the default, the 2.2× on absolute outputs, the whole `ownership_aggregation` design — assumes a tier column exists. On the recipient's actual file `_select_ownership_tier` takes its third branch and keeps every row, so `"tier_filter"` silently degrades into `"sum"` on the full ownership chain. The internal `downloaded_companies.csv` (BigQuery marts) DOES carry `ownership_type`, which is why this was invisible internally |
+| Ruling | Owner, 2026-09-01: a tier-less export is a **DATA-EXPORT DEFECT**, not a run-time mode. `scripts/prepare_inputs.py::build_companies` now refuses such a file outright (`require_ownership_tier`), naming the column, the consequence and the remedy |
+| Action | **Owner + Bertrand: re-export the deliverables including `ownership_type` from the marts.** Until that lands, the 2026-08-25 drop cannot be converted into model inputs |
+
+**Measured on the 2026-08-25 drop** (1,048,249 rows, 152,972 asset-years),
+totalling `ownership_percentage` per `(asset_id, year)` with no tier selected:
+
+| Statistic | Value |
+| --- | --- |
+| Asset-years summing above 105% | **92.0%** |
+| Median asset-year sum | **227.5%** |
+| Maximum asset-year sum | 903.3% |
+| Asset-years within 99–101% | 4.3% |
+
+A median of 227% is the ownership chain restating the same capacity roughly
+twice over. `allocate_assets_to_companies` multiplies capacity by
+`ownership_percentage / 100` with no renormalisation, so every absolute output
+of such a run — NPV, earnings, allocated capacity — is inflated by about that
+factor. It is not a rounding-scale problem that a warning covers.
+
+**Why it fails rather than warns.** `check_ownership_allocation` already warned
+about exactly this number, and the warning is not enough: it fires on stderr
+mid-conversion, the script writes `data/05_model_input/` anyway, and the run
+that follows produces plausible-looking numbers. The tier column is part of the
+input contract, so its absence belongs with the other missing-column failures.
+
+**The export build is unaffected.** `build_export.py --data-source` only
+*stages* the three raw files into `data/01_raw/`; it never calls
+`prepare_inputs.py`. The guard therefore fires at the recipient's quickstart
+step 4, not during export assembly, and the export gate still passes on the
+tier-less drop. Quickstart step 3 says so explicitly.
+
 ---
 
 ## Naming and column clashes (no behaviour change)
@@ -527,6 +564,7 @@ tests, consistent with the 37 already there.
 | Decide first | Why it matters |
 | --- | --- |
 | ~~**OWN-1** ownership tier~~ — settled: `ownership_aggregation`, default `"tier_filter"` | was 2.2× on every absolute output; now a documented mode switch |
+| **OWN-2** re-export the deliverables with `ownership_type` — ruled, but an OPEN ACTION for owner + Bertrand | the delivered file has no tier column, so the default mode degrades to summing the whole chain: median asset-year ownership 227%. `prepare_inputs.py` now refuses the drop |
 | **Q2-1** price ramp labels rows `baseline` | silently neutralises any future split between the two discount rates |
 | **Q2-3** negative perpetuity | reverses an explicit design choice of yours |
 | **Q1-2 / Q1-4** the two switch defaults flip `False → True` vs `main` (`include_replacement_capex`, `include_decom_costs`) | both terms are newly LIVE in a default run, so every absolute number moves before either form change is even considered |
