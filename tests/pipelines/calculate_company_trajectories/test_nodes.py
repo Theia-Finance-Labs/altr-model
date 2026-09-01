@@ -51,23 +51,59 @@ def _four_alignment_case_input() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def test_explicit_alignment_case_nodes_switch_financial_surface_at_shock():
+def _combined(price_ramp: bool, alignment_year: int = 2035):
     classified = classify_company_trajectory_alignment(_four_alignment_case_input())
-    output = combine_company_trajectory_cases(
+    return combine_company_trajectory_cases(
         misaligned_decreasing_trajectories=calculate_misaligned_decreasing_technology_transition(
-            classified, shock_year=2033, alignment_year=2035
+            classified, shock_year=2033, alignment_year=alignment_year
         ),
         misaligned_increasing_trajectories=calculate_misaligned_increasing_technology_transition(
-            classified, shock_year=2033, alignment_year=2035
+            classified, shock_year=2033, alignment_year=alignment_year
         ),
         aligned_decreasing_trajectories=calculate_aligned_decreasing_technology_transition(
-            classified, shock_year=2033, alignment_year=2035
+            classified, shock_year=2033, alignment_year=alignment_year
         ),
         aligned_increasing_trajectories=calculate_aligned_increasing_technology_transition(
-            classified, shock_year=2033, alignment_year=2035
+            classified, shock_year=2033, alignment_year=alignment_year
         ),
         shock_year=2033,
+        alignment_year=alignment_year,
+        price_ramp=price_ramp,
     )
+
+
+def test_price_ramp_blends_the_financial_surface_across_the_transition_window():
+    """With the ramp on, the late & sudden surface interpolates instead of jumping.
+
+    Ported from the handover branch (2026-09-01 owner ruling, Q2). The hard
+    switch hands the shock pathway a near-term price windfall at the shock year;
+    the ramp spreads the move across [shock_year, alignment_year]. A ramped
+    pathway keeps carrying the BASELINE scenario name and scenario_type, since
+    its surface is a mixture of the two rather than either one.
+    """
+    output = _combined(price_ramp=True, alignment_year=2037)
+    requested = output[output["trajectory_type"].eq("late_sudden_requested")]
+    by_year = requested.groupby("year")["capacity_factor"].apply(set)
+
+    # baseline 1.0 -> target 2.0 over four years: 0, 1/4, 2/4, 3/4, 1.
+    assert by_year[2032] == {1.0}
+    assert by_year[2033] == {1.0}
+    assert by_year[2034] == {1.25}
+    assert by_year[2035] == {1.5}
+    assert by_year[2036] == {1.75}
+    assert by_year[2037] == {2.0}
+
+    assert set(requested["scenario_type"]) == {"baseline"}
+    assert set(requested["scenario"]) == {"Baseline"}
+
+    # The pure target pathway is untouched by the ramp.
+    target = output[output["trajectory_type"].eq("target")]
+    assert set(target["capacity_factor"]) == {2.0}
+    assert set(target["scenario_type"]) == {"target"}
+
+
+def test_explicit_alignment_case_nodes_switch_financial_surface_at_shock():
+    output = _combined(price_ramp=False)
 
     classifications = (
         output[["company_id", "alignment_type"]]

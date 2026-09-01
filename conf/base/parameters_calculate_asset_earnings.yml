@@ -6,6 +6,29 @@
 # Share of the differential carbon cost passed through to customers, 0.0–1.0.
 market_passthrough: 0  # 0 => firm absorbs all differential carbon cost (conservative/stress test)
 
+# ── Carbon cost ───────────────────────────────────────────────────────────────────
+# How emission factors enter the carbon cost.
+#   "full_ef"         — cost = Q × cp × EF. Every technology pays for everything it
+#                       emits. Right for IAMs whose electricity prices barely move
+#                       with carbon stringency (WITCH: a $9/MWh C1→C7 price spread
+#                       against a $722/tCO2 carbon-price difference), so there is no
+#                       embedded carbon to double-count.
+#   "differential_ef" — cost = Q × cp × max(EF − marginal_EF, 0): only the excess
+#                       over the price-setting generator. Right for IAMs whose
+#                       prices already embed the marginal generator's carbon cost
+#                       (AIM/CGE: a $64/MWh spread).
+carbon_cost_method: "full_ef"
+
+# Let the marginal emission factor decay with the VRE capacity share,
+# marginal_ef(t) = marginal_EF × (1 − vre_share(t))², so a technology loses its
+# carbon rent as renewables push it off the margin.
+#
+# Both keys act on marginal_EF, which the market-clearing-price adjustment
+# produced. That adjustment is retired here (2026-09-01 owner ruling), so
+# marginal_EF is 0, the two methods coincide, and this key is inert. Kept so the
+# differential path works if the adjustment ever returns.
+dynamic_marginal_ef: True
+
 # ── Cost switches ─────────────────────────────────────────────────────────────────
 # Which cost elements the earnings model charges to free cash flow (True/False).
 include_growth_capex: False        # OFF: IAM O&M already bundles annualized capital costs (REMIND/WITCH/POLES)
@@ -18,7 +41,10 @@ include_replacement_capex: True    # Include CapEx for routine capital maintenan
 # for assets retiring that year (already charged decommissioning) and for
 # synthetic assets (accounting constructs, not plant).
 replacement_capex_rate: 0.02
-include_decom_costs: False         # Include decommissioning costs for retired assets
+# Decommissioning costs on retired capacity. `scrap_usd_per_mw` arrives negative
+# (= -capex/2); it is charged as a POSITIVE outflow, so retiring an asset costs
+# money rather than paying the owner.
+include_decom_costs: True          # Include decommissioning costs for retired assets
 
 # ── Continued O&M ─────────────────────────────────────────────────────────────────
 # When enabled for a trajectory type, fixed O&M is charged on that trajectory's

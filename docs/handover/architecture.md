@@ -10,6 +10,34 @@ a dataset name that appears in some `pipeline.py`, not an idealised sketch.
     source instead, which still reads as a list of arrows; GitHub renders the
     same blocks natively.
 
+## The Kedro layer, in four concepts
+
+ALTR runs on [Kedro](https://kedro.org) for orchestration - the tags, the
+`kedro run` commands and the batch runners all build on it. Four concepts carry
+everything else on this page:
+
+* **Nodes and pipelines.** A node is a Python function with declared inputs and
+  outputs; a pipeline wires nodes together. Kedro derives the run order from
+  those declarations - nothing schedules by hand.
+* **The catalog** (`conf/base/catalog.yml`) declares where each dataset lives
+  and how to read and write it. An entry can point at a local CSV *or* a live
+  source (a database, a warehouse table) - the node code does not change either
+  way, only the entry does.
+* **Parameters** (`conf/base/parameters_*.yml`) are the model's tunable inputs,
+  injected into nodes as `params:<key>`.
+* **Environments** (`conf/<env>/`) layer overrides on top of `conf/base/` -
+  the [configuration layout](#configuration-layout) below shows the exact
+  merge, and `conf/local/` (gitignored) is the place for your own machine's
+  overrides.
+
+!!! note "The model does not depend on Kedro to run"
+    The nodes are ordinary functions (`pipelines/*/nodes.py`) that take
+    DataFrames and parameters in and return DataFrames out - Kedro's role is
+    the wiring, the catalog and `kedro run`, not the modelling logic. If the
+    framework ever had to go, the node functions can be called directly from a
+    script or notebook with plain pandas DataFrames; nothing in the modelling
+    code itself is Kedro-specific.
+
 ## Data flow
 
 ```mermaid

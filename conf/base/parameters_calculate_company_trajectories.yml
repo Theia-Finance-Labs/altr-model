@@ -10,4 +10,17 @@
 # The gap between them is the transition window: a longer window is a more realistic
 # phase-out, a shorter one a more abrupt repricing.
 shock_year: 2033
-alignment_year: 2035
+alignment_year: 2038  # 5-year transition window: long enough to be a realistic
+                      # phase-out, short enough to still reprice abruptly.
+
+# ── Price ramp ────────────────────────────────────────────────────────────────────
+# How the late & sudden pathway picks up the target scenario's financial surfaces
+# (prices, fuel, capacity factor, CapEx, O&M, carbon price).
+#   False — hard switch at `shock_year`.
+#   True  — blend baseline -> target linearly across [shock_year, alignment_year].
+# The hard switch hands the shock pathway a near-term price windfall: target
+# prices sit 30-50% above baseline at the shock year, so fossil assets can gain
+# value under a climate shock. Blending removes that artefact. A ramped pathway
+# keeps carrying the BASELINE scenario name and scenario_type, because its
+# surfaces are a mixture rather than either scenario's.
+price_ramp: True

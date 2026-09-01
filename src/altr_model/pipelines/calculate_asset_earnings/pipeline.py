@@ -16,6 +16,8 @@ PIPELINE_OUTPUTS = {"asset_earnings"}
 PIPELINE_PARAMETERS = {
     "apply_continued_om_baseline",
     "apply_continued_om_shock",
+    "carbon_cost_method",
+    "dynamic_marginal_ef",
     "include_decom_costs",
     "include_growth_capex",
     "include_replacement_capex",
@@ -52,6 +54,8 @@ def create_pipeline(**kwargs) -> Pipeline:
                     market_passthrough="params:market_passthrough",
                     apply_continued_om_baseline="params:apply_continued_om_baseline",
                     apply_continued_om_shock="params:apply_continued_om_shock",
+                    carbon_cost_method="params:carbon_cost_method",
+                    dynamic_marginal_ef="params:dynamic_marginal_ef",
                 ),
                 outputs="_temp_asset_ops_block",
                 name="calculate_operating_earnings",

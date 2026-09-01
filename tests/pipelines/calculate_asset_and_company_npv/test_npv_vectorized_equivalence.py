@@ -7,9 +7,16 @@ collapse runs ahead of the loop. Both are separately tested fixes (see
 test_npv_dropna_keys.py and test_tv_flow_row_dedup.py); folding them into the
 reference isolates this file to the vectorisation change alone.
 
-Every branch of the terminal-value ladder is exercised: perpetuity, r <= g,
-final_fcff == 0, negative final FCFF, single-row groups,
-terminal_method != "perpetuity", flow-split duplicate years, and a NaN group key.
+The reference now carries the terminal-value ladder ported from the handover
+branch under the 2026-09-01 owner ruling (Q2): stranding-aware tiers, the
+terminal-FCFF normalization window, technology-differentiated growth rates and
+discount spreads. It is still an independent per-group transcription, so it
+still isolates the vectorisation.
+
+Every branch of that ladder is exercised: stranded, finite annuity, perpetuity,
+r <= g, final_fcff == 0, negative final FCFF with stranding off, single-row
+groups, normalisation windows 1 and 3, terminal_method != "perpetuity",
+flow-split duplicate years, and a NaN group key.
 """
 
 import os
@@ -63,31 +70,46 @@ def _reference_compute(
     discount_rate_baseline: float = 0.07,
     discount_rate_shock: float = 0.08,
     terminal_growth_rate: float = 0.02,
+    terminal_growth_rate_brown: float = None,
+    terminal_growth_rate_green: float = None,
     terminal_method: str = "perpetuity",
+    terminal_normalization_window: int = 1,
+    brown_discount_spread: float = 0.0,
+    green_discount_spread: float = 0.0,
+    stranding_aware_tv: bool = False,
+    stranding_consecutive_years: int = 3,
+    brown_remaining_life_years: int = 10,
 ) -> pd.DataFrame:
-    npv_data = asset_earnings.copy()
-
-    unresolved_mask = npv_data["scenario_type"].isna()
-    if unresolved_mask.any():
-        unresolved_asset_ids = sorted(
-            npv_data.loc[unresolved_mask, "asset_id"].unique()
-        )
-        raise ValueError(
-            f"{len(unresolved_asset_ids)} asset(s) have no scenario_type resolved "
-            f"and cannot be included in NPV: {unresolved_asset_ids}"
-        )
-
-    def get_discount_rate(scenario_type):
-        if scenario_type == "baseline":
-            return discount_rate_baseline
-        elif scenario_type == "target":
-            return discount_rate_shock
-        else:
-            raise ValueError(f"Invalid scenario type: {scenario_type}")
-
-    npv_data["discount_rate"] = npv_data.apply(
-        lambda row: get_discount_rate(row["scenario_type"]), axis=1
+    g_brown = (
+        terminal_growth_rate_brown
+        if terminal_growth_rate_brown is not None
+        else terminal_growth_rate
     )
+    g_green = (
+        terminal_growth_rate_green
+        if terminal_growth_rate_green is not None
+        else terminal_growth_rate
+    )
+
+    npv_data = asset_earnings.copy()
+    if npv_data["scenario_type"].isna().any():
+        raise ValueError("asset(s) have no scenario_type resolved")
+
+    carbontech_alignments = {"misaligned_high_carbon", "aligned_high_carbon"}
+
+    def get_discount_rate(row):
+        if row.get("scenario_type") == "baseline":
+            base = discount_rate_baseline
+        else:
+            base = discount_rate_shock
+        alignment = row.get("alignment_type", "")
+        if alignment in carbontech_alignments:
+            return base + brown_discount_spread
+        elif green_discount_spread > 0:
+            return base - green_discount_spread
+        return base
+
+    npv_data["discount_rate"] = npv_data.apply(get_discount_rate, axis=1)
 
     need_cols = ["asset_id", "year", "FCFF", "trajectory_type"]
     missing = [c for c in need_cols if c not in npv_data.columns]
@@ -127,16 +149,57 @@ def _reference_compute(
         g["terminal_value"] = 0.0
         g["yearly_npv"] = g["pv_fcff"]
 
-        if (terminal_method == "perpetuity") and (len(g) > 0):
-            final_fcff = float(g["FCFF"].iloc[-1])
-            final_year = int(g["year"].iloc[-1])
+        g_effective = terminal_growth_rate
 
-            if final_fcff > 0:
-                terminal_cf = final_fcff * (1 + terminal_growth_rate)
-                final_discount_rate = g.iloc[-1]["discount_rate"]
-                if final_discount_rate > terminal_growth_rate:
+        if (terminal_method == "perpetuity") and (len(g) > 0):
+            n_window = min(terminal_normalization_window, len(g))
+            final_fcff = float(g["FCFF"].iloc[-n_window:].mean())
+            final_year = int(g["year"].iloc[-1])
+            final_discount_rate = g.iloc[-1]["discount_rate"]
+
+            alignment = first_row.get("alignment_type", "")
+            is_carbontech = alignment in carbontech_alignments
+            if is_carbontech:
+                g_effective = g_brown
+            else:
+                g_effective = g_green
+
+            tv_tier = "perpetuity"
+            terminal_value = 0.0
+
+            if stranding_aware_tv and final_fcff != 0:
+                n_check = min(stranding_consecutive_years, len(g))
+                last_n_fcff = g["FCFF"].iloc[-n_check:]
+                is_stranded = (last_n_fcff <= 0).all()
+
+                if is_stranded:
+                    tv_tier = "stranded"
+                    terminal_value = 0.0
+                elif is_carbontech and final_fcff > 0:
+                    tv_tier = "finite_annuity"
+                    annuity_factor = sum(
+                        1 / (1 + final_discount_rate) ** t
+                        for t in range(1, brown_remaining_life_years + 1)
+                    )
+                    terminal_cf = final_fcff * (1 + g_effective)
+                    terminal_value_nominal = terminal_cf * annuity_factor
+                    years_from_base_to_final = final_year - base_year
+                    terminal_discount_factor = (1 + final_discount_rate) ** (
+                        -years_from_base_to_final
+                    )
+                    terminal_value = float(
+                        terminal_value_nominal * terminal_discount_factor
+                    )
+                else:
+                    tv_tier = "perpetuity"
+            elif not stranding_aware_tv:
+                tv_tier = "perpetuity"
+
+            if tv_tier == "perpetuity" and final_fcff != 0:
+                if final_discount_rate > g_effective:
+                    terminal_cf = final_fcff * (1 + g_effective)
                     terminal_value_nominal = terminal_cf / (
-                        final_discount_rate - terminal_growth_rate
+                        final_discount_rate - g_effective
                     )
                     years_to_terminal = (final_year + 1) - base_year
                     terminal_discount_factor = (1 + final_discount_rate) ** (
@@ -146,19 +209,24 @@ def _reference_compute(
                         terminal_value_nominal * terminal_discount_factor
                     )
 
-                    terminal_row = g.iloc[-1].copy()
-                    terminal_row["year"] = final_year + 1
-                    terminal_row["years_from_base"] = years_to_terminal
-                    terminal_row["discount_factor"] = terminal_discount_factor
-                    terminal_row["pv_fcff"] = 0.0
-                    terminal_row["terminal_value"] = terminal_value
-                    terminal_row["yearly_npv"] = terminal_value
+            if terminal_value != 0:
+                years_to_terminal = (final_year + 1) - base_year
+                terminal_discount_factor = (1 + final_discount_rate) ** (
+                    -years_to_terminal
+                )
+                terminal_row = g.iloc[-1].copy()
+                terminal_row["year"] = final_year + 1
+                terminal_row["years_from_base"] = years_to_terminal
+                terminal_row["discount_factor"] = terminal_discount_factor
+                terminal_row["pv_fcff"] = 0.0
+                terminal_row["terminal_value"] = terminal_value
+                terminal_row["yearly_npv"] = terminal_value
 
-                    for fin_col in available_financial_cols:
-                        if fin_col in terminal_row.index:
-                            terminal_row[fin_col] = 0.0
+                for fin_col in available_financial_cols:
+                    if fin_col in terminal_row.index:
+                        terminal_row[fin_col] = 0.0
 
-                    g = pd.concat([g, terminal_row.to_frame().T], ignore_index=True)
+                g = pd.concat([g, terminal_row.to_frame().T], ignore_index=True)
 
         for col in group_keys:
             if col not in g.columns:
@@ -166,7 +234,7 @@ def _reference_compute(
 
         g["base_year"] = base_year
         g["terminal_method"] = terminal_method
-        g["terminal_growth_rate"] = terminal_growth_rate
+        g["terminal_growth_rate"] = g_effective
 
         output_cols = (
             group_keys
@@ -347,12 +415,34 @@ def _fixture_frame() -> pd.DataFrame:
 
 PARAMS = [
     pytest.param({}, id="defaults"),
-    pytest.param({"terminal_growth_rate": 0.10}, id="r_le_g"),
-    pytest.param({"terminal_growth_rate": 0.0}, id="zero_growth"),
+    pytest.param({"stranding_aware_tv": True}, id="stranding_on"),
+    pytest.param({"terminal_normalization_window": 3}, id="window3"),
+    pytest.param(
+        {"stranding_aware_tv": True, "terminal_normalization_window": 3,
+         "terminal_growth_rate_brown": 0.0, "terminal_growth_rate_green": 0.03},
+        id="stranding_window3_split_g",
+    ),
+    pytest.param(
+        {"stranding_aware_tv": True, "stranding_consecutive_years": 2,
+         "brown_remaining_life_years": 15},
+        id="stranding_2yr_life15",
+    ),
+    pytest.param({"terminal_growth_rate_green": 0.10}, id="r_le_g_green"),
+    pytest.param(
+        {"terminal_growth_rate_brown": 0.20, "terminal_growth_rate_green": 0.20},
+        id="r_le_g_all",
+    ),
     pytest.param({"terminal_method": "none"}, id="terminal_method_none"),
     pytest.param(
-        {"discount_rate_baseline": 0.05, "discount_rate_shock": 0.12},
-        id="split_discount_rates",
+        {"brown_discount_spread": 0.015, "green_discount_spread": 0.005},
+        id="both_spreads",
+    ),
+    pytest.param({"brown_discount_spread": 0.015}, id="brown_spread_only"),
+    pytest.param(
+        {"stranding_aware_tv": True, "brown_discount_spread": 0.015,
+         "green_discount_spread": 0.005, "terminal_normalization_window": 3,
+         "terminal_growth_rate_brown": -0.01, "terminal_growth_rate_green": 0.025},
+        id="kitchen_sink",
     ),
 ]
 
@@ -368,9 +458,20 @@ def test_terminal_rows_are_added_for_the_expected_groups():
     out = compute_yearly_npv_trajectories(_fixture_frame())
     tv = out.loc[pd.to_numeric(out["terminal_value"], errors="coerce") != 0]
     assert set(tv["asset_id"]) >= {"A1", "A3", "A5", "A8", "A9"}
-    # A4 is loss-making throughout, A7 has final_fcff == 0 -> no terminal row
-    assert "A4" not in set(tv["asset_id"])
+    # A4 is loss-making throughout: with stranding off it still takes a
+    # perpetuity, now on a NEGATIVE terminal cash flow (the ported rule anchors
+    # on final_fcff != 0, not final_fcff > 0).
+    assert "A4" in set(tv["asset_id"])
+    # A7's final FCFF is exactly zero -> no terminal row, either way.
     assert "A7" not in set(tv["asset_id"])
+
+    stranded = compute_yearly_npv_trajectories(_fixture_frame(), stranding_aware_tv=True)
+    stranded_tv = stranded.loc[
+        pd.to_numeric(stranded["terminal_value"], errors="coerce") != 0
+    ]
+    # A4 and A2 close their horizon with three loss-making years -> TV = 0.
+    assert "A4" not in set(stranded_tv["asset_id"])
+    assert "A2" not in set(stranded_tv["asset_id"])
 
 
 # --------------------------------------------------------------------------

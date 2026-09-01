@@ -59,9 +59,12 @@ is deliberate: where the number comes from should never be a matter of trust.
       **`Theia-Finance-Labs/altr-model-refactored`** - use the URL in the
       [quickstart](quickstart.md) and nothing else.
     * It names a Docker Compose configuration and a
-      `notebooks/run_kedro_batch.py` batch runner, neither of which ships here.
-      The equivalents are `scripts/prepare_inputs.py` to stage the delivered
-      data and `uv run kedro run` to run the model - both exactly as the
+      `notebooks/run_kedro_batch.py` batch runner. Both exist, but as
+      **internal-repository tooling** that is not part of the delivered
+      package ([batch runs and the app](batch_runs.md) documents them and
+      says exactly which pieces ship). In the package, the equivalents are
+      `scripts/prepare_inputs.py` to stage the delivered data and
+      `uv run kedro run` to run the model - both exactly as the
       [quickstart](quickstart.md) gives them.
     * It refers to a Poetry install and a `conf/base/parameters.yml`. This
       package installs with **uv** (`uv sync`) and has **no consolidated
@@ -94,6 +97,12 @@ carries the `reporting` tag and turns those numbers into figures (3 nodes).
 * **[User guide](user_guide.md)** - one worked example end to end: choose a
   scenario pair, set three parameters, run, and read the two headline output
   tables.
+* **[Input data](input_data.md)** - the column-level contract for the three
+  input CSVs, including the units traps.
+* **[Methodology notes](methodology_notes.md)** - the five modelling
+  behaviours that shape every result but belong to no single stage: scenario
+  viability, geography matching, granularity, asset retirement, synthetic
+  assets.
 * **[Scenario catalog](scenario_catalog.md)** - candidate baseline/target
   scenario pairs to copy into
   `conf/base/parameters_prepare_scenario_asset_and_company_inputs.yml`.
@@ -101,8 +110,10 @@ carries the `reporting` tag and turns those numbers into figures (3 nodes).
   likely to hit, with the exact error text.
 
 !!! note "What the PDF is still good for"
-    [ALTR Model User Guide](altr_documentation.pdf) remains the **methodology**
-    reference: what each stage does conceptually, the input data dictionaries,
-    and the modelling notes (scenario viability, geography matching, asset
-    retirement, synthetic assets) in its *Additional notes* section. Read it for
-    the *why*; read this site for the *how*.
+    [ALTR Model User Guide](altr_documentation.pdf) remains a readable
+    methodology narrative - what each stage does conceptually, in prose. Its
+    input data dictionaries and *Additional notes* material now live on this
+    site in maintained form ([input data](input_data.md),
+    [methodology notes](methodology_notes.md)), corrected where the PDF has
+    drifted from the code. Read the PDF for the *why*; read this site for the
+    *how* and for anything the two disagree on.

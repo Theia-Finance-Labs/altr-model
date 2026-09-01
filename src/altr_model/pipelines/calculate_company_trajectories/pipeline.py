@@ -16,7 +16,7 @@ from .nodes import (
 NAMESPACE = "calculate_company_trajectories"
 PIPELINE_INPUTS = {"company_projection_inputs"}
 PIPELINE_OUTPUTS = {"company_pathways_pre_allocation"}
-PIPELINE_PARAMETERS = {"alignment_year", "shock_year"}
+PIPELINE_PARAMETERS = {"alignment_year", "price_ramp", "shock_year"}
 
 
 def create_pipeline(**kwargs) -> Pipeline:
@@ -91,6 +91,8 @@ def create_pipeline(**kwargs) -> Pipeline:
                     "aligned_decreasing_trajectories": "_aligned_decreasing_trajectories",
                     "aligned_increasing_trajectories": "_aligned_increasing_trajectories",
                     "shock_year": "params:shock_year",
+                    "alignment_year": "params:alignment_year",
+                    "price_ramp": "params:price_ramp",
                 },
                 outputs="company_pathways_pre_allocation",
                 name="combine_company_trajectory_cases",

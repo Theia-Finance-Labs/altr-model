@@ -146,8 +146,8 @@ files that carry ` - w/ CCS` technology variants, `False` for files that carry
 
 Not every scenario × technology × geography combination is economically viable,
 and the model will happily run the arithmetic on one that is not. Two checks
-against the scenario data before blaming the model, both described in the
-*Additional notes* section of [ALTR Model User Guide](altr_documentation.pdf):
+against the scenario data before blaming the model, both described in
+[Methodology notes](methodology_notes.md#economic-viability-of-a-scenario-pair):
 
 * **Fixed cost check** - if annual fixed O&M per MW exceeds
   `capacity_factor × 8760 × price`, EBITDA is negative for that row no matter
@@ -183,7 +183,8 @@ Two scenario geographies of equal specificity cover the same country, so the
 model refuses to pick one arbitrarily. The message lists every offending
 `asset_id` and country. Fix it in the scenario data: drop one of the tied
 geographies, or narrow one of them. How geography matching works - most specific
-wins - is described in the *Additional notes* section of the PDF.
+wins - is described in
+[Methodology notes](methodology_notes.md#how-assets-are-matched-to-a-scenario-geography).
 
 ### `AssertionError: Some assets are not assigned to a scenario geography`
 
