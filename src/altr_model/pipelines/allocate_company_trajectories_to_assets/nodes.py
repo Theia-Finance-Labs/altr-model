@@ -279,6 +279,58 @@ def build_canonical_asset_trajectories(
     return asset_trajectories.sort_values(asset_sort).reset_index(drop=True)
 
 
+FROZEN_CAPACITY_COLUMNS = ASSET_KEYS + ["year", "frozen_capacity_at_retirement"]
+
+
+def create_frozen_capacity_at_retirement(
+    asset_allocation_wide: pd.DataFrame,
+) -> pd.DataFrame:
+    """Capacity each retiring asset last stood at, carried through its retirement.
+
+    For every asset with a retirement year, take its capacity in the year
+    BEFORE retirement — at the retirement year itself the retirement logic has
+    already zeroed it — and extend that level across every year from retirement
+    onward.
+
+    This is a lookup table, not a cost driver: fixed costs use first-year
+    capacity (``compute_ops_block``'s ``initial_capacity``), so nothing in the
+    earnings maths reads this column today. It is carried because the handover
+    branch carries it and the 2026-09-01 owner ruling ports Q4 — it is the
+    surface a stranded-capacity view would be built on.
+    """
+    if asset_allocation_wide.empty or "capacity_after_shock" not in (
+        asset_allocation_wide.columns
+    ):
+        return pd.DataFrame(columns=FROZEN_CAPACITY_COLUMNS)
+
+    # retirement_year is carried on every row of the wide panel, so the retiring
+    # assets are a filter rather than a join.
+    assets = asset_allocation_wide.dropna(subset=["retirement_year"])
+    if assets.empty:
+        return pd.DataFrame(columns=FROZEN_CAPACITY_COLUMNS)
+
+    last_active = assets.loc[assets["year"].eq(assets["retirement_year"] - 1)]
+    if last_active.empty:
+        return pd.DataFrame(columns=FROZEN_CAPACITY_COLUMNS)
+
+    frozen = (
+        last_active.assign(
+            frozen_capacity_at_retirement=last_active["capacity_after_shock"]
+        )[ASSET_KEYS + ["retirement_year", "frozen_capacity_at_retirement"]]
+        .drop_duplicates()
+        .merge(
+            pd.DataFrame({"year": sorted(asset_allocation_wide["year"].unique())}),
+            how="cross",
+        )
+    )
+    frozen = frozen.loc[frozen["year"].ge(frozen["retirement_year"])]
+    return (
+        frozen[FROZEN_CAPACITY_COLUMNS]
+        .sort_values(ASSET_KEYS + ["year"])
+        .reset_index(drop=True)
+    )
+
+
 def reconcile_realized_company_trajectories(
     asset_trajectories: pd.DataFrame,
     company_pathways_pre_allocation: pd.DataFrame,

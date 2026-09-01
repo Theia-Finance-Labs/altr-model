@@ -38,6 +38,10 @@ asset_trajectories:
   type: pandas.CSVDataset
   filepath: data/fixture_run/07_model_output/asset_trajectories.csv
 
+frozen_capacity_at_retirement:
+  type: pandas.CSVDataset
+  filepath: data/fixture_run/07_model_output/frozen_capacity_at_retirement.csv
+
 # ================================================
 # ======= EARNINGS MODEL PIPELINE OUTPUTS =======
 # ================================================

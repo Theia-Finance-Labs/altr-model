@@ -29,8 +29,18 @@ ASSET_SERIES_KEYS = [
 ]
 
 
-def validate_asset_trajectories(asset_trajectories: pd.DataFrame) -> pd.DataFrame:
-    """Validate the canonical, already-enriched asset trajectory contract."""
+def validate_asset_trajectories(
+    asset_trajectories: pd.DataFrame,
+    frozen_capacity_at_retirement: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Validate the canonical, already-enriched asset trajectory contract.
+
+    ``frozen_capacity_at_retirement`` is a lookup of the capacity each retiring
+    asset last stood at, carried onto the panel from its retirement year on.
+    Nothing in the earnings maths reads it — fixed costs use first-year capacity
+    — so it is a carried surface, not a cost driver; see the Q4 entries in
+    docs/superpowers/plans/consolidation-clash-report.md.
+    """
     required_columns = {
         "asset_id",
         "company_id",
@@ -57,6 +67,29 @@ def validate_asset_trajectories(asset_trajectories: pd.DataFrame) -> pd.DataFram
         raise ValueError(f"asset_trajectories missing required columns: {missing}")
 
     assets = asset_trajectories.copy()
+
+    frozen_keys = ["asset_id", "company_id", "scenario_geography", "sector",
+                   "technology", "year"]
+    if (
+        frozen_capacity_at_retirement is not None
+        and not frozen_capacity_at_retirement.empty
+    ):
+        assets = assets.merge(
+            frozen_capacity_at_retirement[
+                frozen_keys + ["frozen_capacity_at_retirement"]
+            ].drop_duplicates(frozen_keys),
+            on=frozen_keys,
+            how="left",
+            validate="many_to_one",
+        )
+        logger.info(
+            "Frozen capacity merged onto %s of %s asset-year rows",
+            assets["frozen_capacity_at_retirement"].notna().sum(),
+            len(assets),
+        )
+    else:
+        assets["frozen_capacity_at_retirement"] = np.nan
+
     for column in [
         "asset_id",
         "company_id",
