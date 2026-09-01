@@ -67,9 +67,13 @@ asset-company ownership link per year.
     a fraction-convention extract upstream; see
     [Troubleshooting](troubleshooting.md#valueerror-ownership_percentage-looks-like-a-0-1-fraction-max).
 
-Ownership stakes are tiered first, then consolidated: `ownership_type` picks
-one rung of the ownership tree, and the stakes a company holds in one asset-year
-**within that rung** are summed into a single row before the run. Also,
+How the stakes a company holds in one asset-year combine is set by
+`ownership_aggregation`. Under `"tier_filter"` (the default) they are tiered
+first, then consolidated: `ownership_type` picks one rung of the ownership tree,
+and the stakes **within that rung** are summed into a single row before the run.
+Under `"sum"` no rung is dropped - direct and equity holdings are totalled per
+company-asset-year, the reading TRISK uses. Absolute outputs are not comparable
+between the two modes. Also,
 `prepare_inputs.py` warns when consolidated ownership per asset-year exceeds
 105% - an over-allocated extract inflates every downstream number silently. The
 details are in
