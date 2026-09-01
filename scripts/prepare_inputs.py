@@ -24,9 +24,9 @@ companies_ownerships.csv    ``year`` -> ``production_year``;
                             ``sector`` / ``technology`` / ``asset_name`` dropped
                             (``filter_companies`` projects them away before the
                             merge, so they never reach the join).
-scenarios.csv               ``scenario_name`` -> ``scenario`` with the
-                            ``AR6_<provider>_`` prefix stripped (``filter_scenarios``
-                            re-adds it); ``year`` -> ``scenario_year``.
+scenarios.csv               ``scenario_name`` -> ``scenario`` (``filter_scenarios``
+                            adds the ``AR6_<provider>_`` prefix only where it is
+                            absent); ``year`` -> ``scenario_year``.
 
 Everything is transformed and validated BEFORE anything is written, so a failed
 check cannot leave the model inputs half-swapped.
@@ -61,11 +61,18 @@ COMPANIES_REQUIRED = [
 OVER_ALLOCATION_PCT = 105
 OVER_ALLOCATION_SHARE = 0.01
 
+#: The pipeline hard-indexes the cost columns below (lifetime_years onward), so
+#: the bare prices/pathways extract fails deep inside inputs_processing rather
+#: than here. Keep this cost block literally identical to the ``required`` set in
+#: ``tests/fixtures/test_fixture_slice.py::test_fixture_scenarios_carry_cost_columns``.
 SCENARIOS_REQUIRED = [
     "scenario_provider", "scenario", "scenario_type", "scenario_geography",
     "sector", "technology", "technology_type", "scenario_price",
     "scenario_pathway", "scenario_capacity_factor", "scenario_year",
     "country_iso2_list",
+    "lifetime_years", "efficiency_decimal", "capital_cost_usd_per_mw",
+    "om_cost_usd_per_mw_per_yr", "capacity_additions_mw_per_yr",
+    "scrap_usd_per_mw", "carbon_price_usd_per_tco2", "fuel_price",
 ]
 
 
@@ -156,13 +163,11 @@ def build_scenarios(source: Path) -> pd.DataFrame:
     frame = pd.read_csv(source / "scenarios.csv", low_memory=False)
     require_columns(frame, ["scenario_provider", "scenario_name"], "scenarios")
 
-    # The pipeline strips "AR6_<provider>_" to match, then re-adds it.
-    prefix = "AR6_" + frame.scenario_provider.astype(str).str.strip() + "_"
-    frame["scenario"] = [
-        name[len(pfx):] if name.startswith(pfx) else name
-        for name, pfx in zip(frame.scenario_name.astype(str), prefix)
-    ]
-    frame = frame.rename(columns={"year": "scenario_year"}).drop(columns=["scenario_name"])
+    # `filter_scenarios` prefixes "AR6_<provider>_" only where it is absent, so
+    # names pass through either way — no strip needed, just the rename.
+    frame = frame.rename(
+        columns={"scenario_name": "scenario", "year": "scenario_year"}
+    )
     require_columns(frame, SCENARIOS_REQUIRED, "scenarios")
     return frame
 

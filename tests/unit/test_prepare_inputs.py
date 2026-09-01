@@ -86,6 +86,15 @@ def deliverables_scenarios() -> pd.DataFrame:
             "scenario_capacity_factor": 0.5,
             "year": YEARS,
             "country_iso2_list": "DE",
+            # Cost columns the pipeline hard-indexes; see SCENARIOS_REQUIRED.
+            "lifetime_years": 30.0,
+            "efficiency_decimal": 0.4,
+            "capital_cost_usd_per_mw": 1_000_000.0,
+            "om_cost_usd_per_mw_per_yr": 30_000.0,
+            "capacity_additions_mw_per_yr": 5.0,
+            "scrap_usd_per_mw": 10_000.0,
+            "carbon_price_usd_per_tco2": 50.0,
+            "fuel_price": 3.0,
         }
     )
 
@@ -126,8 +135,8 @@ def test_transforms_emit_the_pipeline_contract_columns(source: Path):
     assert set(SCENARIOS_REQUIRED) <= set(scenarios.columns)
     assert "scenario_name" not in scenarios.columns
     assert list(scenarios["scenario_year"]) == YEARS
-    # "AR6_<provider>_" is stripped; filter_scenarios re-adds it.
-    assert set(scenarios["scenario"]) == {"EN_NoPolicy"}
+    # Renamed verbatim: filter_scenarios only prefixes names that lack "AR6_".
+    assert set(scenarios["scenario"]) == {"AR6_WITCH 5.0_EN_NoPolicy"}
 
 
 def test_missing_required_column_raises_valueerror_naming_it(tmp_path: Path):
@@ -137,6 +146,17 @@ def test_missing_required_column_raises_valueerror_naming_it(tmp_path: Path):
     )
     with pytest.raises(ValueError, match="capacity_factor"):
         build_assets(source)
+
+
+def test_scenarios_missing_a_cost_column_raises_valueerror_naming_it(tmp_path: Path):
+    # The bare prices/pathways extract lacks the cost columns; without this
+    # check it fails deep inside inputs_processing instead of here.
+    source = stage(
+        tmp_path / "01_raw",
+        scenarios=deliverables_scenarios().drop(columns=["lifetime_years"]),
+    )
+    with pytest.raises(ValueError, match="lifetime_years"):
+        build_scenarios(source)
 
 
 def test_ownership_tier_over_allocation_warns_but_does_not_raise():
