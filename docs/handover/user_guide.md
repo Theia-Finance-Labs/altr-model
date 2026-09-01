@@ -215,6 +215,16 @@ The switches with the largest, most interpretable effect on the headline number:
   transition-risk premium on top and
   moves `npv_change` down for every company at once - a level shift, not a
   re-ranking, which is what makes it easy to read and easy to over-interpret.
+  **With the shipped `price_ramp: True`, this knob is INERT and raising it
+  changes nothing.** The rate is selected off `scenario_type`, and a ramped
+  late & sudden pathway is a blend of the two scenario surfaces, so it keeps
+  carrying the *baseline* label rather than falsely claiming the target's:
+  every row of `asset_earnings` reads `scenario_type: baseline` and every row
+  therefore takes `dcf.discount_rate_baseline`. The knob is live only under
+  `price_ramp: False` (the hard switch to the target surface at `shock_year`),
+  which is the configuration to run if you want the two pathways discounted at
+  different rates. `trajectory_type` still separates the two worlds either way
+  - it is `scenario_type` alone that collapses.
 * **`market_passthrough`** (who pays the carbon cost) and the three cost
   switches `include_growth_capex`, `include_replacement_capex` and
   `include_decom_costs`, all in `parameters_calculate_asset_earnings.yml`.

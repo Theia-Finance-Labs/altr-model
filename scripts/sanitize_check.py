@@ -129,6 +129,12 @@ EXCEPTIONS: tuple[Suppression, ...] = (
         "export script.",
     ),
     Suppression(
+        "pyproject.toml",
+        "jakub",
+        "Package author attribution, mirroring the `bertrand` entry above: "
+        "repo creators ship as authors — owner decision 2026-09-01.",
+    ),
+    Suppression(
         "uv.lock",
         "bigquery",
         "Public PyPI package metadata for the optional `bigquery` dependency "
