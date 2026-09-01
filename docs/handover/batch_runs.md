@@ -99,18 +99,16 @@ custom selection), run, and download every output as one zip. It expects the
 converted model inputs to already be in `data/05_model_input/` (quickstart
 steps 3-4).
 
-Run it natively (internal builds only - `streamlit_app.py` and the `streamlit`
-dependency group are both absent from a delivered copy):
+Maintainers run it natively from an internal build: sync the optional
+dependency group `pyproject.toml` declares for the app, then `streamlit run`
+the app module under `notebooks/`. No copy-and-paste form of that command is
+printed here, because the app module, the group and the compose file are all
+absent from a delivered copy - the group is stripped out of its
+`pyproject.toml` and `uv.lock` on export - so the command could only fail for
+a recipient.
 
-```bash
-uv run --group streamlit streamlit run notebooks/streamlit_app.py
-```
-
-Or in Docker, which needs nothing installed but Docker itself:
-
-```bash
-docker compose up --build
-```
+The same internal build also runs it in Docker via `docker compose up --build`,
+which needs nothing installed but Docker itself.
 
 Once the logs settle, open <http://localhost:8501>.
 

@@ -19,6 +19,7 @@ from scripts.build_export import (
     drop_streamlit_group,
     empty_company_ids,
     is_skipped,
+    prune_streamlit_lock,
     read_allowlist,
 )
 from scripts.sanitize_check import EXCEPTIONS, PATTERNS, selftest
@@ -143,6 +144,34 @@ def test_streamlit_group_is_dropped_from_the_exported_pyproject():
 def test_streamlit_transform_raises_when_its_target_is_gone():
     with pytest.raises(TransformError, match="no `streamlit = \\[` group"):
         drop_streamlit_group("[dependency-groups]\ndocs = [\n    \"mkdocs\",\n]\n")
+
+
+def test_streamlit_is_pruned_from_the_exported_uv_lock():
+    # The pyproject transform above drops the group, but the lock was copied
+    # verbatim — so the export shipped the group's two declarations and the
+    # resolved [[package]] block, contradicting the docs and leaving the lock
+    # disagreeing with the pyproject it locks.
+    source = (ROOT / "uv.lock").read_text(encoding="utf-8")
+    assert "streamlit" in source.lower(), "uv.lock re-locked; transform is stale"
+
+    shipped = _transformed("uv.lock")
+    assert "streamlit" not in shipped.lower(), "streamlit survives the export"
+    # The cut is the streamlit entries, not the file around them: the other
+    # groups, the lock header and the neighbouring packages all stay.
+    assert "docs = [" in shipped and "bigquery = [" in shipped
+    assert shipped.startswith("version = "), "lock header lost to the transform"
+    for package in ('name = "kedro"', 'name = "pandas"', 'name = "strawberry-graphql"'):
+        assert package in shipped, f"{package} lost to the streamlit transform"
+    # Exactly the streamlit lines go: three blocks out of a file this size.
+    assert len(shipped.splitlines()) < len(source.splitlines())
+    assert len(source.splitlines()) - len(shipped.splitlines()) < 50
+
+
+def test_uv_lock_transform_raises_when_its_target_is_gone():
+    # The other half of the no-op guard: a lock with no streamlit in it means
+    # the transform can no longer verify what it removed.
+    with pytest.raises(TransformError, match="nothing named `streamlit`"):
+        prune_streamlit_lock('version = 1\n\n[[package]]\nname = "kedro"\n')
 
 
 def test_dockerignore_ships_alongside_the_dockerfile():
