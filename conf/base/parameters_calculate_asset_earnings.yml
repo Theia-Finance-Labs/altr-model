@@ -1,12 +1,26 @@
-# Asset earnings parameters
-market_passthrough: 0  # 0.5 => 50% carbon price passthrough to market prices
+# Asset earnings parameters.
+#
+# Part of ALTR's six-file parameter namespace; the run-configuration entry point is
+# `parameters_prepare_scenario_asset_and_company_inputs.yml`.
 
-# Cost element switches for earnings model
-include_growth_capex: False        # Include growth CapEx for new buildout capacity
-include_replacement_capex: False  # Include CapEx for replacing retired eligible assets
-replacement_capex_rate: 0.05      # Share of non-synthetic capacity growth capitalized as roll-over/replacement CapEx
-include_decom_costs: False        # Include decommissioning costs for retired assets
+# Share of the differential carbon cost passed through to customers, 0.0–1.0.
+market_passthrough: 0  # 0 => firm absorbs all differential carbon cost (conservative/stress test)
 
-# Continued O&M uses each asset trajectory's first-year capacity for fixed costs.
+# ── Cost switches ─────────────────────────────────────────────────────────────────
+# Which cost elements the earnings model charges to free cash flow (True/False).
+include_growth_capex: False        # OFF: IAM O&M already bundles annualized capital costs (REMIND/WITCH/POLES)
+include_replacement_capex: False   # Include CapEx for replacing retired eligible assets
+# Fraction (0.0–1.0) of each year's non-synthetic capacity growth capitalized as
+# roll-over / replacement CapEx. Read only when include_replacement_capex is True;
+# applied to `capacity_change` for assets that are not synthetic.
+replacement_capex_rate: 0.05
+include_decom_costs: False         # Include decommissioning costs for retired assets
+
+# ── Continued O&M ─────────────────────────────────────────────────────────────────
+# When enabled for a trajectory type, fixed O&M is charged on that trajectory's
+# FIRST-YEAR capacity for every year rather than on the year's actual capacity — so
+# a retiring asset keeps paying fixed costs it can no longer earn against. Enabling
+# it on the shock side only (the default) is what makes stranding bite in the shock
+# pathway without also penalising the baseline.
 apply_continued_om_baseline: False
 apply_continued_om_shock: True

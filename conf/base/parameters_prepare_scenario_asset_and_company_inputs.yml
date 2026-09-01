@@ -2,14 +2,44 @@
 #
 # Documentation for this file format can be found in "Parameters"
 # Link: https://docs.kedro.org/en/0.19.12/configuration/parameters.html
+#
+# ==================================================================================
+# ALTR run configuration — this is the file you normally touch
+# ==================================================================================
+# Kedro merges every `conf/base/parameters*.yml` file into ONE flat namespace, so a
+# key may be defined in exactly one base file (a duplicate breaks the run). ALTR
+# splits that namespace across six per-pipeline files; this one holds scenario
+# selection and run scope, which is where most runs are configured. Timing lives in
+# `parameters_calculate_company_trajectories.yml` and the cost switches in
+# `parameters_calculate_asset_earnings.yml`.
+#
+# Any value here can be overridden per environment in `conf/<env>/parameters*.yml`
+# (e.g. `conf/fixture/` for the small committed regression slice).
+# ==================================================================================
 
 
+# ── Scenario selection ────────────────────────────────────────────────────────────
+# The scenario pair the run compares: `baseline_scenario` is the counterfactual
+# (current-policy) pathway; `target_scenario` is the climate-policy pathway whose
+# "late & sudden" alignment drives the shock.
+# Values: full scenario names as they appear in the `scenario` column of the
+# scenarios input (`data/05_model_input/scenarios.csv`). Both must come from the
+# same IAM provider and start in the same year (asserted in `filter_assets`).
+# Note: `filter_scenarios` prepends "AR6_<provider>_" automatically.
+# Known pairs per IAM: see docs/handover/scenario_catalog.md
 baseline_scenario: "AR6_AIM/CGE 2.2_EN_NPi2020_1200f"
 target_scenario: "AR6_AIM/CGE 2.2_EN_NPi2020_900f"
 
+# ── Output granularity ────────────────────────────────────────────────────────────
+# True collapses asset-level results up to one row per company before the earnings
+# model runs; False keeps every asset distinct. Company-level runs are much cheaper
+# but lose the per-asset retirement and staggering detail the plots draw on.
 reduce_granularity_from_asset_to_company_level: False
 
 
+# ── Scope filters ─────────────────────────────────────────────────────────────────
+# Number of forecast years kept per asset, counted from the scenario start year:
+# assets are filtered to production years in [start_year, start_year + N] (years).
 max_forecast_horizon: 5
 
 # Technology scenario mapping control
@@ -18,6 +48,11 @@ max_forecast_horizon: 5
 ccs_on: False
 
 
+# Empty list = all companies (no filter).
+# Values: list of company_id strings present in the companies input. Read the ids
+# you can choose from off the `company_id` column of your own companies input
+# (`data/05_model_input/companies_ownerships.csv`); the list below is an example
+# selection, not a required one.
 company_ids:
   - "CP_7367629456451130624"
   - "CP_6411932603966179940"
