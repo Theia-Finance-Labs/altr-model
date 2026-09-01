@@ -7,8 +7,11 @@ What is pinned here is the behavioural contract every later task must keep:
 
 * ``company_npv``   — final valuation table: columns, row count, NPV values
   at ``rtol=1e-9``. Any numeric drift anywhere upstream lands here.
-* ``asset_npv``     — valuation_model output surface (Task 8 gate).
-* ``asset_earnings`` — earnings_model output surface (Task 6 gate).
+* ``asset_npv``     — valuation_model output surface (Task 8 gate), plus the
+  NPV pair of one asset per company: the company totals alone would not notice
+  values moving between two assets of the same company.
+* ``asset_earnings`` — earnings_model output surface (Task 6 gate), plus the
+  FCFF total of three assets, for the same reason one stage earlier.
 * ``asset_level_staggered_shock`` — distribute_impacts output surface
   (Task 7 gate).
 
@@ -79,6 +82,34 @@ ASSET_NPV_COLUMNS = [
 ]
 ASSET_NPV_ROWS = 721
 
+# asset_id -> (baseline_npv, latesudden_npv), one asset per fixture company.
+# The company totals above survive any reshuffle *within* a company, so these
+# pin the asset level itself: a value that moves from one asset to another
+# lands here. Captured verbatim from the fixture run, like everything else in
+# this file — re-pin ONLY when the fixture inputs change.
+ASSET_NPV_VALUES = {
+    "INTERNAL_A_L100000100038_int_ast_power_gem_stage2": (
+        254043761.0520262,
+        -243341054.52987105,
+    ),
+    "INTERNAL_A_L100000101856_int_ast_power_gem_stage2": (
+        -958591367.5157268,
+        -1831803226.303148,
+    ),
+    "INTERNAL_A_L100000102910_int_ast_power_gem_stage2": (
+        2079762157.3295617,
+        -1893563716.853532,
+    ),
+    "INTERNAL_A_L100000103087_int_ast_power_gem_stage2_GasCap": (
+        -96965768.51927318,
+        -137950223.50345284,
+    ),
+    "INTERNAL_A_L100000201220_int_ast_power_gem_stage2": (
+        -33179888.457690075,
+        -53702645.06381515,
+    ),
+}
+
 ASSET_EARNINGS_COLUMNS = [
     "asset_id",
     "asset_name",
@@ -105,6 +136,15 @@ ASSET_EARNINGS_COLUMNS = [
     "FCFF",
 ]
 ASSET_EARNINGS_ROWS = 37492
+
+# asset_id -> FCFF summed over that asset's rows. Same purpose one stage
+# earlier: the row count above cannot see two assets trading cash flows.
+# Re-pin ONLY when the fixture inputs change.
+ASSET_EARNINGS_FCFF = {
+    "INTERNAL_A_L100000100038_int_ast_power_gem_stage2": -375313785.80580044,
+    "INTERNAL_A_L100000101856_int_ast_power_gem_stage2": -4364579162.536558,
+    "INTERNAL_A_L100000102910_int_ast_power_gem_stage2": -3898950156.932099,
+}
 
 STAGGERED_SHOCK_COLUMNS = [
     "asset_id",
@@ -161,12 +201,24 @@ def test_valuation_output_shape_stable(fixture_run):
     for col in ("baseline_npv", "latesudden_npv"):
         assert np.isfinite(asset_npv[col]).all(), f"{col} has non-finite values"
 
+    for asset_id, (expected_baseline, expected_shock) in ASSET_NPV_VALUES.items():
+        rows = asset_npv.loc[asset_npv["asset_id"] == asset_id]
+        assert len(rows) == 1, f"{asset_id}: expected 1 row, found {len(rows)}"
+        row = rows.iloc[0]
+        assert row["baseline_npv"] == pytest.approx(expected_baseline, rel=1e-9)
+        assert row["latesudden_npv"] == pytest.approx(expected_shock, rel=1e-9)
+
 
 def test_earnings_output_shape_stable(fixture_run):
     earnings = _read("asset_earnings")
     assert list(earnings.columns) == ASSET_EARNINGS_COLUMNS
     assert len(earnings) == ASSET_EARNINGS_ROWS
     assert np.isfinite(earnings["FCFF"]).all(), "FCFF has non-finite values"
+
+    fcff_by_asset = earnings.groupby("asset_id")["FCFF"].sum()
+    for asset_id, expected in ASSET_EARNINGS_FCFF.items():
+        assert asset_id in fcff_by_asset.index, f"{asset_id} missing from earnings"
+        assert fcff_by_asset[asset_id] == pytest.approx(expected, rel=1e-9)
 
 
 def test_asset_distribution_output_shape_stable(fixture_run):

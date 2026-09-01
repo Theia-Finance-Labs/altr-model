@@ -22,6 +22,8 @@ Pinned behaviors — current behavior, computed by hand in each test body:
   - a NaN year raises `ValueError`.
 """
 
+import logging
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -180,15 +182,26 @@ def test_stranding_aware_tv_zeroes_a_persistently_loss_making_group():
     )
 
 
-def test_rows_without_scenario_type_are_dropped():
+def test_rows_without_scenario_type_are_dropped(caplog):
     frame = _earnings([(2025, 100.0), (2026, 110.0)])
     frame.loc[1, "scenario_type"] = None
 
-    out = compute_yearly_npv_trajectories(
-        frame, discount_rate_baseline=0.10, terminal_method="none"
-    )
+    with caplog.at_level(
+        logging.ERROR, logger="crispy_kedro.pipelines.valuation_model.nodes"
+    ):
+        out = compute_yearly_npv_trajectories(
+            frame, discount_rate_baseline=0.10, terminal_method="none"
+        )
 
     assert out["year"].tolist() == [2025]
+
+    # "Loudly" is the point: a silent dropna once hid ~200 rows per production
+    # run, so the drop must stay traceable to the broken combinations.
+    dropped = [r for r in caplog.records if "missing scenario_type" in r.getMessage()]
+    assert len(dropped) == 1, caplog.text
+    assert dropped[0].levelno == logging.ERROR
+    assert "Dropping 1 rows" in dropped[0].getMessage()
+    assert "('EU', 'Power', 'GasCap')" in dropped[0].getMessage()
 
 
 def test_nan_year_raises():
