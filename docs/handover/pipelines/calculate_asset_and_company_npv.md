@@ -16,6 +16,18 @@ discounted at a rate that depends on which scenario surface the row sits on -
 target rows; a terminal value is added beyond the forecast horizon; and the
 result is rolled up from asset to company-technology to company level.
 
+!!! note "`dcf.discount_rate_shock` is inert under the shipped configuration"
+
+    The rate is chosen off `scenario_type`, and with `price_ramp: True` (the
+    default, set in stage 2) a ramped late & sudden pathway is a *blend* of the
+    two scenario surfaces, so it keeps the baseline label rather than falsely
+    claiming the target's. Every row arriving here reads
+    `scenario_type: baseline` and takes `dcf.discount_rate_baseline`;
+    `dcf.discount_rate_shock` is read only under `price_ramp: False`. The two
+    pathways stay distinguishable by `trajectory_type` regardless. See the
+    [user guide](../user_guide.md) for what to change if the pathways should be
+    discounted differently.
+
 The terminal value is where most of the valuation judgement sits. It can be
 switched off (`terminal_value.method: "none"`) or computed from a **normalized**
 terminal FCFF — the mean of the last `terminal_value.normalization_window` years

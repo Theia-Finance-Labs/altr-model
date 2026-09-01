@@ -2,7 +2,7 @@
 name = "altr-model"
 version = "0.1.0"
 description = ""
-authors = [{ name = "bertrand.gallice", email = "bertrandgllc@gmail.com" }]
+authors = [{ name = "Jakub Cervenka", email = "jakub.cervenka@outlook.com" }, { name = "bertrand.gallice", email = "bertrandgllc@gmail.com" }]
 readme = "README.md"
 requires-python = ">=3.10,<3.11"
 dependencies = [
