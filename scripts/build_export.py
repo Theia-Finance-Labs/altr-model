@@ -36,6 +36,11 @@ import sys
 import zipfile
 from pathlib import Path
 
+try:  # imported as `scripts.build_export` (the tests, and -m)
+    from scripts.sanitize_check import COMPANY_ID_RE
+except ImportError:  # run as `python scripts/build_export.py` — sys.path[0] is scripts/
+    from sanitize_check import COMPANY_ID_RE
+
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 ALLOWLIST = HERE / "export_allowlist.txt"
@@ -124,6 +129,10 @@ def empty_company_ids(text: str) -> str:
     The block runs from `company_ids:` to the next line starting in column zero.
     Raises if it is not found or if an identifier survives — a transform that
     silently does nothing is how an unlicensed id ships.
+
+    The survivor check uses the SANITIZER's `COMPANY_ID_RE` rather than a second
+    copy of the pattern: a private copy is how this check and the gate that runs
+    after it drift into recognising different id shapes.
     """
     lines = text.splitlines(keepends=True)
     start = next(
@@ -141,7 +150,7 @@ def empty_company_ids(text: str) -> str:
         end += 1
 
     result = "".join(lines[:start]) + _COMPANY_IDS_REPLACEMENT + "".join(lines[end:])
-    leftover = re.search(r"(?<![A-Za-z0-9])(?:CN|CP)_\d{8,}(?![0-9])", result)
+    leftover = COMPANY_ID_RE.search(result)
     if leftover is not None:
         raise TransformError(
             f"{COMPANY_IDS_CONF}: company id {leftover.group()} survives the "

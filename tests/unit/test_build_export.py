@@ -6,6 +6,8 @@ against files they do not own. These tests fail when a source file is reworded
 and a pattern goes stale, rather than silently shipping the un-rewritten text.
 """
 
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -183,6 +185,31 @@ def test_dockerignore_ships_alongside_the_dockerfile():
     # It ships untransformed, so its comments must not point recipients at
     # internal-only files.
     assert "compose" not in _transformed(".dockerignore").lower()
+
+
+def test_build_export_still_runs_as_a_script():
+    """The company-id pattern is imported from the sanitizer next door, and the
+    two run under different import roots: `python scripts/build_export.py` puts
+    `scripts/` on sys.path, `import scripts.build_export` puts the repo root
+    there. The shim covers both — this is the half the rest of this suite, which
+    imports the module, cannot exercise."""
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "build_export.py"), "--help"],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "--data-source" in result.stdout
+
+
+def test_the_company_id_pattern_is_not_duplicated():
+    """One definition, imported. Two copies of this regex is how the transform
+    and the gate that runs after it end up seeing different id shapes."""
+    source = (ROOT / "scripts" / "build_export.py").read_text(encoding="utf-8")
+    assert "CN|CP" not in source, "the id pattern is inlined again"
+    assert "COMPANY_ID_RE" in source
 
 
 def test_every_transform_target_is_still_a_repo_file():
