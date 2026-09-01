@@ -14,13 +14,17 @@ PIPELINE_NAMES = {
     "prepare_scenario_asset_and_company_inputs",
 }
 
+# Datasets the migration retired. `frozen_capacity_at_retirement` was on this
+# list until 2026-09-01, when the owner ruling in
+# docs/superpowers/plans/implementation-notes-handover.md ("Owner decisions
+# 2026-09-01", item 2, Q4) ported it back from the handover branch. This test
+# defended its removal; the ruling supersedes that, so it is no longer listed.
 REMOVED_DATASETS = {
     "all_alignment_classifications",
     "asset_level_staggered_shock_melted",
     "assets_retirement_dates",
     "companies_late_sudden_trajectories_corrected",
     "extended_companies_forecasts",
-    "frozen_capacity_at_retirement",
     "scenario_pathways",
     "scenarios_pathways",
 }
@@ -79,7 +83,13 @@ def test_pipeline_public_contracts_are_narrow_and_canonical():
         "company_pathways_pre_allocation"
     }
     allocation = pipelines["allocate_company_trajectories_to_assets"]
-    assert allocation.outputs() == {"company_trajectories"}
+    # `frozen_capacity_at_retirement` joins `company_trajectories` on the public
+    # contract under the 2026-09-01 owner ruling (Q4): it is produced here, where
+    # retirement years live, and consumed by the earnings stage.
+    assert allocation.outputs() == {
+        "company_trajectories",
+        "frozen_capacity_at_retirement",
+    }
     assert "asset_trajectories" in {
         dataset_name
         for pipeline_node in allocation.nodes
@@ -90,7 +100,10 @@ def test_pipeline_public_contracts_are_narrow_and_canonical():
         for dataset_name in pipelines["calculate_asset_earnings"].inputs()
         if not dataset_name.startswith("params:")
     }
-    assert earnings_data_inputs == {"asset_trajectories"}
+    assert earnings_data_inputs == {
+        "asset_trajectories",
+        "frozen_capacity_at_retirement",
+    }
 
 
 def test_methodology_steps_are_visible_as_individual_nodes():

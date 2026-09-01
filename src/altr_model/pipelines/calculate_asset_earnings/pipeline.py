@@ -11,7 +11,7 @@ from .nodes import (
 )
 
 NAMESPACE = "calculate_asset_earnings"
-PIPELINE_INPUTS = {"asset_trajectories"}
+PIPELINE_INPUTS = {"asset_trajectories", "frozen_capacity_at_retirement"}
 PIPELINE_OUTPUTS = {"asset_earnings"}
 PIPELINE_PARAMETERS = {
     "apply_continued_om_baseline",
@@ -31,7 +31,10 @@ def create_pipeline(**kwargs) -> Pipeline:
         [
             node(
                 func=validate_asset_trajectories,
-                inputs="asset_trajectories",
+                inputs=dict(
+                    asset_trajectories="asset_trajectories",
+                    frozen_capacity_at_retirement="frozen_capacity_at_retirement",
+                ),
                 outputs="_temp_asset_panel_enriched",
                 name="validate_asset_trajectories",
             ),

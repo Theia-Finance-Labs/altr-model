@@ -22,6 +22,9 @@ BASE_DATASETS = {
     "scenarios",
     "company_trajectories",
     "asset_trajectories",
+    # Restored by the 2026-09-01 owner ruling (Q4); see tests/test_run.py's
+    # REMOVED_DATASETS comment.
+    "frozen_capacity_at_retirement",
     "asset_earnings",
     "yearly_npv_trajectories",
     "asset_npv",
@@ -40,7 +43,7 @@ def _filepaths(catalog_path: Path) -> dict[str, str]:
     }
 
 
-def test_base_catalog_is_the_expected_ten_datasets():
+def test_base_catalog_is_the_expected_datasets():
     assert set(_filepaths(CONF / "base" / "catalog.yml")) == BASE_DATASETS
 
 

@@ -8,6 +8,7 @@ from .nodes import (
     build_canonical_asset_trajectories,
     combine_asset_allocation_branches,
     compute_asset_baselines,
+    create_frozen_capacity_at_retirement,
     extend_asset_panel_and_attach_retirement,
     reconcile_realized_company_trajectories,
     split_company_pathways_by_technology_direction,
@@ -15,7 +16,11 @@ from .nodes import (
 
 NAMESPACE = "allocate_company_trajectories_to_assets"
 PIPELINE_INPUTS = {"asset_forecast_panel", "company_pathways_pre_allocation"}
-PIPELINE_OUTPUTS = {"asset_trajectories", "company_trajectories"}
+PIPELINE_OUTPUTS = {
+    "asset_trajectories",
+    "company_trajectories",
+    "frozen_capacity_at_retirement",
+}
 PIPELINE_PARAMETERS = {
     "alignment_year",
     "apply_decreasing_staggered_shock",
@@ -90,6 +95,12 @@ def create_pipeline(**kwargs) -> Pipeline:
                 },
                 outputs="_asset_allocation_wide",
                 name="combine_asset_allocation_branches",
+            ),
+            node(
+                create_frozen_capacity_at_retirement,
+                inputs="_asset_allocation_wide",
+                outputs="frozen_capacity_at_retirement",
+                name="create_frozen_capacity_at_retirement",
             ),
             node(
                 build_canonical_asset_trajectories,
