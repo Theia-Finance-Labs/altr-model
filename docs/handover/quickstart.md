@@ -42,18 +42,18 @@ powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | ie
 ```
 
 `uv sync` installs the `dev` group by default, so `pytest`, `pytest-cov` and
-`ruff` are already there. Two optional groups are *not* installed and are not
+`ruff` are already there. One optional group is *not* installed and is not
 needed to run the model:
 
 | Group | Install with | What it is for |
 | --- | --- | --- |
 | `docs` | `uv sync --group docs` | Building this documentation site locally. |
-| `streamlit` | `uv sync --group streamlit` | The batch-run app under `notebooks/` (internal builds only - a delivered copy carries neither the app nor this group, so the row is there for completeness, not as an instruction). |
 
-`pyproject.toml` declares one further optional group, used only by the
-maintainers' internal input tooling. It is not installed by default and you
-never need it; in a delivered copy the module it serves is not present either,
-which is why nothing in this documentation describes it.
+`pyproject.toml` declares two further optional groups, used only by the
+maintainers' internal tooling - the warehouse ingestion path and the batch-run
+app. Neither is installed by default and you never need either; in a delivered
+copy neither the groups nor the modules they serve are present, which is why
+nothing in this documentation names them.
 
 Verify the install - this must print a `0.19.x` version and exit cleanly:
 

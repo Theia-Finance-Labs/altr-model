@@ -140,7 +140,9 @@ EXCEPTIONS: tuple[Suppression, ...] = (
         "Public PyPI package metadata for the optional `bigquery` dependency "
         "group (google-cloud-bigquery, google-cloud-bigquery-storage) — 13 "
         "dependency-name hits, no project, dataset or account identifier. The "
-        "lock file must stay byte-identical or the resolved environment "
+        "lock file is copied as-is apart from ONE audited transform "
+        "(`prune_streamlit_lock`, which drops the non-shipping streamlit "
+        "group); nothing else may be edited or the resolved environment "
         "changes. RE-KEYED from the pre-migration `poetry.lock` entry: same "
         "pattern, same justification, the lock file this tree actually has.",
     ),

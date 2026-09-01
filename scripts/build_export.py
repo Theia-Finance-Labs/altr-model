@@ -240,6 +240,75 @@ def drop_streamlit_group(text: str) -> str:
     return result
 
 
+def _block_end(lines: list[str], start: int) -> int:
+    """Index one past a `[[package]]` block: the next one, or end of file."""
+    end = start + 1
+    while end < len(lines) and not lines[end].startswith("[[package]]"):
+        end += 1
+    return end
+
+
+def prune_streamlit_lock(text: str) -> str:
+    """Remove the `streamlit` dependency group from the exported uv.lock.
+
+    `drop_streamlit_group` takes the group out of the exported pyproject.toml,
+    but the lock file is copied verbatim, so the export still shipped the
+    group's declaration in both `[package.optional-dependencies]` and
+    `[package.metadata.requires-dev]` plus the resolved `[[package]]` block —
+    which contradicts the docs' "a delivered copy carries neither the app nor
+    this group" and would leave the lock disagreeing with the pyproject it
+    locks.
+
+    Three shapes are cut: a `streamlit = [` list (multi-line or the single-line
+    `[{ ... }]` form) and the `[[package]]` block named `streamlit`.
+
+    Deliberately NOT pruned: streamlit's transitive-only dependencies (altair,
+    pydeck, blinker, ...). Walking the resolution graph to decide which of them
+    nothing else needs is the brittle surgery this avoids; an unreferenced
+    package in a lock is inert, whereas a wrongly removed one breaks a sync.
+    A regenerated lock (`uv lock` without the group) is the clean fix if this
+    ever needs to be exact — it needs a network resolve, which an export build
+    cannot assume.
+
+    Raises if it finds nothing to cut or if `streamlit` survives — the same
+    no-op guard the other transforms carry.
+    """
+    lines = text.splitlines(keepends=True)
+    kept: list[str] = []
+    index = 0
+    cuts = 0
+    while index < len(lines):
+        line = lines[index]
+        if line.startswith("streamlit = ["):
+            end = index
+            while end < len(lines) and not lines[end].rstrip().endswith("]"):
+                end += 1
+            if end == len(lines):
+                raise TransformError("uv.lock: `streamlit = [` list is unterminated")
+            index = end + 1
+            cuts += 1
+            continue
+        if line.startswith("[[package]]") and any(
+            probe.startswith('name = "streamlit"')
+            for probe in lines[index + 1 : _block_end(lines, index)]
+        ):
+            index = _block_end(lines, index)
+            cuts += 1
+            continue
+        kept.append(line)
+        index += 1
+
+    if not cuts:
+        raise TransformError(
+            "uv.lock: nothing named `streamlit` found — the export transform "
+            "that removes it cannot verify what it removed"
+        )
+    result = "".join(kept)
+    if "streamlit" in result.lower():
+        raise TransformError("uv.lock: `streamlit` survives the export transform")
+    return result
+
+
 #: Copy-time rewrites, keyed by repo-relative path. Applied to the copy only —
 #: the source repo stays the single source of truth and is never edited here.
 #: Each transform raises if it does not find its target, so a rewrite cannot
@@ -256,6 +325,7 @@ TRANSFORMS = {
     COMPANY_IDS_CONF: empty_company_ids,
     "Dockerfile": dockerfile_for_recipients,
     "pyproject.toml": drop_streamlit_group,
+    "uv.lock": prune_streamlit_lock,
 }
 
 
