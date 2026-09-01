@@ -55,9 +55,12 @@ The `reduce_granularity_from_asset_to_company_level` parameter changes what an
 2. **Company granularity** (the switch on): physical assets are aggregated into
    one synthetic row per company/sector/technology/geography *before* the model
    runs. `asset_npv.csv`'s `asset_id` becomes a generated identifier of the form
-   `NEW_<company_id>_<sector>_<technology>_<geography>`, and `asset_count`
-   drops to the number of technology/geography buckets rather than physical
-   assets.
+   `unique_company_asset_<sector>_<technology>_<company_id>_<geography>`, and
+   `asset_count` drops to the number of technology/geography buckets rather
+   than physical assets. (The similar-looking
+   `NEW_<company_id>_<sector>_<technology>_<geography>` is a different id
+   entirely - the synthetic build-out asset below - and it appears under either
+   granularity setting.)
 
 !!! warning "Do not mix outputs from different granularity settings"
     Aggregating before the model runs is **not** equivalent to aggregating the
@@ -107,12 +110,14 @@ asset actually stops.
 
 For technologies whose scenario pathway is *increasing* (a renewables
 build-out, say), a company's real assets are left at business-as-usual
-capacity, and any gap versus the company's target trajectory is filled by a
-single **synthetic** top-up asset. From `shock_year` onward, the synthetic
-asset's capacity in year *t* is
-`max(0, company_target[t] − sum(real_assets[t]))` - it fills exactly the gap
-between the company-level target and what the real fleet already delivers, so
-real + synthetic always reconciles to the company total.
+capacity, and any gap versus the company's requested trajectory is filled by a
+single **synthetic** top-up asset. From `shock_year` onward (and only from
+there - before the shock year the synthetic asset carries no capacity), its
+capacity in year *t* is
+`max(0, company_late_sudden_requested[t] − sum(real_assets[t]))`. The series
+being closed on is the **late & sudden requested** company path, not the raw
+`target` scenario path: the requested path is the one the company is actually
+being held to, so real + synthetic reconciles to it exactly.
 
 A synthetic asset can only appear where the company already has a real one.
 The model only produces a company trajectory for a

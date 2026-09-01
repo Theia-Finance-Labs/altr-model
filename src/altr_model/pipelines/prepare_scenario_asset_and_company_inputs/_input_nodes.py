@@ -604,8 +604,9 @@ def allocate_assets_to_companies(
 
     # Calculate owned asset capacity (allocated capacity based on ownership
     # percentage). ownership_percentage is on the 0-100 scale -- the tier
-    # selected upstream sums to ~100 per asset-year (see check_ownership_tier in
-    # notebooks/prepare_new_inputs.py) -- so divide by 100 to get the fraction.
+    # selected upstream sums to ~100 per asset-year, which
+    # `check_ownership_allocation` in scripts/prepare_inputs.py warns about when
+    # the delivered rows do not -- so divide by 100 to get the fraction.
     max_ownership = merged_data["ownership_percentage"].max()
     if pd.notna(max_ownership) and max_ownership <= 1.5:
         raise ValueError(

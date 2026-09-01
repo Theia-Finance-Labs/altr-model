@@ -114,7 +114,7 @@ of their own.
 | `apply_ccs_suffix` | Points Coal/Gas/Biomass/Oil at the with- or without-CCS scenario variant |
 | `filter_assets` | Cuts each asset to `max_forecast_horizon` years from the scenario start year, and asserts both scenarios start in the same year |
 | `assign_scenario_geographies_to_assets` | Matches every asset's country to its most granular scenario geography, failing rather than guessing on a tie |
-| `allocate_assets_to_companies` | Multiplies asset capacity by each owner's ownership percentage (0-100 scale) |
+| `allocate_assets_to_companies` | Allocates `capacity × ownership_percentage / 100` to each owner - the column is on the 0-100 scale, and the node raises rather than guessing if it looks like a 0-1 fraction |
 | `determine_increasing_or_decreasing_techs` | Labels each technology as increasing or decreasing under the scenario |
 | `determine_lifetime_per_technology` | Derives the technology lifetime used to date asset retirement |
 

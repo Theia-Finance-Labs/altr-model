@@ -12,11 +12,29 @@
 
 Converts each asset's physical trajectory into money. The canonical asset table
 arrives with the active price and cost surface already attached to every row, so
-this stage does no joining: it validates the contract, decomposes year-on-year
-capacity changes into new-build, roll-over and retirement flows and prices them
-into growth, replacement and decommissioning CapEx, then turns capacity into
-production and production into earnings. Fuel, fixed O&M and net carbon cost net
-to EBITDA, and EBITDA less CapEx gives free cash flow to the firm.
+this stage joins only one thing - the `frozen_capacity_at_retirement` lookup
+produced by stage 3, merged onto the panel in `validate_asset_trajectories`. It
+validates the contract, decomposes year-on-year capacity changes into
+new-build, roll-over and retirement flows and prices them into growth,
+replacement and decommissioning CapEx, then turns capacity into production and
+production into earnings. Fuel, fixed O&M and net carbon cost net to EBITDA,
+and EBITDA less CapEx gives free cash flow to the firm.
+
+### What `validate_asset_trajectories` repairs
+
+It is not only a contract check - it also fixes three things in place before
+the earnings maths runs, and each one changes numbers:
+
+* **NaN years are dropped.** A row with no year cannot be discounted or
+  ordered, and downstream integer casts would turn it into an astronomical
+  outlier rather than an error.
+* **Emission factors are forward-filled within each asset series.** A gap in
+  the EF column would otherwise zero that year's carbon cost, which reads as a
+  free year rather than a missing input.
+* **Renewables missing an emission factor are zero-filled.** For the seven
+  zero-carbon technologies a missing EF genuinely is zero, so they are filled
+  rather than dropped - a forward-fill alone cannot help an asset whose EF is
+  missing from its very first year.
 
 This is the stage where the modelling choices bite hardest: how carbon costs are
 shared (`market_passthrough`), which cost elements are charged at all (the three
@@ -122,7 +140,7 @@ of `market_passthrough`. The keys are present so the differential path works if
 that adjustment is ever adopted.
 
 The price ramp that phases the financial surfaces across the shock window is a
-**stage 3** parameter, not one of this stage's: see
+**stage 2** parameter, not one of this stage's: see
 [`calculate_company_trajectories`](calculate_company_trajectories.md).
 
 ## Methodology reference
