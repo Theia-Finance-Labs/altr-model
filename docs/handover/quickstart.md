@@ -213,7 +213,7 @@ INFO     Running node: prepare_scenario_asset_and_company_inputs.prepare_scenari
 INFO     Completed 1 out of 29 tasks
 ...
 INFO     Saving data to company_npv (CSVDataset)...
-INFO     Completed 28 out of 29 tasks
+INFO     Completed 29 out of 29 tasks
 INFO     Pipeline execution completed successfully.
 ```
 

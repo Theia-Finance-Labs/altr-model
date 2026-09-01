@@ -205,26 +205,9 @@ The switches with the largest, most interpretable effect on the headline number:
   the baseline (`apply_continued_om_baseline: False`). Flipping both to the same
   value removes the asymmetry and, with it, most of the transition signal.
 * **`dcf.discount_rate_shock`** (in `parameters_calculate_asset_and_company_npv.yml`)
-  - the scenario base rate for cash flows on the target-scenario surface. It
-  ships equal to `dcf.discount_rate_baseline` (`0.07`), so the two pathways are
-  discounted identically and the whole `npv_change` comes from the cash flows.
-  The rate each row actually carries is that base plus a technology spread -
-  `dcf.brown_discount_spread` (+100 bps) on high-carbon alignments,
-  `dcf.green_discount_spread` (-50 bps) on the rest - which applies to both
-  pathways alike. Raising the shock rate above the baseline rate adds a
-  transition-risk premium on top and
-  moves `npv_change` down for every company at once - a level shift, not a
-  re-ranking, which is what makes it easy to read and easy to over-interpret.
-  **With the shipped `price_ramp: True`, this knob is INERT and raising it
-  changes nothing.** The rate is selected off `scenario_type`, and a ramped
-  late & sudden pathway is a blend of the two scenario surfaces, so it keeps
-  carrying the *baseline* label rather than falsely claiming the target's:
-  every row of `asset_earnings` reads `scenario_type: baseline` and every row
-  therefore takes `dcf.discount_rate_baseline`. The knob is live only under
-  `price_ramp: False` (the hard switch to the target surface at `shock_year`),
-  which is the configuration to run if you want the two pathways discounted at
-  different rates. `trajectory_type` still separates the two worlds either way
-  - it is `scenario_type` alone that collapses.
+  - the scenario base rate for cash flows on the target-scenario surface, and
+  inert under the shipped configuration. See [Discount rates](#discount-rates)
+  below.
 * **`market_passthrough`** (who pays the carbon cost) and the three cost
   switches `include_growth_capex`, `include_replacement_capex` and
   `include_decom_costs`, all in `parameters_calculate_asset_earnings.yml`.
@@ -233,3 +216,46 @@ The switches with the largest, most interpretable effect on the headline number:
   `False`, because IAM O&M already bundles annualized capital costs and
   charging growth CapEx on top would double-count. Flipping any of them
   changes `capex_total` and therefore FCFF in both pathways at once.
+
+### Discount rates
+
+Cash flows are discounted at a scenario base rate plus a technology spread. The
+base rate is `dcf.discount_rate_baseline` on the baseline surface and
+`dcf.discount_rate_shock` on the target surface, both in
+`parameters_calculate_asset_and_company_npv.yml`; they ship equal (`0.07`), so
+the whole `npv_change` comes from the cash flows rather than the rate. The
+spread is `dcf.brown_discount_spread` (+100 bps) on high-carbon alignments and
+`dcf.green_discount_spread` (-50 bps) on the rest, and it applies to both
+pathways alike.
+
+Raising the shock rate above the baseline rate prices transition risk into the
+rate as well. It moves `npv_change` down for every company at once - a level
+shift, not a re-ranking, which is what makes it easy to read and easy to
+over-interpret.
+
+**Under the shipped configuration that knob is INERT: raising it changes
+nothing.** The rate is selected off `scenario_type`, and a *ramped* late &
+sudden pathway is a blend of the two scenario surfaces, so it keeps carrying the
+*baseline* label rather than falsely claiming the target's. Every row of
+`asset_earnings` then reads `scenario_type: baseline`, and every row takes
+`dcf.discount_rate_baseline`.
+
+The pathway ramps when **both** of these hold, in
+`parameters_calculate_company_trajectories.yml`:
+
+| Condition | Shipped value |
+| --- | --- |
+| `price_ramp: True` | `True` |
+| `alignment_year` strictly greater than `shock_year` | `2038 > 2033` — holds |
+
+Break either one and `dcf.discount_rate_shock` is live again:
+
+* `price_ramp: False` - the hard switch to the target surface at `shock_year`;
+* `alignment_year` equal to `shock_year` - legal (`check_input_parameters`
+  requires `alignment_year >= shock_year`, not `>`), and it leaves an empty
+  transition window, so there is nothing to blend across.
+
+Either is a configuration to run if you want the two pathways discounted at
+different rates - but both also change the capacity pathway itself, so the
+discount rate is not the only thing that moves. `trajectory_type` separates the
+two worlds regardless; it is `scenario_type` alone that collapses under a ramp.

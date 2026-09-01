@@ -10,8 +10,11 @@ dcf:
   # flows, not from the rate. Raise it here to price transition risk into the
   # rate as well — regulatory uncertainty, stranded-asset risk, market
   # volatility and policy-implementation risk are the usual grounds.
-  # NOTE: with `price_ramp: True` this key is INERT — see the user guide's
-  # "Discount rates" section and the stage-5 pipeline page.
+  # NOTE: this key is INERT whenever the pathway actually ramps — that is
+  # `price_ramp: True` AND `alignment_year` > `shock_year`, which is the shipped
+  # configuration (2038 > 2033). `alignment_year: 2033` is legal and switches
+  # the ramp off, which makes this key live again, as does `price_ramp: False`.
+  # See the user guide's "Discount rates" section and the stage-5 pipeline page.
   discount_rate_shock: 0.07  # 7% real discount rate for transition shock pathways
 
   # ── Technology-differentiated discount rates ────────────────────────────────

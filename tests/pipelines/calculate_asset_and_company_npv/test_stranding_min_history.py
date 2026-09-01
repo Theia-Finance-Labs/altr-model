@@ -39,7 +39,16 @@ def _loss_making_years(count: int) -> pd.DataFrame:
 
 
 def _terminal_value(df: pd.DataFrame) -> float:
-    """Total TV under the stranding-aware tiering (off by default)."""
+    """Total TV under the stranding-aware tiering, switched on explicitly.
+
+    The two "defaults" disagree, so neither name is used bare here:
+    `compute_yearly_npv_trajectories`'s signature default is
+    `stranding_aware_tv=False`, while the shipped
+    `conf/base/parameters_calculate_asset_and_company_npv.yml` sets
+    `dcf.stranding_aware_tv: True`. A real run therefore has the tiering ON;
+    a direct call to the node without the parameter has it OFF. These tests
+    pass it explicitly so they pin the shipped behaviour either way.
+    """
     out = compute_yearly_npv_trajectories(
         df, stranding_aware_tv=True, stranding_consecutive_years=N
     )
