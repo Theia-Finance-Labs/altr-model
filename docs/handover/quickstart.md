@@ -281,5 +281,5 @@ between them.
 Comparing parameter sets - different scenario pairs, granularities, cost
 switches - without editing `conf/base/` between runs is what the batch tooling
 is for: [batch runs and the app](batch_runs.md). Note that most of it is
-internal-repository tooling; the page says exactly which pieces ship in the
-delivered package.
+maintainer tooling left out of sanitized delivery copies; the page says
+exactly which pieces a copy carries.
