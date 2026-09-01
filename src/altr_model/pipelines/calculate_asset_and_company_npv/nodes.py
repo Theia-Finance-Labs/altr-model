@@ -293,6 +293,11 @@ def compute_yearly_npv_trajectories(
         if stranding_aware_tv:
             # Stranded: loss-making for N consecutive years at the horizon end
             # (Gourdel 2024) — a rational owner shuts down, so TV = 0.
+            # A group with FEWER than N years cannot show N consecutive loss
+            # years: its whole history is shorter than the test. Scoring it
+            # stranded off 1-2 observations writes off the asset's entire
+            # terminal value on evidence the criterion does not have.
+            has_full_history = sizes >= stranding_consecutive_years
             strand_mask = pos_from_end < stranding_consecutive_years
             is_stranded = (
                 pd.Series(fcff[strand_mask] <= 0)
@@ -302,7 +307,7 @@ def compute_yearly_npv_trajectories(
                 .to_numpy()
                 .astype(bool)
             )
-            stranded = has_terminal_fcff & is_stranded
+            stranded = has_terminal_fcff & is_stranded & has_full_history
             # Declining but still profitable carbontech: a finite annuity over
             # the remaining economic life instead of a perpetuity.
             annuity = (
