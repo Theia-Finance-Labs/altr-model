@@ -6,7 +6,7 @@ can compare later runs against them with a numeric tolerance.
 
 Usage (from the repo root of the tree that holds the run):
 
-    python scripts/pin_golden.py --run-dir data/07_model_output \
+    python tests/golden/pin_golden.py --run-dir data/07_model_output \
         --require-sha <the commit the run was produced by>
 
 Copy the resulting `tests/golden/snapshots/` directory into any other checkout
