@@ -1,18 +1,18 @@
-# Stage 3 — `create_baseline_and_target_trajectories`
+# Stage 3 - `create_baseline_and_target_trajectories`
 
 | | |
 | --- | --- |
 | Source | `src/crispy_kedro/pipelines/create_baseline_and_target_trajectories/` |
 | Tags | `altrisk` |
-| Runs after | [Stage 2 — `inputs_postproc`](inputs_postproc.md) |
-| Runs before | [Stage 4 — `create_late_sudden_trajectories`](create_late_sudden_trajectories.md) |
+| Runs after | [Stage 2 - `inputs_postproc`](inputs_postproc.md) |
+| Runs before | [Stage 4 - `create_late_sudden_trajectories`](create_late_sudden_trajectories.md) |
 
 ## Purpose
 
 Builds the two reference paths every later comparison rests on. Asset forecasts
 are aggregated to company-technology level, each scenario pathway is converted
-into a Technology Market Share Rate (TMSR) — a growth factor relative to the
-pathway's first year — and those factors are applied to each company's starting
+into a Technology Market Share Rate (TMSR) - a growth factor relative to the
+pathway's first year - and those factors are applied to each company's starting
 capacity.
 
 The result is one baseline path and one target path per
@@ -50,7 +50,7 @@ All in-memory; `companies_trajectories` is what stage 4 consumes:
 ## Parameters read
 
 None. The stage is driven entirely by the scenario pair chosen in
-[stage 1](inputs_processing.md) — `conf/base/parameters_create_baseline_and_target_trajectories.yml`
+[stage 1](inputs_processing.md) - `conf/base/parameters_create_baseline_and_target_trajectories.yml`
 holds no active keys. See the [parameters reference](../parameters.md).
 
 ## Methodology reference

@@ -1,11 +1,11 @@
-# Stage 6 — `earnings_model`
+# Stage 6 - `earnings_model`
 
 | | |
 | --- | --- |
 | Source | `src/crispy_kedro/pipelines/earnings_model/` |
 | Tags | `altrisk` |
-| Runs after | [Stage 5 — `distribute_impacts_to_asset_level`](distribute_impacts_to_asset_level.md) |
-| Runs before | [Stage 7 — `valuation_model`](valuation_model.md) |
+| Runs after | [Stage 5 - `distribute_impacts_to_asset_level`](distribute_impacts_to_asset_level.md) |
+| Runs before | [Stage 7 - `valuation_model`](valuation_model.md) |
 
 ## Purpose
 
@@ -54,7 +54,7 @@ backwards compatibility.
 | `assemble_asset_panel` | `capacity.py` | Joins the surfaces onto the asset trajectories, including synthetic assets, and ramps prices across the shock window |
 | `compute_flow_based_capex` | `capacity.py` | Prices the capacity flows into growth, replacement and decommissioning CapEx |
 | `compute_ops_block` | `ops.py` | Production, fuel, fixed O&M and net carbon cost into EBITDA |
-| `compute_fcff` | `ops.py` | EBITDA less CapEx — free cash flow to the firm |
+| `compute_fcff` | `ops.py` | EBITDA less CapEx - free cash flow to the firm |
 | `write_asset_earnings_series` | `ops.py` | Writes the final `asset_earnings` table with every column downstream stages expect |
 
 Two functions in this pipeline are not nodes:

@@ -1,11 +1,11 @@
-# Stage 7 — `valuation_model`
+# Stage 7 - `valuation_model`
 
 | | |
 | --- | --- |
 | Source | `src/crispy_kedro/pipelines/valuation_model/` |
 | Tags | `altrisk` |
-| Runs after | [Stage 6 — `earnings_model`](earnings_model.md) |
-| Runs before | [Stage 8 — `reporting`](reporting.md) |
+| Runs after | [Stage 6 - `earnings_model`](earnings_model.md) |
+| Runs before | [Stage 8 - `reporting`](reporting.md) |
 
 ## Purpose
 
@@ -17,7 +17,7 @@ company-technology to company level.
 
 The terminal value is where most of the valuation judgement sits. It can be
 switched off, computed as a Gordon-growth perpetuity on a normalised
-final-years FCFF, or — with `stranding_aware_tv` on — split three ways: zero for
+final-years FCFF, or - with `stranding_aware_tv` on - split three ways: zero for
 assets whose last years are loss-making (the abandonment option), a finite
 annuity for still-profitable carbontech, and the standard perpetuity for
 everything else.
@@ -73,7 +73,7 @@ its dotted path:
 | `dcf.brown_remaining_life_years` | `10` | Finite annuity horizon for still-profitable carbontech |
 
 The [parameters reference](../parameters.md) lists the `dcf` block as a single
-entry — nested sub-keys are annotated in the YAML file itself, which is the
+entry - nested sub-keys are annotated in the YAML file itself, which is the
 source of truth for their defaults.
 
 ## Methodology reference

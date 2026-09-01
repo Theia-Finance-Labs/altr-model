@@ -1,11 +1,11 @@
-# Stage 1 — `inputs_processing`
+# Stage 1 - `inputs_processing`
 
 | | |
 | --- | --- |
 | Source | `src/crispy_kedro/pipelines/inputs_processing/` |
 | Tags | `altrisk`, `trisk` |
-| Runs after | — (first stage) |
-| Runs before | [Stage 2 — `inputs_postproc`](inputs_postproc.md) |
+| Runs after | - (first stage) |
+| Runs before | [Stage 2 - `inputs_postproc`](inputs_postproc.md) |
 
 ## Purpose
 
@@ -25,10 +25,10 @@ scenario?) and the per-technology asset lifetime used to date retirements.
 
 | Dataset | Where it comes from |
 | --- | --- |
-| `downloaded_scenarios` | `data/05_model_input/downloaded_scenarios.csv` — IAM pathways, prices, capacity factors, costs |
-| `downloaded_assets` | `data/05_model_input/downloaded_assets.csv` — one row per asset per forecast year |
-| `downloaded_companies` | `data/05_model_input/downloaded_companies.csv` — asset↔company ownership links |
-| `ar6_carbon_prices` | `6_final_AR6_viable_scenarios.csv` (repository root) — carbon prices per scenario/geography/year |
+| `downloaded_scenarios` | `data/05_model_input/downloaded_scenarios.csv` - IAM pathways, prices, capacity factors, costs |
+| `downloaded_assets` | `data/05_model_input/downloaded_assets.csv` - one row per asset per forecast year |
+| `downloaded_companies` | `data/05_model_input/downloaded_companies.csv` - asset↔company ownership links |
+| `ar6_carbon_prices` | `6_final_AR6_viable_scenarios.csv` (repository root) - carbon prices per scenario/geography/year |
 
 !!! note "The carbon-price input is a fourth file"
     `conf/base/catalog.yml` reads `ar6_carbon_prices` from
@@ -43,7 +43,7 @@ scenario?) and the per-technology asset lifetime used to date retirements.
 
 | Dataset | Persisted to | What it is |
 | --- | --- | --- |
-| `scenarios_pathways` | `data/05_model_output/scenarios_pathways.csv` | The scenario pair, annual, price-scaled, with carbon prices — read by stages 2, 3 and 6 |
+| `scenarios_pathways` | `data/05_model_output/scenarios_pathways.csv` | The scenario pair, annual, price-scaled, with carbon prices - read by stages 2, 3 and 6 |
 | `allocated_assets_to_companies` | `data/07_model_output/allocated_assets_to_companies.csv` | Asset-year rows with their owning company and ownership-weighted capacity |
 | `companies_ownership_tree`, `assets_forecasts`, `assets_forecasts_with_scenario_geographies`, `increasing_or_decreasing_techs`, `lifetime_per_technology`, and the `scenarios_pathways_*` intermediates | in memory | Not written to disk; declared nowhere in the catalog, so Kedro keeps them for the duration of the run |
 

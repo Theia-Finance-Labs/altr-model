@@ -41,7 +41,7 @@ pip install --upgrade pip
 pip install -e .
 ```
 
-> **The install takes 10–20 minutes, and looks stuck for most of it**
+> **The install takes 10-20 minutes, and looks stuck for most of it**
 > The dependency set pulls in the Google Cloud client stack, and pip
 > backtracks through dozens of `grpcio-status` releases resolving it. It
 > prints
@@ -52,7 +52,7 @@ pip install -e .
 > This could take a while.
 > ```
 >
-> and then goes quiet. That is normal — leave it running. In verification the
+> and then goes quiet. That is normal - leave it running. In verification the
 > first install on a clean machine ran past ten minutes; a later one, with
 > pip's cache already populated, finished in 41 seconds. You pay the cost once
 > per machine, not once per environment.
@@ -60,9 +60,9 @@ pip install -e .
 > `pip` re-resolves from scratch and ignores the `poetry.lock` shipped in the
 > repository, so the exact versions you get are whatever is current on PyPI
 > within the pins. Install with Poetry instead if you need to match another
-> machine's environment exactly — Poetry is the tool that reads the lock file.
+> machine's environment exactly - Poetry is the tool that reads the lock file.
 
-Verify the install — this must print a `0.19.x` version and exit cleanly:
+Verify the install - this must print a `0.19.x` version and exit cleanly:
 
 ```bash
 python -c "import crispy_kedro, kedro; print(kedro.__version__)"
@@ -85,7 +85,7 @@ cp /path/to/companies_ownerships.csv  data/01_raw/
 cp /path/to/scenarios.csv             data/01_raw/
 ```
 
-If `scenarios.csv` was delivered zipped, unzip it first — the pipeline reads the
+If `scenarios.csv` was delivered zipped, unzip it first - the pipeline reads the
 plain CSV:
 
 ```bash
@@ -95,7 +95,7 @@ unzip -o /path/to/scenarios.csv.zip -d data/01_raw/
 #### The fourth file: carbon prices
 
 One more input sits outside `data/`. The catalog entry `ar6_carbon_prices` reads
-`6_final_AR6_viable_scenarios.csv` **at the repository root** — an AR6 extract
+`6_final_AR6_viable_scenarios.csv` **at the repository root** - an AR6 extract
 carrying a carbon price per scenario, geography and year. It is not part of the
 three-file drop and `prepare_inputs.py` does not produce it. Without it the run
 stops at task 6 of 46 with a `FileNotFoundError`.
@@ -107,8 +107,8 @@ cp /path/to/6_final_AR6_viable_scenarios.csv .    # repository root, not data/
 Only five columns are read: `scenario_provider`, `scenario`,
 `scenario_geography`, `scenario_year`, `carbon_price_usd_per_tco2`.
 
-If your `scenarios.csv` already carries `carbon_price_usd_per_tco2` — WITCH and
-REMIND extracts do — the model logs `Carbon prices already populated … skipping
+If your `scenarios.csv` already carries `carbon_price_usd_per_tco2` - WITCH and
+REMIND extracts do - the model logs `Carbon prices already populated … skipping
 injection` and never uses this file's contents. It must still exist, so a
 header-only stand-in is enough:
 
@@ -119,7 +119,7 @@ echo 'scenario_provider,scenario,scenario_geography,scenario_year,carbon_price_u
 
 Verified: on a scenario file that already carries carbon prices, the stand-in
 produces NPVs identical to the real extract. For an IAM that reports no carbon
-price, the real file is what supplies them — a stand-in leaves the carbon price
+price, the real file is what supplies them - a stand-in leaves the carbon price
 at `0` and the price signal alone carries the transition effect.
 
 ### 4. Convert the deliverables into model inputs
@@ -147,7 +147,7 @@ rather than leaving a half-converted `data/05_model_input/`.
 ### 5. Choose the run configuration
 
 Open `conf/base/parameters.yml`. It is the single user-facing configuration file
-— scenario pair, shock timing, company filter, MCPR settings and cost switches,
+ -  scenario pair, shock timing, company filter, MCPR settings and cost switches,
 each annotated in place. The three you will almost always touch:
 
 ```yaml
@@ -159,7 +159,7 @@ shock_year: 2033
 Both scenario names must appear in the `scenario` column of
 `data/05_model_input/downloaded_scenarios.csv`, and both must come from the same
 IAM provider. See the [scenario catalog](docs/handover/scenario_catalog.md) for candidate
-pairs. The defaults shipped in the file are a valid pair — you can run first and
+pairs. The defaults shipped in the file are a valid pair - you can run first and
 tune afterwards.
 
 ### 6. Run the model
@@ -168,7 +168,7 @@ tune afterwards.
 kedro run --tags altrisk
 ```
 
-That runs stages 1–7 (46 nodes) and produces the numbers. To also produce the
+That runs stages 1-7 (46 nodes) and produces the numbers. To also produce the
 reporting tables and charts:
 
 ```bash
@@ -195,7 +195,7 @@ INFO     Pipeline execution completed successfully in 123.4 sec.
 ```
 
 The run has failed if you do not see `Pipeline execution completed
-successfully` — see [Troubleshooting](docs/handover/troubleshooting.md) for the common causes.
+successfully` - see [Troubleshooting](docs/handover/troubleshooting.md) for the common causes.
 Run duration scales with the number of companies and the forecast horizon; a
 first full-universe run is measured in tens of minutes, not seconds.
 
@@ -203,7 +203,7 @@ first full-universe run is measured in tens of minutes, not seconds.
 
 | Path | What it holds |
 | --- | --- |
-| `data/07_model_output/company_npv.csv` | **Headline table** — baseline vs shock NPV per company |
+| `data/07_model_output/company_npv.csv` | **Headline table** - baseline vs shock NPV per company |
 | `data/07_model_output/company_technology_npv.csv` | Same comparison, split by technology |
 | `data/07_model_output/asset_npv.csv` | Per-asset NPV with its revenue/cost/CapEx components |
 | `data/07_model_output/yearly_npv_trajectories.csv` | Year-by-year discounted detail behind the NPVs |

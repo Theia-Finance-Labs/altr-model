@@ -9,13 +9,13 @@ three converted input files.
 
 A run always compares two IAM scenarios:
 
-* **`baseline_scenario`** — the counterfactual pathway the company is on today
+* **`baseline_scenario`** - the counterfactual pathway the company is on today
   (a current-policy or reference scenario).
-* **`target_scenario`** — the climate-policy pathway the shock forces it onto.
+* **`target_scenario`** - the climate-policy pathway the shock forces it onto.
 
 Both names must exist in the `scenario` column of
 `data/05_model_input/downloaded_scenarios.csv`, and both must come from the same
-IAM provider — the model asserts that the two scenarios also start in the same
+IAM provider - the model asserts that the two scenarios also start in the same
 year. The [scenario catalog](scenario_catalog.md) lists candidate pairs per
 provider; copy one from there, or keep the pair shipped in the file.
 
@@ -45,9 +45,9 @@ is a gentler, more realistic phase-out; a narrower one is a harder shock. Settin
 
 Two more keys are worth knowing before your first run, both in the same file:
 
-* `company_ids: []` — an empty list means *all companies*. Put a handful of ids
+* `company_ids: []` - an empty list means *all companies*. Put a handful of ids
   in the list to get a fast run while you are still finding your feet.
-* `max_forecast_horizon: 5` — how many forecast years past the scenario start
+* `max_forecast_horizon: 5` - how many forecast years past the scenario start
   year each asset is valued over. Bigger horizon, longer run, more terminal-value
   sensitivity.
 
@@ -68,7 +68,7 @@ tags if you also want the charts and export tables.
 
 ### `data/07_model_output/company_npv.csv`
 
-One row per company — the top-line result.
+One row per company - the top-line result.
 
 | Column | Meaning |
 | --- | --- |
@@ -77,7 +77,7 @@ One row per company — the top-line result.
 | `latesudden_npv` | The same, on the late & sudden shock pathway, in USD |
 | `baseline_discount_rate`, `latesudden_discount_rate` | Effective discount rates behind those two numbers (asset-level rates, averaged) |
 | `asset_count` | How many assets (or synthetic technology buckets) sit behind the row |
-| `npv_change` | `(latesudden_npv - baseline_npv) / abs(baseline_npv)` — the fractional value change, not a percentage |
+| `npv_change` | `(latesudden_npv - baseline_npv) / abs(baseline_npv)` - the fractional value change, not a percentage |
 
 ### `data/07_model_output/asset_npv.csv`
 
@@ -99,26 +99,26 @@ at the terminal value or the discount rates, not at the physical trajectory.
 Two tables sit between these and the raw model if you need to go further:
 `yearly_npv_trajectories.csv` (per asset, per year, per trajectory: discount
 factor, present value, terminal value) and `asset_earnings.csv` (per asset, per
-year: production `Q`, revenue, costs, EBITDA, CapEx, FCFF — before any
+year: production `Q`, revenue, costs, EBITDA, CapEx, FCFF - before any
 discounting).
 
 ## Reading the sign of npv_change
 
 `npv_change = (latesudden_npv − baseline_npv) / abs(baseline_npv)`
 
-* **Negative** — the shock destroys value relative to the baseline pathway. This
+* **Negative** - the shock destroys value relative to the baseline pathway. This
   is the expected direction for carbon-intensive assets.
-* **Positive** — the shock leaves the company better off than the baseline
+* **Positive** - the shock leaves the company better off than the baseline
   pathway does. This is a real result, not necessarily a bug: see the framing
   note below.
-* **Empty / `NaN`** — `baseline_npv` was zero, so the ratio is undefined. Read
+* **Empty / `NaN`** - `baseline_npv` was zero, so the ratio is undefined. Read
   the two NPV levels directly instead of the ratio.
 
 The denominator is the **absolute value** of the baseline NPV. That is what keeps
 the sign of the ratio meaningful when a company's baseline NPV is itself negative:
 without it, a loss-making company that loses more under the shock would show a
 positive change. Because of this, always sanity-check the two NPV *levels* next
-to the ratio — a ratio computed against a baseline NPV near zero is numerically
+to the ratio - a ratio computed against a baseline NPV near zero is numerically
 large and economically meaningless.
 
 !!! note "What the baseline is, and why positive changes happen"
@@ -129,33 +129,33 @@ large and economically meaningless.
     shock is the only thing introducing costs. ALTR can show gains where the
     current-policy pathway is already damaging and the shock mostly accelerates
     a decline that was coming anyway. Both framings are used in published
-    stress tests — current-policy counterfactuals in economy-wide exercises,
-    "no additional headwinds" counterfactuals elsewhere — but they are not
+    stress tests - current-policy counterfactuals in economy-wide exercises,
+    "no additional headwinds" counterfactuals elsewhere - but they are not
     comparable, and this one is the current-policy framing.
 
 Two more conventions worth holding onto when reading any output table:
 
 * Cost columns are **subtracted**, not added:
   `EBITDA = revenue − var_cost − fixed_cost − carbon_cost_net` and
-  `FCFF = EBITDA − capex_total`. `carbon_cost_net` is a *differential* cost —
+  `FCFF = EBITDA − capex_total`. `carbon_cost_net` is a *differential* cost - 
   it charges only the emission factor in excess of the marginal generator's,
-  net of `market_passthrough` — so it is zero for any asset no dirtier than the
+  net of `market_passthrough` - so it is zero for any asset no dirtier than the
   plant setting the price.
-* Everything is in **real** terms — real discount rates, real terminal growth —
+* Everything is in **real** terms - real discount rates, real terminal growth - 
   so figures across years are directly comparable without deflating.
 
 ## 5. Sanity checks before you trust a run
 
 Run with `--tags altrisk,reporting` and start here:
 
-* `data/08_reporting/tables/validation_summary.csv` — the reporting stage's
+* `data/08_reporting/tables/validation_summary.csv` - the reporting stage's
   input validation: whether earnings, asset NPV and company NPV reconcile.
-* `data/08_reporting/tables/compliance_ready/reporting_qc.csv` — quality-control
+* `data/08_reporting/tables/compliance_ready/reporting_qc.csv` - quality-control
   summary over the reporting views.
 * `data/08_reporting/tables/compliance_ready/company_summary.csv` and
-  `technology_summary.csv` — the same results as the headline tables, formatted
+  `technology_summary.csv` - the same results as the headline tables, formatted
   for reporting, plus `top_assets.csv` for the largest movers.
-* `data/08_reporting/tables/compliance_ready/methodology_parameters.csv` — the
+* `data/08_reporting/tables/compliance_ready/methodology_parameters.csv` - the
   parameter set the run actually used. Attach it to any result you share; it is
   the cheapest defence against comparing two runs that were configured
   differently.
@@ -167,7 +167,7 @@ company's NPV, and `npv_change` values whose `baseline_npv` is close to zero.
 ## Changing one thing at a time
 
 The model has many switches, and their effects interact. When you experiment,
-change one key, re-run, and compare `company_npv.csv` against the previous run —
+change one key, re-run, and compare `company_npv.csv` against the previous run - 
 after copying the previous outputs somewhere else, because a re-run overwrites
 `data/07_model_output/` in place. The switches with the largest, most
 interpretable effect on the headline number are `enable_mcpr` / `mcpr_mode`

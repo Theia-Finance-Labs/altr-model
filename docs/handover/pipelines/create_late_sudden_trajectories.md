@@ -1,11 +1,11 @@
-# Stage 4 — `create_late_sudden_trajectories`
+# Stage 4 - `create_late_sudden_trajectories`
 
 | | |
 | --- | --- |
 | Source | `src/crispy_kedro/pipelines/create_late_sudden_trajectories/` |
 | Tags | `altrisk` |
-| Runs after | [Stage 3 — `create_baseline_and_target_trajectories`](create_baseline_and_target_trajectories.md) |
-| Runs before | [Stage 5 — `distribute_impacts_to_asset_level`](distribute_impacts_to_asset_level.md) |
+| Runs after | [Stage 3 - `create_baseline_and_target_trajectories`](create_baseline_and_target_trajectories.md) |
+| Runs before | [Stage 5 - `distribute_impacts_to_asset_level`](distribute_impacts_to_asset_level.md) |
 
 ## Purpose
 
@@ -15,8 +15,8 @@ its late & sudden trajectory: production follows the baseline until
 `shock_year`, after which it bends steeply enough that the target is still met
 by `alignment_year`.
 
-The classification crosses two axes — aligned vs misaligned, and high-carbon
-(decreasing) vs low-carbon (increasing) technologies — giving four buckets, each
+The classification crosses two axes - aligned vs misaligned, and high-carbon
+(decreasing) vs low-carbon (increasing) technologies - giving four buckets, each
 with its own shock shape. A misaligned coal producer has to fall much faster
 after the shock year than an already-aligned one; a low-carbon producer is asked
 to build faster instead. The four buckets are concatenated back into a single
@@ -48,7 +48,7 @@ table.
 | `late_sudden_aligned_low_carbon_companies` | Shock shape for aligned low-carbon pathways |
 | `concatenate_late_sudden_results` | Concatenates the four results into `companies_late_sudden_trajectories` |
 
-Private helper: `_baseline_shock_anchor` — the baseline value at the last grid
+Private helper: `_baseline_shock_anchor` - the baseline value at the last grid
 year before `shock_year`, which every shock shape starts from.
 
 ## Parameters read
