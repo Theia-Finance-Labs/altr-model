@@ -408,3 +408,58 @@ conf/base/catalog.yml points ar6_carbon_prices at 6_final_AR6_viable_scenarios.c
 5. First full-data run of the export = Jakub's sign-off; then push export content to Theia-Finance-Labs/altr-model (created, private, empty).
 6. Dependabot: 5 vulns on default branch (1 critical) — the export ships the same poetry.lock; dependency pass recommended.
 7. Pre-existing tests/test_run.py failure internally (stale boilerplate; excluded from export).
+
+## Port from Bertrand's lineage (2026-09-01)
+
+Two commits ported from `bertrand-main-from-altr-model` (post PR #53/#54, whose
+pipeline and column layouts have diverged from ours). Ported as source-as-spec,
+not line-copy.
+
+- **`9d7e195` → `a8c0fa5`** — drops the `pkg/trisk.model` submodule. Our branch
+  did carry the gitlink. Removed from the index only (`git rm --cached`);
+  `pkg/trisk.model` was an empty, uninitialised directory with no code, config
+  or docs references, so nothing on disk was deleted. Orphaned `.gitmodules`
+  stanza emptied.
+
+- **`63f5b59` → `_consolidate_ownership_stakes`** — totals the multiple stakes a
+  company holds in one asset-year into a single row, so duplicate
+  `(company_id, asset_id, year)` keys cannot reach the per-asset pivot in
+  `valuation_model.calculate_npv_per_asset` ("Index contains duplicate
+  entries").
+
+### Placement decision
+
+His version consolidates **before** `filter_companies` applies its filter; ours
+runs it **after** the ownership-tier filter. His ownership table has no tier
+column, so "before the filter" is already "within one tier". Ours has
+`ownership_type`, splitting each company's stake into `direct` (167,131 rows)
+and `equity` (908,842 rows) tiers of the same holding — the fixture's Tohoku
+Electric holds one plant at 50.00% direct **and** 0.45% equity. Consolidating
+first would sum those to 50.45%, over-allocating capacity against the partition
+contract `check_ownership_tier` enforces, and would strip the very column the
+filter then selects on (falling through to the "no tier column → keep ALL rows"
+branch and flattening the whole ownership tree). So: filter first, consolidate
+within the selected tier.
+
+The real defect ported is narrower than a new function: the pre-existing inline
+block put the tier column **into** the group keys, which is exactly what keeps
+the stakes apart. With `ownership_type: "indirect"` (`ownership_level >= 2`),
+more than one rung survives the filter and the duplicate keys persisted. The
+tier column is now carried through with `first` instead of grouped on —
+`inputs_postproc.apply_reduce_granularity_from_asset_to_company_level` groups by
+it, so dropping it would have broken that node.
+
+### Scale and fixture impact
+
+- Consolidation is **sum-preserving per asset-year**: it merges rows without
+  changing how much of an asset is owned, so the `/100` scaling and the 0–1 vs
+  0–100 sentinel in `allocate_assets_to_companies` are unaffected. Verified on
+  the full 1,075,973-row input: max summed stake is exactly 100.00%, never above.
+- The fixture slice **does** contain multi-stake rows — 27 `(company, asset,
+  year)` keys with both a `direct` and an `equity` row. They are separated by
+  the tier filter before consolidation, so the `direct` tier reaching it has
+  zero duplicate keys (confirmed on both the fixture's 5,033 direct rows and the
+  full input's 167,131).
+- **Fixture outputs therefore did not change and the pinned integration values
+  in `tests/integration/test_fixture_run.py` were left untouched** — verified by
+  the pins passing unmodified, not by assumption.

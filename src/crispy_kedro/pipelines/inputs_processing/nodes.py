@@ -146,6 +146,61 @@ def filter_scenarios(
     return scenarios_pathways_filtered
 
 
+#: Columns that identify a distinct ownership stake. ``sector`` / ``technology``
+#: / ``asset_name`` are absent from the current extracts (``prepare_inputs.py``
+#: drops them, and the BigQuery ownership table no longer carries them) but are
+#: grouped on when present, because ``allocate_assets_to_companies`` merges on
+#: them and collapsing across them would sum unrelated stakes.
+_STAKE_IDENTITY_COLUMNS = [
+    "asset_id",
+    "company_id",
+    "company_name",
+    "sector",
+    "technology",
+    "asset_name",
+    "year",
+]
+
+#: Ownership tier columns. Descriptive at consolidation time -- carried through,
+#: never grouped on. See ``_consolidate_ownership_stakes``.
+_OWNERSHIP_TIER_COLUMNS = ["ownership_type", "ownership_level"]
+
+
+def _consolidate_ownership_stakes(companies_ownerships: pd.DataFrame) -> pd.DataFrame:
+    """Roll every stake a company holds in one asset-year into a single row.
+
+    Ported from upstream commit 63f5b59. A company can hold the same asset through
+    more than one stake -- a direct holding and an equity holding, or two rungs
+    of the ownership tree reached via different subsidiaries -- recorded as
+    separate rows for the same ``(company_id, asset_id, year)``. The company's
+    total stake is their sum, and leaving the rows apart carries the duplicate
+    keys through the asset merge and into the per-asset pivot in
+    ``valuation_model.calculate_npv_per_asset``, which fails with "Index
+    contains duplicate entries".
+
+    Summing is sum-preserving per asset-year: it merges rows without changing
+    how much of the asset is owned, so the ``/100`` scaling in
+    ``allocate_assets_to_companies`` is unaffected.
+
+    The tier column is deliberately NOT a group key -- grouping on it is exactly
+    what keeps the stakes apart -- but it is carried through, because
+    ``inputs_postproc.apply_reduce_granularity_from_asset_to_company_level``
+    groups by it.
+    """
+    group_cols = [
+        col for col in _STAKE_IDENTITY_COLUMNS if col in companies_ownerships.columns
+    ]
+    aggregations: dict[str, str] = {"ownership_percentage": "sum"}
+    aggregations.update(
+        {
+            col: "first"
+            for col in _OWNERSHIP_TIER_COLUMNS
+            if col in companies_ownerships.columns
+        }
+    )
+    return companies_ownerships.groupby(group_cols, as_index=False).agg(aggregations)
+
+
 def filter_companies(
     companies_ownership_tree: pd.DataFrame,
     company_ids: list[str],
@@ -192,23 +247,15 @@ def filter_companies(
     else:
         filtered_companies_ownership_tree = companies_owners
 
-    # Consolidate multiple ownership paths through different subsidiaries.
-    # The new BigQuery schema has one row per (asset, company, year, child_company),
-    # so the same parent company can appear multiple times for the same asset-year.
-    # Sum ownership_percentage across paths to get the parent's total ownership.
-    group_keys = ["asset_id", "company_id", "company_name", "year"]
-    if "ownership_level" in filtered_companies_ownership_tree.columns:
-        group_keys.append("ownership_level")
-    elif "ownership_type" in filtered_companies_ownership_tree.columns:
-        group_keys.append("ownership_type")
-
-    available_keys = [
-        k for k in group_keys if k in filtered_companies_ownership_tree.columns
-    ]
+    # Consolidate every stake a company holds in the same asset-year into one
+    # row. Deliberately AFTER the tier filter above: the tiers are alternative
+    # views of the same asset (direct 50.00% and equity 0.45% of one plant are
+    # the same holding counted two ways), so summing them before the filter
+    # would over-allocate capacity -- and would strip the tier column the
+    # filter selects on.
     pre_count = len(filtered_companies_ownership_tree)
-    filtered_companies_ownership_tree = (
-        filtered_companies_ownership_tree.groupby(available_keys, as_index=False)
-        .agg(ownership_percentage=("ownership_percentage", "sum"))
+    filtered_companies_ownership_tree = _consolidate_ownership_stakes(
+        filtered_companies_ownership_tree
     )
     post_count = len(filtered_companies_ownership_tree)
     if pre_count != post_count:
