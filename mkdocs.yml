@@ -3,9 +3,9 @@
 # Build:   uv run mkdocs build --strict
 # Preview: uv run mkdocs serve
 #
-# `repo_url` points at the EXTERNAL repository this package is delivered from.
-# `Theia-Finance-Labs/altr-model` is the internal development repository and is
-# deliberately not referenced here.
+# `repo_url` points at the repository this package lives in. Under the
+# 2026-09-01 single-repo ruling that is `Theia-Finance-Labs/altr-model`;
+# `altr-model-refactored` is retired and nothing new should name it.
 
 site_name: ALTR Model
 site_description: Asset-level transition-risk valuation model — install, run, interpret.

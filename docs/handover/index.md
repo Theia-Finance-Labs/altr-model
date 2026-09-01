@@ -53,12 +53,13 @@ is deliberate: where the number comes from should never be a matter of trust.
     site is correct and the PDF is not**. Four places specifically:
 
     * It names a Docker Compose configuration and a
-      `notebooks/run_kedro_batch.py` batch runner. Both exist, but as
-      **internal-repository tooling** that is not part of the delivered
-      package ([batch runs and the app](batch_runs.md) documents them and
-      says exactly which pieces ship). In the package, the equivalents are
-      `scripts/prepare_inputs.py` to stage the delivered data and
-      `uv run kedro run` to run the model - both exactly as the
+      `notebooks/run_kedro_batch.py` batch runner. Both exist in this
+      repository, but as **maintainer tooling** left out of the sanitized
+      copies `scripts/build_export.py` produces for delivery
+      ([batch runs and the app](batch_runs.md) documents them and says
+      exactly which pieces a copy carries). In a sanitized copy, the
+      equivalents are `scripts/prepare_inputs.py` to stage the delivered
+      data and `uv run kedro run` to run the model - both exactly as the
       [quickstart](quickstart.md) gives them.
     * It refers to a Poetry install and a `conf/base/parameters.yml`. This
       package installs with **uv** (`uv sync`) and has **no consolidated

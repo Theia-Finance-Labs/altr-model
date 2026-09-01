@@ -8,14 +8,16 @@ another's outputs. Three tools do it, in ascending order of polish - a
 notebook, a CLI script and a Streamlit app - and all three share the same
 run-configurations format.
 
-!!! warning "Internal tooling - most of this page is not in the delivered package"
-    Of the files documented here, only the `Dockerfile` and
-    `notebooks/walkthrough.ipynb` ship in the delivered package. The Streamlit
-    app, `run_kedro_batch.py`, `generate_results.ipynb`, the example
-    configuration files and `docker-compose.yml` live in the internal
-    repository only. If you received this site as part of the package, the
-    supported path is the [quickstart](quickstart.md); everything below
-    describes tooling the maintainers run for you.
+!!! warning "Maintainer tooling - most of this page is not in a sanitized copy"
+    Everything on this page lives in this repository. What is excluded is the
+    **sanitized copy** `scripts/build_export.py` produces on demand for
+    delivery: of the files documented here, only the `Dockerfile` and
+    `notebooks/walkthrough.ipynb` are on its allowlist - the Streamlit app,
+    `run_kedro_batch.py`, `generate_results.ipynb`, the example configuration
+    files and `docker-compose.yml` stay behind. If you received this site as
+    part of a sanitized copy, the supported path is the
+    [quickstart](quickstart.md); everything below describes tooling the
+    maintainers run for you.
 
 ## The run-configurations format
 
@@ -74,8 +76,8 @@ where their outputs are and how long each took.
 
 `notebooks/example_company_selection.csv` is a 30-company sample chosen to
 cover all four alignment × carbon-intensity quadrants (aligned/misaligned ×
-high/low carbon). The identifiers in it are licensed data, which is why the
-delivered configuration ships with an empty `company_ids` list instead.
+high/low carbon). The identifiers in it are licensed data, which is why a
+sanitized copy carries an empty `company_ids` list instead.
 
 !!! note "The batch tools are stricter about scenario pairs than the pipeline"
     The pipeline itself does not reject a baseline/target pair drawn from two
