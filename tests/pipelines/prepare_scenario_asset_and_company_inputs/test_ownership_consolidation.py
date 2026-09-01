@@ -105,7 +105,7 @@ def test_consolidation_drops_the_tier_column():
     assert "ownership_type" not in out.columns
 
 
-def test_a_nan_in_a_cosmetic_group_key_does_not_delete_the_stake():
+def test_nan_in_cosmetic_group_column_does_not_delete_the_stake():
     """`groupby` drops NaN keys by default, and the roll-up groups on seven
     columns — two of which (`company_name`, `asset_name`) are labels nothing
     computes on. A blank one used to delete that company's stake outright, and
