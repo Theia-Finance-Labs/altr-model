@@ -16,6 +16,7 @@ from scripts.build_export import (
     TRANSFORMS,
     TransformError,
     dockerfile_for_recipients,
+    drop_streamlit_group,
     empty_company_ids,
     is_skipped,
     read_allowlist,
@@ -69,8 +70,8 @@ def test_pin_golden_ships_and_the_internal_only_tests_do_not():
 def test_the_pipeline_registration_test_ships():
     # The pre-migration exclusion justified dropping it as a "full-input smoke
     # test needing the internal data drop". On this tree it is a data-free
-    # registration test, it passes for a recipient, and it is the guard that
-    # would catch a re-introduced frozen_capacity_at_retirement.
+    # registration test that passes for a recipient and catches renamed
+    # pipelines, moved namespaces and drifted dataset contracts.
     assert not is_skipped("tests/test_run.py")
 
 
@@ -122,6 +123,26 @@ def test_dockerfile_is_rewritten_to_run_the_pipeline():
 def test_dockerfile_transform_raises_when_its_target_is_gone():
     with pytest.raises(TransformError, match="tail marker"):
         dockerfile_for_recipients('FROM python:3.10-slim\nENTRYPOINT ["true"]\n')
+
+
+def test_streamlit_group_is_dropped_from_the_exported_pyproject():
+    # The group installs the batch-run app, which does not ship. Left declared,
+    # the documented `uv sync --group streamlit` installs a dependency with
+    # nothing to run.
+    source = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert "streamlit = [" in source, "pyproject.toml reworded; transform is stale"
+
+    shipped = _transformed("pyproject.toml")
+    assert "streamlit" not in shipped.lower(), "streamlit survives the export"
+    # The neighbouring groups are untouched — the cut is the streamlit block,
+    # not everything around it.
+    for group in ("dev = [", "bigquery = [", "docs = ["):
+        assert group in shipped, f"{group} lost to the streamlit transform"
+
+
+def test_streamlit_transform_raises_when_its_target_is_gone():
+    with pytest.raises(TransformError, match="no `streamlit = \\[` group"):
+        drop_streamlit_group("[dependency-groups]\ndocs = [\n    \"mkdocs\",\n]\n")
 
 
 def test_dockerignore_ships_alongside_the_dockerfile():

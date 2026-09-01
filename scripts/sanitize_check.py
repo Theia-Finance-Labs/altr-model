@@ -54,6 +54,16 @@ def looks_like_secret(line: str) -> bool:
     return False
 
 
+#: Licensed company identifiers, as they appear in text. THE single definition:
+#: `tests/fixtures/test_fixture_ids_licensed.py` imports this one rather than
+#: keeping its own, so the sanitizer gate and the licensing gate cannot drift
+#: into recognising different id shapes.
+#:
+#: Lookarounds, not ``\b``: "_" is a word character, so ``\b`` never matches
+#: between it and a letter, and the anchored form missed every composite id
+#: ("NEW_CN_<id>_Power_HydroCap_EU"). Treat "_" as a separator instead.
+COMPANY_ID_RE = re.compile(r"(?<![A-Za-z0-9])(?:CN|CP)_\d{8,}(?![0-9])")
+
 #: Patterns hunted for, as ``name -> predicate(line)``. Word boundaries keep the
 #: short names from matching inside base64 blobs and hashes.
 PATTERNS: dict[str, Callable[[str], object]] = {
@@ -71,12 +81,7 @@ PATTERNS: dict[str, Callable[[str], object]] = {
     # inside the data payload the recipient is licensed for; a leak anywhere
     # else (docs, comments, notebooks), where it would ship ids for companies
     # outside that licence. Scoped by the EXCEPTIONS below, not by dropping it.
-    # Lookarounds, not \b: "_" is a word character, so \b never matches between
-    # it and a letter and the anchored form missed every composite id
-    # ("NEW_CN_<id>_Power_HydroCap_EU"). Treat "_" as a separator instead.
-    "company-id": re.compile(
-        r"(?<![A-Za-z0-9])(?:CN|CP)_\d{8,}(?![0-9])"
-    ).search,
+    "company-id": COMPANY_ID_RE.search,
 }
 
 #: Directories never scanned, relative to the export root.

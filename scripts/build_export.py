@@ -64,9 +64,12 @@ SKIP_RELATIVE = (
 # is false here — it is a data-free pipeline-registration test that calls
 # bootstrap_project + register_pipelines and asserts on pipeline names,
 # namespaces, dataset contracts and REMOVED_DATASETS, opening no data file. It
-# passes for a recipient, it is exactly the kind of structural test they
-# benefit from, and it is the guard that would catch a re-introduced
-# `frozen_capacity_at_retirement`. It SHIPS.
+# passes for a recipient, and it is exactly the kind of structural test they
+# benefit from: it fails loudly if a pipeline is renamed, a namespace moves or
+# a dataset contract drifts, none of which needs data to detect. (It used to be
+# justified here as the guard against a re-introduced
+# `frozen_capacity_at_retirement`; the Q4 port restored that dataset
+# deliberately, so the test now asserts it EXISTS.) It SHIPS.
 
 #: The three deliverables files staged into ``data/01_raw/`` by --data-source.
 #: ``scenarios.csv`` is often delivered zipped; a zip is extracted, not copied.
@@ -197,6 +200,46 @@ def dockerfile_for_recipients(text: str) -> str:
     return result
 
 
+def drop_streamlit_group(text: str) -> str:
+    """Remove the `streamlit` dependency group from the exported pyproject.
+
+    The group exists to install the batch-run Streamlit app, and the app does
+    not ship — `notebooks/streamlit_app.py` is not allowlisted, and the
+    Dockerfile transform above strips the same dependency out of the image.
+    Left declared, `uv sync --group streamlit` succeeds for a recipient and
+    installs a dependency with nothing to run.
+
+    The group's own comment block goes with it. Raises if the group is not
+    found or if `streamlit` survives — the same no-op guard the other
+    transforms carry.
+    """
+    lines = text.splitlines(keepends=True)
+    group = next(
+        (i for i, line in enumerate(lines) if line.startswith("streamlit = [")), None
+    )
+    if group is None:
+        raise TransformError(
+            "pyproject.toml: no `streamlit = [` group found — the export "
+            "transform that removes it cannot verify what it removed"
+        )
+    end = group + 1
+    while end < len(lines) and lines[end].rstrip() != "]":
+        end += 1
+    if end == len(lines):
+        raise TransformError("pyproject.toml: `streamlit` group is unterminated")
+
+    start = group
+    while start > 0 and lines[start - 1].lstrip().startswith("#"):
+        start -= 1
+
+    result = "".join(lines[:start]) + "".join(lines[end + 1 :])
+    if "streamlit" in result.lower():
+        raise TransformError(
+            "pyproject.toml: `streamlit` survives the export transform"
+        )
+    return result
+
+
 #: Copy-time rewrites, keyed by repo-relative path. Applied to the copy only —
 #: the source repo stays the single source of truth and is never edited here.
 #: Each transform raises if it does not find its target, so a rewrite cannot
@@ -212,6 +255,7 @@ def dockerfile_for_recipients(text: str) -> str:
 TRANSFORMS = {
     COMPANY_IDS_CONF: empty_company_ids,
     "Dockerfile": dockerfile_for_recipients,
+    "pyproject.toml": drop_streamlit_group,
 }
 
 

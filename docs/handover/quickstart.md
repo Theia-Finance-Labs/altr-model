@@ -48,11 +48,12 @@ needed to run the model:
 | Group | Install with | What it is for |
 | --- | --- | --- |
 | `docs` | `uv sync --group docs` | Building this documentation site locally. |
-| `streamlit` | `uv sync --group streamlit` | The batch-run app under `notebooks/`. |
+| `streamlit` | `uv sync --group streamlit` | The batch-run app under `notebooks/` (internal builds only - a delivered copy carries neither the app nor this group, so the row is there for completeness, not as an instruction). |
 
-`pyproject.toml` declares one further optional group used only by the
-maintainers' internal input tooling. It is not installed by default, the module
-it serves is not part of this package, and you never need it.
+`pyproject.toml` declares one further optional group, `bigquery`, used only by
+the maintainers' internal input tooling. It is not installed by default and you
+never need it; in a delivered copy the module it serves
+(`bigquery_marts_downloader.py`) is not present either.
 
 Verify the install - this must print a `0.19.x` version and exit cleanly:
 
