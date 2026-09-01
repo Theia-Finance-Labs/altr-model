@@ -2,7 +2,7 @@
 
 `test_compare_frames_detects_drift` always runs (unit check of the comparator).
 `test_outputs_match_golden` is skipped until snapshots are pinned with
-`scripts/pin_golden.py` — pinning waits for the full model run to finish.
+`tests/golden/pin_golden.py` — pinning waits for the full model run to finish.
 """
 
 import json
@@ -11,7 +11,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from scripts.pin_golden import validate_run_sha
+from tests.golden.pin_golden import validate_run_sha
 from tests.golden.compare import compare_frames
 
 SNAP = Path(__file__).parent / "snapshots"

@@ -147,6 +147,56 @@ def empty_company_ids(text: str) -> str:
     return result
 
 
+#: The tail appended below the dependency stanzas of the exported Dockerfile.
+#: An ENTRYPOINT (not CMD) so `docker run <image> --tags altrisk` appends
+#: ordinary `kedro run` arguments.
+_DOCKERFILE_TAIL = """\
+# data/ is not baked into the image: mount your local data/ folder at runtime
+# so the pipeline reads the staged inputs and writes its outputs back to disk:
+#
+#     docker build -t altr-model .
+#     docker run --rm -v "$PWD/data:/app/data" altr-model
+ENTRYPOINT ["kedro", "run"]
+"""
+
+
+def dockerfile_for_recipients(text: str) -> str:
+    """Rewrite the Dockerfile so the delivered image runs the pipeline.
+
+    The internal image launches the Streamlit batch runner, which is internal
+    tooling and does not ship (docs/handover/batch_runs.md). Delivered as-is
+    the image builds — build_export.py generates the README.md the early COPY
+    needs — and then crashes at startup looking for notebooks/streamlit_app.py.
+
+    Everything from the first Streamlit-only instruction onward is replaced
+    with a `kedro run` tail, and the two `uv sync` stanzas above it lose their
+    `--group streamlit` flag. Raises if a marker is missing or if `streamlit`
+    survives anywhere in the result — a rewrite that silently no-ops is how a
+    broken image ships.
+    """
+    marker = "# Don't run streamlit's first-launch prompt"
+    cut = text.find(marker)
+    if cut == -1:
+        raise TransformError(
+            "Dockerfile: streamlit tail marker not found — the export "
+            "transform cannot see what it exists to replace"
+        )
+    head = text[:cut]
+    if " --group streamlit" not in head:
+        raise TransformError(
+            "Dockerfile: no `--group streamlit` flag above the tail marker"
+        )
+    head = head.replace(" --group streamlit", "")
+    head = head.replace(
+        "needed to run the Streamlit batch-runner app", "needed to run the pipeline"
+    )
+    head = head.replace("(data/ and workspace/ are", "(data/ is")
+    result = head + _DOCKERFILE_TAIL
+    if "streamlit" in result.lower():
+        raise TransformError("Dockerfile: `streamlit` survives the export transform")
+    return result
+
+
 #: Copy-time rewrites, keyed by repo-relative path. Applied to the copy only —
 #: the source repo stays the single source of truth and is never edited here.
 #: Each transform raises if it does not find its target, so a rewrite cannot
@@ -161,6 +211,7 @@ def empty_company_ids(text: str) -> str:
 #: `download_inputs` docstring paragraph that does not exist here.
 TRANSFORMS = {
     COMPANY_IDS_CONF: empty_company_ids,
+    "Dockerfile": dockerfile_for_recipients,
 }
 
 

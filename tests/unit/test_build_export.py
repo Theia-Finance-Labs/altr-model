@@ -15,6 +15,7 @@ from scripts.build_export import (
     ROOT,
     TRANSFORMS,
     TransformError,
+    dockerfile_for_recipients,
     empty_company_ids,
     is_skipped,
     read_allowlist,
@@ -56,7 +57,7 @@ def test_uv_lock_ships_and_poetry_lock_does_not():
 
 def test_pin_golden_ships_and_the_internal_only_tests_do_not():
     entries = read_allowlist(ALLOWLIST)
-    assert "scripts/pin_golden.py" in entries
+    assert "tests/golden/pin_golden.py" in entries
     # tests/ ships wholesale, so exclusions are made in code, not by omission.
     assert "tests" in entries or "tests/" in entries
     # The licence guard reads the deliverables drop by path; the export-tooling
@@ -101,6 +102,34 @@ def test_company_ids_transform_raises_when_its_target_is_gone():
     # A transform that silently no-ops is how an unlicensed id ships.
     with pytest.raises(TransformError, match="no `company_ids:` block"):
         empty_company_ids("baseline_scenario: x\ntarget_scenario: y\n")
+
+
+def test_dockerfile_is_rewritten_to_run_the_pipeline():
+    # The internal image launches the Streamlit batch runner, which does not
+    # ship — delivered unrewritten, the image builds and then crashes at
+    # startup looking for notebooks/streamlit_app.py.
+    source = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    assert "streamlit" in source.lower(), "Dockerfile reworded; transform is stale"
+
+    shipped = _transformed("Dockerfile")
+    assert 'ENTRYPOINT ["kedro", "run"]' in shipped
+    assert "streamlit" not in shipped.lower(), "streamlit survives the export"
+    assert "8501" not in shipped
+    # docker-compose.yml does not ship; the delivered file must not point at it.
+    assert "compose" not in shipped.lower()
+
+
+def test_dockerfile_transform_raises_when_its_target_is_gone():
+    with pytest.raises(TransformError, match="tail marker"):
+        dockerfile_for_recipients('FROM python:3.10-slim\nENTRYPOINT ["true"]\n')
+
+
+def test_dockerignore_ships_alongside_the_dockerfile():
+    # Without it, every recipient `docker build` hashes their staged data/
+    # (hundreds of MB) into the build context.
+    entries = read_allowlist(ALLOWLIST)
+    assert "Dockerfile" in entries
+    assert ".dockerignore" in entries
 
 
 def test_every_transform_target_is_still_a_repo_file():
