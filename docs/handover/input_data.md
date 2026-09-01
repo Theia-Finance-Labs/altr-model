@@ -111,7 +111,7 @@ scenario/technology/geography/year.
 | `carbon_price_usd_per_tco2` | float | Carbon price assumed under this scenario, per tonne of CO2. |
 | `fuel_price` | float | Fuel input price projected under this scenario. |
 
-All nineteen columns are required - the scenarios check is the strictest of the
+All twenty columns are required - the scenarios check is the strictest of the
 three, and a bare prices-and-pathways extract that passes a casual eyeball
 fails it (see
 [Troubleshooting](troubleshooting.md#valueerror-naming-a-missing-column-raised-by-prepare_inputspy)).

@@ -88,14 +88,20 @@ def require_columns(frame: pd.DataFrame, cols: list[str], label: str) -> None:
 def check_ownership_allocation(frame: pd.DataFrame) -> None:
     """Warn if consolidated ownership does not partition the asset.
 
-    ``allocate_assets_to_companies`` does a bare ``capacity *
-    ownership_percentage``, so the rows reaching it must partition the asset.
-    On this tree ``filter_companies`` does NOT select an ownership tier: it
-    calls ``_consolidate_ownership_stakes``, which sums every stake a company
-    holds in one asset-year into a single row. That merge is sum-preserving, so
-    the question is whether the ownership rows as delivered already sum to
-    ~100% per asset-year -- consolidation cannot bring an over-allocated
-    universe back under it.
+    ``allocate_assets_to_companies`` allocates ``capacity *
+    ownership_percentage / 100`` -- proportional, with no renormalisation -- so
+    the rows reaching it must partition the asset.
+
+    ``filter_companies`` selects one ownership tier first (the shipped default
+    ``ownership_aggregation: "tier_filter"`` on ``ownership_type: "direct"``)
+    and then calls ``_consolidate_ownership_stakes``, which sums the stakes a
+    company holds in one asset-year within that tier into a single row. Neither
+    step renormalises: the tier selection drops rows and the merge is
+    sum-preserving, so the question is whether the delivered rows of the
+    selected tier already sum to ~100% per asset-year. Under
+    ``ownership_aggregation: "sum"`` no tier is selected at all and every rung
+    enters, which over-allocates by construction -- that mode is for
+    TRISK-comparable runs, not for reading absolute numbers off.
 
     An extract that flattens every rung of an ownership chain passes a
     duplicate-key check and still over-allocates, because different companies

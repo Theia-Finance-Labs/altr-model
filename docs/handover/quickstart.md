@@ -120,6 +120,12 @@ If you bring an IAM extract whose `carbon_price_usd_per_tco2` column is empty,
 the carbon cost will be zero everywhere rather than silently wrong; fill the
 column in your scenarios input rather than reaching for a side-file.
 
+One artefact of that lineage is still committed: `tests/fixtures/data/`
+contains an `ar6_carbon_prices.csv`. It is **inert** - no catalog entry, no
+node and no test reads it as an input - and it is kept rather than deleted so
+the file the retired entry pointed at stays inspectable. Do not take its
+presence as a fourth input file.
+
 ## 4. Convert the deliverables into model inputs
 
 The three delivered files use the deliverables schema. One script validates them
@@ -201,10 +207,10 @@ Expected console landmarks, in order:
 INFO     Kedro project altr-model
 INFO     Loading data from scenarios (CSVDataset)...
 INFO     Running node: prepare_scenario_asset_and_company_inputs.prepare_scenarios: ...
-INFO     Completed 1 out of 28 tasks
+INFO     Completed 1 out of 29 tasks
 ...
 INFO     Saving data to company_npv (CSVDataset)...
-INFO     Completed 28 out of 28 tasks
+INFO     Completed 28 out of 29 tasks
 INFO     Pipeline execution completed successfully.
 ```
 
@@ -226,6 +232,7 @@ is measured in tens of minutes, not seconds.
 | `data/07_model_output/asset_earnings.csv` | Per-asset, per-year earnings before discounting |
 | `data/07_model_output/asset_trajectories.csv` | Per-asset capacity path per trajectory type |
 | `data/07_model_output/company_trajectories.csv` | Company baseline / target / requested / realised paths |
+| `data/07_model_output/frozen_capacity_at_retirement.csv` | For each retiring asset, the capacity it last stood at, carried from its retirement year onward - a lookup surface, not a cost driver |
 | `data/08_reporting/` | Figure packs (`reporting` tag only) |
 
 Read them with the [user guide](user_guide.md).

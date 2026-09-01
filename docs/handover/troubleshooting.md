@@ -93,8 +93,8 @@ fails here.
 
 `prepare_inputs.py` totals `ownership_percentage` per `(asset_id, year)` and
 warns when the delivered rows over-allocate the asset. Capacity is allocated as
-`capacity × ownership_percentage`, so rows that sum above 100% inflate every
-downstream number silently.
+`capacity × ownership_percentage / 100` (the column is on the 0-100 scale), so
+rows that sum above 100% inflate every downstream number silently.
 
 The usual cause is an extract that flattens every rung of an ownership chain, so
 different companies on different rungs each claim the same capacity. Note that
@@ -238,8 +238,9 @@ uv run kedro run --tags altrisk --nodes <node-name>        # a single node
 The node names are the namespaced ones printed as `Running node: ...`;
 `uv run kedro registry describe __default__` lists them all up front. There is
 no pipeline called `full` - `altrisk` is a **tag**, not a pipeline name, so it
-belongs after `--tags`, never after `--pipeline`; the six pipeline names
-`kedro registry list` prints are what `--pipeline` accepts.
+belongs after `--tags`, never after `--pipeline`; the seven pipeline names
+`kedro registry list` prints - the six stages plus `__default__`, which is all
+six summed - are what `--pipeline` accepts.
 
 Partial runs only work when every input a node needs is a *persisted* dataset.
 The hand-offs between stages 1, 2 and 3 (`asset_forecast_panel`,
