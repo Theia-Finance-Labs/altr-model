@@ -40,7 +40,7 @@ target_scenario: "AR6_AIM/CGE 2.2_EN_NPi2020_900f"
 ```yaml
 # conf/base/parameters_calculate_company_trajectories.yml
 shock_year: 2033       # the year the policy shock becomes known
-alignment_year: 2035   # the year the target pathway must be reached; >= shock_year
+alignment_year: 2038   # the year the target pathway must be reached; >= shock_year
 ```
 
 `shock_year` and `alignment_year` bracket the transition window. A wider window
@@ -205,14 +205,21 @@ The switches with the largest, most interpretable effect on the headline number:
   the baseline (`apply_continued_om_baseline: False`). Flipping both to the same
   value removes the asymmetry and, with it, most of the transition signal.
 * **`dcf.discount_rate_shock`** (in `parameters_calculate_asset_and_company_npv.yml`)
-  - the discount rate applied to every cash flow on the target-scenario surface.
-  It ships equal to `dcf.discount_rate_baseline` (`0.07`), so the two pathways
-  are discounted identically and the whole `npv_change` comes from the cash
-  flows. Raising it above the baseline rate adds a transition-risk premium and
+  - the scenario base rate for cash flows on the target-scenario surface. It
+  ships equal to `dcf.discount_rate_baseline` (`0.07`), so the two pathways are
+  discounted identically and the whole `npv_change` comes from the cash flows.
+  The rate each row actually carries is that base plus a technology spread -
+  `dcf.brown_discount_spread` (+100 bps) on high-carbon alignments,
+  `dcf.green_discount_spread` (-50 bps) on the rest - which applies to both
+  pathways alike. Raising the shock rate above the baseline rate adds a
+  transition-risk premium on top and
   moves `npv_change` down for every company at once - a level shift, not a
   re-ranking, which is what makes it easy to read and easy to over-interpret.
 * **`market_passthrough`** (who pays the carbon cost) and the three cost
   switches `include_growth_capex`, `include_replacement_capex` and
-  `include_decom_costs`, all in `parameters_calculate_asset_earnings.yml`. All
-  three cost switches ship `False`, so CapEx is zero out of the box; turning one
-  on changes `capex_total` and therefore FCFF in both pathways at once.
+  `include_decom_costs`, all in `parameters_calculate_asset_earnings.yml`.
+  `include_replacement_capex` and `include_decom_costs` ship `True`, so
+  `capex_total` is non-zero out of the box; `include_growth_capex` ships
+  `False`, because IAM O&M already bundles annualized capital costs and
+  charging growth CapEx on top would double-count. Flipping any of them
+  changes `capex_total` and therefore FCFF in both pathways at once.

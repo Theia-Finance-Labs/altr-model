@@ -31,9 +31,17 @@ already-aligned one; a low-carbon producer is asked to build faster instead.
 
 The four cases are then concatenated and melted into one canonical table
 carrying three `trajectory_type` values - `baseline`, `target` and
-`late_sudden_requested` - with the financial surface columns switched onto the
-target scenario's values for every row on the target surface (the target path,
-and the requested path from `shock_year` onwards).
+`late_sudden_requested` - and the financial surface columns resolved onto each
+row. The target path takes the target scenario's values throughout. The
+requested path depends on `price_ramp`: with it off, the surface hard-switches
+to the target's values at `shock_year`; with it on (the default), the surface
+**blends** baseline to target linearly across `[shock_year, alignment_year]`.
+
+The ramp exists because the hard switch hands the shock pathway a near-term
+price windfall - target prices sit 30-50% above baseline at the shock year - so
+fossil assets could gain value under a climate shock. A blended row keeps
+carrying the **baseline** `scenario` name and `scenario_type`, because its
+surface is a mixture of the two scenarios rather than either one.
 
 ## Consumes
 
@@ -104,12 +112,14 @@ trajectory plots.
 
 | Key | Defined in |
 | --- | --- |
-| `shock_year`, `alignment_year` | `conf/base/parameters_calculate_company_trajectories.yml` |
+| `shock_year`, `alignment_year`, `price_ramp` | `conf/base/parameters_calculate_company_trajectories.yml` |
 
-Both are passed to all four shock-shape nodes and to the validator; `shock_year`
-is also passed to `combine_company_trajectory_cases`, which uses it to decide
-from which year the requested path switches onto the target financial surface.
-Defaults and the full annotations: [parameters reference](../parameters.md).
+`shock_year` and `alignment_year` are passed to all four shock-shape nodes and
+to the validator. All three go to `combine_company_trajectory_cases`, which uses
+them to resolve the financial surface on the requested path: `price_ramp: False`
+switches at `shock_year`, `price_ramp: True` blends across the window the two
+years bracket. Defaults and the full annotations:
+[parameters reference](../parameters.md).
 
 ## Methodology reference
 
@@ -117,6 +127,8 @@ Defaults and the full annotations: [parameters reference](../parameters.md).
 **Pipeline reference → Shock mechanism**, which the PDF already calls
 `calculate_company_trajectories` and which describes the four-case
 classification and the late-sudden path that follows baseline assumptions to
-`shock_year` and target assumptions from there through `alignment_year`. The
+`shock_year` and target assumptions from there through `alignment_year`. That
+describes `price_ramp: False`; the shipped default blends across the window
+instead, so on this point the page above supersedes the PDF. The
 PDF's `company_pathways_pre_allocation` table is this stage's output, and it
 carries that name in the code.

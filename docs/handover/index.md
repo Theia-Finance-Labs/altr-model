@@ -81,7 +81,7 @@ The six stages, in the order they run:
    company
 6. `plot_transition_risk_results` - trajectory and financial figure packs
 
-Stages 1-5 carry the `altrisk` tag and produce the numbers (28 nodes); stage 6
+Stages 1-5 carry the `altrisk` tag and produce the numbers (29 nodes); stage 6
 carries the `reporting` tag and turns those numbers into figures (3 nodes).
 
 ## Where to start

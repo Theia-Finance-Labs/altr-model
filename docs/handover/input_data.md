@@ -67,8 +67,9 @@ asset-company ownership link per year.
     a fraction-convention extract upstream; see
     [Troubleshooting](troubleshooting.md#valueerror-ownership_percentage-looks-like-a-0-1-fraction-max).
 
-Ownership stakes are consolidated, not tiered: every stake a company holds in
-one asset-year is summed into a single row before the run, and
+Ownership stakes are tiered first, then consolidated: `ownership_type` picks
+one rung of the ownership tree, and the stakes a company holds in one asset-year
+**within that rung** are summed into a single row before the run. Also,
 `prepare_inputs.py` warns when consolidated ownership per asset-year exceeds
 105% - an over-allocated extract inflates every downstream number silently. The
 details are in
