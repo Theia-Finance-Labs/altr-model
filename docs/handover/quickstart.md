@@ -24,6 +24,27 @@ pip install --upgrade pip
 pip install -e .
 ```
 
+!!! warning "The install takes 10–20 minutes, and looks stuck for most of it"
+    The dependency set pulls in the Google Cloud client stack, and pip
+    backtracks through dozens of `grpcio-status` releases resolving it. It
+    prints
+
+    ```
+    INFO: pip is still looking at multiple versions of grpcio-status to
+    determine which version is compatible with other requirements.
+    This could take a while.
+    ```
+
+    and then goes quiet. That is normal — leave it running. In verification the
+    first install on a clean machine ran past ten minutes; a later one, with
+    pip's cache already populated, finished in 41 seconds. You pay the cost once
+    per machine, not once per environment.
+
+    `pip` re-resolves from scratch and ignores the `poetry.lock` shipped in the
+    repository, so the exact versions you get are whatever is current on PyPI
+    within the pins. Install with Poetry instead if you need to match another
+    machine's environment exactly — Poetry is the tool that reads the lock file.
+
 Verify the install — this must print a `0.19.x` version and exit cleanly:
 
 ```bash
@@ -53,6 +74,36 @@ plain CSV:
 ```bash
 unzip -o /path/to/scenarios.csv.zip -d data/01_raw/
 ```
+
+### The fourth file: carbon prices
+
+One more input sits outside `data/`. The catalog entry `ar6_carbon_prices` reads
+`6_final_AR6_viable_scenarios.csv` **at the repository root** — an AR6 extract
+carrying a carbon price per scenario, geography and year. It is not part of the
+three-file drop and `prepare_inputs.py` does not produce it. Without it the run
+stops at task 6 of 46 with a `FileNotFoundError`.
+
+```bash
+cp /path/to/6_final_AR6_viable_scenarios.csv .    # repository root, not data/
+```
+
+Only five columns are read: `scenario_provider`, `scenario`,
+`scenario_geography`, `scenario_year`, `carbon_price_usd_per_tco2`.
+
+If your `scenarios.csv` already carries `carbon_price_usd_per_tco2` — WITCH and
+REMIND extracts do — the model logs `Carbon prices already populated … skipping
+injection` and never uses this file's contents. It must still exist, so a
+header-only stand-in is enough:
+
+```bash
+echo 'scenario_provider,scenario,scenario_geography,scenario_year,carbon_price_usd_per_tco2' \
+  > 6_final_AR6_viable_scenarios.csv
+```
+
+Verified: on a scenario file that already carries carbon prices, the stand-in
+produces NPVs identical to the real extract. For an IAM that reports no carbon
+price, the real file is what supplies them — a stand-in leaves the carbon price
+at `0` and the price signal alone carries the transition effect.
 
 ## 4. Convert the deliverables into model inputs
 
@@ -107,6 +158,11 @@ reporting tables and charts:
 kedro run --tags altrisk,reporting
 ```
 
+Budget for it: `reporting` (stage 8, 9 more nodes) renders a figure per company
+per view and dominates the wall clock. On the five-company fixture slice
+`altrisk` alone finished in 9.8 s while `altrisk,reporting` took 7m26s and wrote
+901 files. Run `altrisk` on its own while you are still tuning parameters.
+
 Expected console landmarks, in order:
 
 ```
@@ -155,9 +211,13 @@ to the code or configuration. The same run, wrapped in assertions on the output
 columns and NPV values, is the project's regression test:
 
 ```bash
-pip install pytest              # dev dependency, not installed by `pip install -e .`
+pip install pytest pytest-cov   # dev dependencies, not installed by `pip install -e .`
 python -m pytest tests/integration -q
 ```
+
+Both packages are needed: `pyproject.toml` puts `--cov` in the pytest `addopts`,
+so `pytest` without `pytest-cov` exits on `unrecognized arguments: --cov-report`.
+Expect `4 passed` in about 20 seconds.
 
 ## Explore the pipeline graph
 

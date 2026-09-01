@@ -24,6 +24,28 @@ source .venv/bin/activate
 pip install -e .
 ```
 
+### The install sits on `grpcio-status` for minutes and looks hung
+
+```
+INFO: pip is still looking at multiple versions of grpcio-status to determine
+which version is compatible with other requirements. This could take a while.
+```
+
+Not a failure. The dependency set pulls in the Google Cloud client stack and pip
+backtracks through its releases. Budget 10–20 minutes and leave it alone. Kill it
+only if it is still resolving after half an hour, then retry — pip caches what it
+already fetched, and a second environment on the same machine installs in under a
+minute.
+
+### `pytest: error: unrecognized arguments: --cov-report --cov src/crispy_kedro`
+
+`pytest-cov` is missing. `pyproject.toml` puts `--cov` in the pytest `addopts`,
+so every `pytest` invocation needs the plugin, whatever you are running:
+
+```bash
+pip install pytest pytest-cov
+```
+
 ### `kedro: command not found`
 
 The virtual environment is not active, or the install did not complete. Run
@@ -36,7 +58,28 @@ The virtual environment is not active, or the install did not complete. Run
 now, or from a directory other than the repository root. Re-run it from the root
 with the venv active.
 
+### `Kedro is sending anonymous usage data …` on every command
+
+The `kedro-telemetry` plugin, installed as a dependency of Kedro itself. It is a
+notice, not an error. Silence it by declining once, in the repository root:
+
+```bash
+echo 'consent: false' > .telemetry
+```
+
+`KEDRO_DISABLE_TELEMETRY=1` or `DO_NOT_TRACK=1` in the environment does the same
+per shell. `.telemetry` is already listed in `.gitignore`.
+
 ## Input data
+
+### `FileNotFoundError: … /6_final_AR6_viable_scenarios.csv`
+
+Raised at task 6 of 46, while loading `ar6_carbon_prices`. This is the fourth
+input file, and it lives at the **repository root** rather than under `data/` —
+`scripts/prepare_inputs.py` does not produce it, so placing the three delivered
+files is not enough. See [the fourth file: carbon
+prices](quickstart.md#the-fourth-file-carbon-prices) for what it must contain
+and when a header-only stand-in will do.
 
 ### `DatasetError: Failed while loading data from dataset CSVDataset(filepath=data/05_model_input/downloaded_assets.csv)`
 
