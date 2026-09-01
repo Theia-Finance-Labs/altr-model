@@ -46,6 +46,8 @@ def test_pin_golden_ships_and_the_full_input_smoke_test_does_not():
     # tests/ ships wholesale, so test_run.py is excluded in code, not by omission.
     assert "tests" in entries or "tests/" in entries
     assert is_skipped("tests/test_run.py")
+    # Same for the licence guard: it reads the deliverables drop by path.
+    assert is_skipped("tests/fixtures/test_fixture_ids_licensed.py")
 
 
 # --------------------------------------------------------------------------

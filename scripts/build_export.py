@@ -46,6 +46,9 @@ SKIP_RELATIVE = (
     # Tests the export tooling, which is itself internal-only (build_export.py
     # and sanitize_check.py are not allowlisted) — it would fail on import.
     "tests/unit/test_build_export.py",
+    # Checks the fixture ids against the deliverables drop by path, which only
+    # exists internally. Its job is done before the export is built.
+    "tests/fixtures/test_fixture_ids_licensed.py",
 )
 
 #: The three deliverables files staged into ``data/01_raw/`` by --data-source.
