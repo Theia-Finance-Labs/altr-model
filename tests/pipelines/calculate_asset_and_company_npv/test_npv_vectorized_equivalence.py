@@ -168,9 +168,12 @@ def _reference_compute(
             terminal_value = 0.0
 
             if stranding_aware_tv and final_fcff != 0:
-                n_check = min(stranding_consecutive_years, len(g))
-                last_n_fcff = g["FCFF"].iloc[-n_check:]
-                is_stranded = (last_n_fcff <= 0).all()
+                # A group shorter than N years cannot show N consecutive loss
+                # years — mirrors the production guard.
+                is_stranded = bool(
+                    len(g) >= stranding_consecutive_years
+                    and (g["FCFF"].iloc[-stranding_consecutive_years:] <= 0).all()
+                )
 
                 if is_stranded:
                     tv_tier = "stranded"
