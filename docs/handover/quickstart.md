@@ -50,10 +50,10 @@ needed to run the model:
 | `docs` | `uv sync --group docs` | Building this documentation site locally. |
 | `streamlit` | `uv sync --group streamlit` | The batch-run app under `notebooks/` (internal builds only - a delivered copy carries neither the app nor this group, so the row is there for completeness, not as an instruction). |
 
-`pyproject.toml` declares one further optional group, `bigquery`, used only by
-the maintainers' internal input tooling. It is not installed by default and you
-never need it; in a delivered copy the module it serves
-(`bigquery_marts_downloader.py`) is not present either.
+`pyproject.toml` declares one further optional group, used only by the
+maintainers' internal input tooling. It is not installed by default and you
+never need it; in a delivered copy the module it serves is not present either,
+which is why nothing in this documentation describes it.
 
 Verify the install - this must print a `0.19.x` version and exit cleanly:
 
