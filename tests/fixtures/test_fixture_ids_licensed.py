@@ -102,6 +102,28 @@ def test_deliverables_drop_is_the_licensed_universe(licensed_company_ids):
     )
 
 
+def test_every_licensed_id_is_one_the_sanitizer_pattern_can_see(licensed_company_ids):
+    """Pins the assumption the narrowed regex rests on: at least EIGHT digits.
+
+    `COMPANY_ID_RE` requires `CN_`/`CP_` followed by 8+ digits. The bound is
+    what keeps it from matching ordinary text, but it is an assumption about
+    the data, not a fact the pattern can enforce: a universe containing a
+    shorter identifier would be one the sanitizer cannot see, and such an id
+    could ship in a doc or a notebook with both gates reporting clean. Checked
+    against the real drop, so it fails when the assumption stops holding
+    rather than when someone remembers to re-derive it.
+    """
+    unmatched = sorted(
+        str(cid) for cid in licensed_company_ids if not COMPANY_ID.fullmatch(str(cid))
+    )
+    assert not unmatched, (
+        f"{len(unmatched)} licensed company id(s) do not match the sanitizer's "
+        f"pattern {COMPANY_ID.pattern!r}: {unmatched[:10]}. The gates cannot "
+        "see these ids, so they would ship unnoticed — widen COMPANY_ID_RE in "
+        "scripts/sanitize_check.py (the single definition both gates import)."
+    )
+
+
 def test_fixture_asset_ids_are_in_the_deliverables():
     fixture = _ids(DATA / "assets_forecasts.csv", "asset_id")
     licensed = _ids(_require_drop() / "assets_forecasts.csv", "asset_id")
