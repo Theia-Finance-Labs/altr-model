@@ -1,3 +1,0 @@
-[submodule "pkg/trisk.model"]
-	path = pkg/trisk.model
-	url = https://github.com/Theia-Finance-Labs/trisk.model.git
