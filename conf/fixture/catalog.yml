@@ -101,9 +101,10 @@ company_npv:
 # ================================================
 # NOTE: the reporting pipeline is tagged "reporting", not "altrisk", so the
 # fixture regression run does not execute it. Its catalog entries are still
-# quarantined here. Its plot/table directories are hardcoded inside
-# reporting/nodes.py (data/08_reporting/...) and cannot be redirected from
-# config — see implementation notes.
+# quarantined here. Its plot/table directories are hardcoded (data/08_reporting/
+# ...) in reporting/exports.py, plots_trajectories.py, plots_financials.py and
+# plots_staggered.py — reporting/nodes.py is only a re-export shim — so they
+# cannot be redirected from config; see implementation notes.
 
 validation_summary:
   type: pandas.CSVDataset
