@@ -388,3 +388,23 @@ SUSPECTED PRE-EXISTING BUG (not fixed, per the behavior-preserving rule, and NOT
 
 ### B13
 conf/base/catalog.yml points ar6_carbon_prices at 6_final_AR6_viable_scenarios.csv in the repository root. The export ships neither the file nor a way to generate it, so an external collaborator following the quickstart verbatim fails at task 6 of 46. I documented it (new quickstart section 'The fourth file: carbon prices' plus a troubleshooting entry keyed on the exact FileNotFoundError) and verified that a header-only stand-in with the five usecols columns lets the run complete with identical NPVs whenever the scenarios input already carries carbon_price_usd_per_tco2 - true for the WITCH and REMIND extracts. That is a documented workaround, not a fix: an IAM with no carbon prices still needs the real AR6 extract, and nothing tells the recipient where to get it. Needs a decision before handover - either ship the file through the allowlist/--data-source or re-path the catalog entry under data/05_model_input/.
+
+## Dual review round (2026-09-01)
+
+- **Fable review** (8 finder angles + verify): 10 CONFIRMED findings — all fixed in commits 6ca15d1, ff96e3a, 063cf17, 3c0d8b0, 7bd6d00. Move-integrity and conf-relocation verified mechanically clean (AST function diffs, merged-key byte-identity, shim completeness).
+- **Codex review** (independent, session 01a05a6e): confirmed claims 1-2 clean; 9 findings, 3 overlapping. Unique fixes in 7dfc533, 55a90a8, 012602e, 68e97ad, 59fe033. Key: 12,066 unlicensed company IDs were about to ship in docs/handover/scenario_catalog.md — relocated to internal docs/research/company_id_archive_2026.md and now gated by a proven `company-id` sanitizer pattern.
+- Post-fix state: 113 passed / 2 known skips / 1 pre-existing failure (tests/test_run.py, stale Kedro boilerplate, proven failing at baseline 04776c7; excluded from export).
+
+## Incident log
+
+- Round-1 fix agent accidentally ran `git worktree remove --force` on the MAIN tree's `.claude/worktrees/port-npv-fixes` (wrong path picked from porcelain output). Restored at committed tip b9ca656 (= origin/feat/altr-followup-fixes). Any uncommitted work in that worktree is unrecoverable.
+
+## Open loops at handover-package completion
+
+1. Golden pinning: run `scripts/pin_golden.py` against the full-data model run once it completes; re-pin after the carbon-price fix lands.
+2. Carbon-price scenario data fix pending (colleague); then rebuild fixture slice + re-pin integration values.
+3. Ownership-tier check: warning carried in scripts/prepare_inputs.py; upstream resolution pending.
+4. Bertrand review required before merging feat/handover-package (AGENTS.md gate).
+5. First full-data run of the export = Jakub's sign-off; then push export content to Theia-Finance-Labs/altr-model (created, private, empty).
+6. Dependabot: 5 vulns on default branch (1 critical) — the export ships the same poetry.lock; dependency pass recommended.
+7. Pre-existing tests/test_run.py failure internally (stale boilerplate; excluded from export).
