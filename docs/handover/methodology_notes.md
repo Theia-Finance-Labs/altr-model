@@ -92,6 +92,17 @@ Retirement dating happens in
 [Stage 1](pipelines/prepare_scenario_asset_and_company_inputs.md)'s asset
 preparation.
 
+**The retirement floor.** The dated retirement year is not applied as-is: when
+allocation zeroes retired capacity it clips retirement to `alignment_year + 1`,
+so no asset retires before the transition window closes. An asset dated to
+retire in 2035 under `alignment_year: 2038` therefore keeps running until 2039.
+The floor exists so retirement never removes capacity the shock has not yet had
+a chance to act on — the transition path would otherwise be reading a fleet
+that had already shrunk for unrelated reasons. Every consumer of the retirement
+year applies the same floor, `frozen_capacity_at_retirement` included; the raw
+`retirement_year` carried on the panel is the *input* to it, not the year the
+asset actually stops.
+
 ## Synthetic assets for increasing technologies
 
 For technologies whose scenario pathway is *increasing* (a renewables

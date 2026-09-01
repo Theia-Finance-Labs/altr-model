@@ -284,6 +284,7 @@ FROZEN_CAPACITY_COLUMNS = ASSET_KEYS + ["year", "frozen_capacity_at_retirement"]
 
 def create_frozen_capacity_at_retirement(
     asset_allocation_wide: pd.DataFrame,
+    alignment_year: int | None = None,
 ) -> pd.DataFrame:
     """Capacity each retiring asset last stood at, carried through its retirement.
 
@@ -291,6 +292,12 @@ def create_frozen_capacity_at_retirement(
     BEFORE retirement — at the retirement year itself the retirement logic has
     already zeroed it — and extend that level across every year from retirement
     onward.
+
+    Retirement here means the EFFECTIVE retirement year, not the raw one:
+    allocation never retires an asset before `alignment_year + 1`
+    (`_allocation_nodes.py`), so anchoring on the raw `retirement_year` of an
+    asset due to retire on or before the alignment year would read a year the
+    asset is still running and freeze the wrong capacity.
 
     This is a lookup table, not a cost driver: fixed costs use first-year
     capacity (``compute_ops_block``'s ``initial_capacity``), so nothing in the
@@ -309,21 +316,26 @@ def create_frozen_capacity_at_retirement(
     if assets.empty:
         return pd.DataFrame(columns=FROZEN_CAPACITY_COLUMNS)
 
-    last_active = assets.loc[assets["year"].eq(assets["retirement_year"] - 1)]
+    effective_retirement = assets["retirement_year"].astype(int)
+    if alignment_year is not None:
+        effective_retirement = effective_retirement.clip(lower=int(alignment_year) + 1)
+    assets = assets.assign(_eff_retirement_year=effective_retirement)
+
+    last_active = assets.loc[assets["year"].eq(assets["_eff_retirement_year"] - 1)]
     if last_active.empty:
         return pd.DataFrame(columns=FROZEN_CAPACITY_COLUMNS)
 
     frozen = (
         last_active.assign(
             frozen_capacity_at_retirement=last_active["capacity_after_shock"]
-        )[ASSET_KEYS + ["retirement_year", "frozen_capacity_at_retirement"]]
+        )[ASSET_KEYS + ["_eff_retirement_year", "frozen_capacity_at_retirement"]]
         .drop_duplicates()
         .merge(
             pd.DataFrame({"year": sorted(asset_allocation_wide["year"].unique())}),
             how="cross",
         )
     )
-    frozen = frozen.loc[frozen["year"].ge(frozen["retirement_year"])]
+    frozen = frozen.loc[frozen["year"].ge(frozen["_eff_retirement_year"])]
     return (
         frozen[FROZEN_CAPACITY_COLUMNS]
         .sort_values(ASSET_KEYS + ["year"])

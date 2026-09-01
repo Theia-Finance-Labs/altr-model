@@ -119,8 +119,12 @@ during a run:
 | `frozen_capacity_at_retirement` | 3 | 4 | `data/07_model_output/frozen_capacity_at_retirement.csv` |
 
 `frozen_capacity_at_retirement` records, for every asset that retires, the
-capacity it last stood at — the year before retirement, since the retirement
-year is already zeroed — carried across every year from retirement onward.
+capacity it last stood at — the year before its EFFECTIVE retirement, since
+from the retirement year on the capacity is zero — carried across every year
+from that retirement onward. Effective, not raw: allocation never retires an
+asset before `alignment_year + 1`, so an asset dated to retire on or before the
+alignment year is still running in its raw `retirement_year` and the anchor
+follows the floor.
 Stage 3 produces it because that is where retirement years live; stage 4 merges
 it onto the asset panel. Nothing in the earnings maths reads it: fixed costs use
 first-year capacity. It is a carried surface, the one a stranded-capacity view
