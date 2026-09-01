@@ -117,7 +117,15 @@ capacity in year *t* is
 `max(0, company_late_sudden_requested[t] − sum(real_assets[t]))`. The series
 being closed on is the **late & sudden requested** company path, not the raw
 `target` scenario path: the requested path is the one the company is actually
-being held to, so real + synthetic reconciles to it exactly.
+being held to.
+
+The reconciliation is **one-sided**. The `max(0, ...)` closes a *shortfall*
+only; there is no downward correction. Where a company's real assets already
+carry more capacity at business-as-usual than the requested path asks for, the
+top-up is zero and the company's total stays *above* the requested path - real
+capacity is never reduced to meet it. So real + synthetic equals the requested
+path exactly only in the years the real fleet falls short of it, and is greater
+than or equal to it otherwise.
 
 A synthetic asset can only appear where the company already has a real one.
 The model only produces a company trajectory for a

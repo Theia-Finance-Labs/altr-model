@@ -18,15 +18,23 @@ result is rolled up from asset to company-technology to company level.
 
 !!! note "`dcf.discount_rate_shock` is inert under the shipped configuration"
 
-    The rate is chosen off `scenario_type`, and with `price_ramp: True` (the
-    default, set in stage 2) a ramped late & sudden pathway is a *blend* of the
-    two scenario surfaces, so it keeps the baseline label rather than falsely
-    claiming the target's. Every row arriving here reads
-    `scenario_type: baseline` and takes `dcf.discount_rate_baseline`;
-    `dcf.discount_rate_shock` is read only under `price_ramp: False`. The two
-    pathways stay distinguishable by `trajectory_type` regardless. See the
-    [user guide](../user_guide.md) for what to change if the pathways should be
-    discounted differently.
+    The rate is chosen off `scenario_type`, and a *ramped* late & sudden
+    pathway is a blend of the two scenario surfaces, so it keeps the baseline
+    label rather than falsely claiming the target's. Every row arriving here
+    then reads `scenario_type: baseline` and takes
+    `dcf.discount_rate_baseline`.
+
+    The pathway ramps when `price_ramp: True` **and** `alignment_year` is
+    strictly greater than `shock_year` — both set in stage 2, and both true as
+    shipped (`price_ramp: True`, 2038 > 2033). Either half turns the ramp off
+    and makes `dcf.discount_rate_shock` live again: `price_ramp: False` (the
+    hard switch at `shock_year`), or `alignment_year` equal to `shock_year`,
+    which `check_input_parameters` accepts — it requires `alignment_year >=
+    shock_year` — and which leaves an empty transition window to blend across.
+
+    The two pathways stay distinguishable by `trajectory_type` regardless. See
+    the [user guide](../user_guide.md#discount-rates) for what to change if the
+    pathways should be discounted differently.
 
 The terminal value is where most of the valuation judgement sits. It can be
 switched off (`terminal_value.method: "none"`) or computed from a **normalized**
