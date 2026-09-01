@@ -47,18 +47,17 @@ EBITDA rather than EBIT is the operating measure.
 | Dataset | Produced by |
 | --- | --- |
 | `asset_trajectories` | Stage 3 (`data/07_model_output/asset_trajectories.csv`) |
+| `frozen_capacity_at_retirement` | Stage 3 (`data/07_model_output/frozen_capacity_at_retirement.csv`) |
 
-That is the whole input list: the pipeline declares
-`PIPELINE_INPUTS = {"asset_trajectories"}` and `tests/test_run.py` asserts that
-its non-parameter inputs are exactly that set.
+That is the whole input list: the pipeline declares both in `PIPELINE_INPUTS`
+and `tests/test_run.py` asserts that its non-parameter inputs are exactly that
+set.
 
-!!! warning "Pending adjudication — Q4"
-    This table also carried a row for the frozen-capacity-at-retirement dataset
-    as a second input to this stage, which this codebase deliberately retired
-    (it is listed in `REMOVED_DATASETS` in `tests/test_run.py`). The behaviour
-    it describes is not present in this codebase and the question of whether to
-    adopt it is open (ledger question Q4). The row will be rewritten once the
-    ruling is recorded; it is deliberately not documented in the meantime.
+`frozen_capacity_at_retirement` is merged onto the panel in
+`validate_asset_trajectories` and carried, but no calculation reads it — fixed
+costs use first-year capacity (see `apply_continued_om_*` below), not
+retirement-year capacity. It is the surface a stranded-capacity view would be
+built on.
 
 ## Produces
 
@@ -98,28 +97,33 @@ Two functions in this pipeline are not nodes:
 | `market_passthrough` | `conf/base/parameters_calculate_asset_earnings.yml` |
 | `include_growth_capex`, `include_replacement_capex`, `replacement_capex_rate`, `include_decom_costs` | `conf/base/parameters_calculate_asset_earnings.yml` |
 | `apply_continued_om_baseline`, `apply_continued_om_shock` | `conf/base/parameters_calculate_asset_earnings.yml` |
+| `carbon_cost_method`, `dynamic_marginal_ef` | `conf/base/parameters_calculate_asset_earnings.yml` |
 
-Every key this stage reads is defined in its own file. All three `include_*`
-switches ship `False`, so `capex_total` is zero out of the box;
-`replacement_capex_rate` is read only when `include_replacement_capex` is on.
-Defaults and units: [parameters reference](../parameters.md).
+Every key this stage reads is defined in its own file. `include_replacement_capex`
+and `include_decom_costs` ship `True` and `include_growth_capex` ships `False` -
+IAM O&M already bundles annualized capital costs, so charging growth CapEx on top
+would double-count. `replacement_capex_rate` is read only when
+`include_replacement_capex` is on. Defaults and units:
+[parameters reference](../parameters.md).
 
-!!! warning "Pending adjudication — Q2"
-    This table also carried rows for a price-ramp parameter that phases prices
-    across the shock window. The behaviour it describes is not present in this
-    codebase and the question of whether to adopt it is open (ledger question
-    Q2). The rows will be rewritten once the ruling is recorded; they are
-    deliberately not documented in the meantime.
+`carbon_cost_method` chooses between charging each technology's **full** emission
+factor (`"full_ef"`, the default) and charging only the **excess** over the
+price-setting generator (`"differential_ef"`). The differential method suits IAMs
+whose electricity prices already embed the marginal generator's carbon cost;
+`"full_ef"` suits IAMs whose prices barely move with carbon stringency, where
+there is nothing to double-count. `dynamic_marginal_ef` lets that marginal
+emission factor decay with the VRE capacity share, so a technology loses its
+carbon rent as renewables push it off the margin.
 
-!!! warning "Pending adjudication — Q2"
-    This table also carried rows for a dynamic marginal-emission-factor switch
-    and a carbon-cost-method selector, which would charge carbon on the excess
-    over a marginal generator rather than on the asset's own emission factor.
-    The behaviour they describe is not present in this codebase - the carbon
-    charge here is the asset's full emission factor, net of
-    `market_passthrough` - and the question of whether to adopt it is open
-    (ledger question Q2). The rows will be rewritten once the ruling is
-    recorded; they are deliberately not documented in the meantime.
+Both keys act on a marginal emission factor produced by the market-clearing-price
+adjustment, which this codebase does not carry. The marginal EF is therefore 0,
+the two methods coincide, and every technology pays its full emission factor net
+of `market_passthrough`. The keys are present so the differential path works if
+that adjustment is ever adopted.
+
+The price ramp that phases the financial surfaces across the shock window is a
+**stage 3** parameter, not one of this stage's: see
+[`calculate_company_trajectories`](calculate_company_trajectories.md).
 
 ## Methodology reference
 

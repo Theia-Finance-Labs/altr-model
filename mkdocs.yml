@@ -9,8 +9,8 @@
 
 site_name: ALTR Model
 site_description: Asset-level transition-risk valuation model — install, run, interpret.
-repo_url: https://github.com/Theia-Finance-Labs/altr-model-refactored
-repo_name: Theia-Finance-Labs/altr-model-refactored
+repo_url: https://github.com/Theia-Finance-Labs/altr-model
+repo_name: Theia-Finance-Labs/altr-model
 docs_dir: docs/handover
 site_dir: site
 use_directory_urls: true

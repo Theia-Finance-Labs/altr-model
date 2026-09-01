@@ -41,15 +41,13 @@ here, using two functions that live in
 | --- | --- | --- |
 | `asset_trajectories` | `data/07_model_output/asset_trajectories.csv` | The canonical long asset table: one row per asset/company/year/`trajectory_type`, with the active financial assumptions, emission factor and retirement year attached |
 | `company_trajectories` | `data/07_model_output/company_trajectories.csv` | The stage-2 company table plus the `late_sudden_realized` rows derived from the allocated asset capacity |
+| `frozen_capacity_at_retirement` | `data/07_model_output/frozen_capacity_at_retirement.csv` | For every retiring asset, the capacity it last stood at, carried across every year from its retirement onward |
 | `_extended_asset_panel`, `_assets_with_baseline`, `_decreasing_company_pathways`, `_increasing_company_pathways`, `_decreasing_asset_allocation`, `_increasing_asset_allocation`, `_asset_allocation_wide` | in memory | Private, namespaced working tables between the nodes below |
 
-!!! warning "Pending adjudication — Q4"
-    This table also carried a row for the frozen-capacity-at-retirement dataset
-    and its producing node, which this codebase deliberately retired (it is
-    listed in `REMOVED_DATASETS` in `tests/test_run.py`). The behaviour it
-    describes is not present in this codebase and the question of whether to
-    adopt it is open (ledger question Q4). The row will be rewritten once the
-    ruling is recorded; it is deliberately not documented in the meantime.
+`frozen_capacity_at_retirement` is produced here rather than in the earnings
+stage because this is where `retirement_year` lives — it is a filter on the wide
+allocation panel, not a join. Stage 4 merges it onto the asset panel, but
+nothing in the earnings maths reads it: fixed costs use first-year capacity.
 
 ## Nodes
 
@@ -62,16 +60,8 @@ here, using two functions that live in
 | `allocate_increasing_company_trajectories_to_assets` | Keeps real assets on their baseline path and adds the synthetic top-up asset |
 | `combine_asset_allocation_branches` | Concatenates both streams and restores the carried asset metadata (emission factor, retirement year, technology lifetime) |
 | `build_canonical_asset_trajectories` | Melts the wide asset frame into the long form downstream stages consume and joins the active financial surface onto each row |
+| `create_frozen_capacity_at_retirement` | Takes each retiring asset's capacity in the year before retirement - the retirement year is already zeroed - and extends that level across every year from retirement onward |
 | `reconcile_realized_company_trajectories` | Sums the allocated `latesudden` asset capacity back to company level and appends it as `late_sudden_realized` |
-
-!!! warning "Pending adjudication — Q4"
-    This table also carried a row for the node that produced the
-    frozen-capacity-at-retirement dataset, which this codebase deliberately
-    retired (the dataset is listed in `REMOVED_DATASETS` in
-    `tests/test_run.py`). The behaviour it describes is not present in this
-    codebase and the question of whether to adopt it is open (ledger question
-    Q4). The row will be rewritten once the ruling is recorded; it is
-    deliberately not documented in the meantime.
 
 ### The functions behind the nodes
 

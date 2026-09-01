@@ -1,10 +1,10 @@
 #!/usr/bin/env python
-"""Assemble the external `altr-model-refactored` export from an explicit allowlist.
+"""Assemble a shareable export of this repo from an explicit allowlist.
 
 Usage::
 
-    python scripts/build_export.py --dest ../altr-model-refactored-preview
-    python scripts/build_export.py --dest ../altr-model-refactored-preview \
+    python scripts/build_export.py --dest ../altr-model-export-preview
+    python scripts/build_export.py --dest ../altr-model-export-preview \
         --data-source "/path/to/deliverables"
 
 Only paths listed in ``scripts/export_allowlist.txt`` are copied — assembly is
@@ -14,9 +14,12 @@ exclusions and copy-time rewrites strip the internal-only BigQuery ingestion
 path, which externals do not have access to, and empty the example-company
 list out of the exported configuration.
 
-Note the repo names: `altr-model` is the INTERNAL repository (this one).
-`altr-model-refactored` is the external one the export is delivered to. A stale
-reference to the old name would point recipients at private code.
+The destination is whatever ``--dest`` names — a directory, not a repository.
+Under the 2026-09-01 owner ruling the end state is a SINGLE repo,
+`Theia-Finance-Labs/altr-model` (this one), and this script is kept as an
+internal utility for producing a sanitized copy on demand. It deliberately does
+not name a destination repository: wiring one in is how a stale name ends up
+pointing recipients at private code.
 
 The last steps run ``sanitize_check.py`` and the licensing guard over the
 assembled tree; a hit in either fails the build with a non-zero exit rather
