@@ -101,6 +101,11 @@ def check_ownership_tier(frame: pd.DataFrame, ownership_type: str = "direct") ->
     necessary but NOT sufficient -- different companies on different rungs each
     claim the same capacity. This mirrors the pipeline's choice and checks the sum.
 
+    Duplicate stake rows are handled downstream and are not what this checks:
+    ``filter_companies`` totals every stake a company holds in one asset-year
+    into a single row. That merge is sum-preserving, so it changes the row count
+    and never the sums below.
+
     Warning only: some universes legitimately hold partial ownership. See the
     `ownership_type` entry in `docs/handover/parameters.md` before ignoring it.
     """
@@ -135,7 +140,11 @@ def check_ownership_tier(frame: pd.DataFrame, ownership_type: str = "direct") ->
             f"(median {sums.median():.1f}%). Capacity would be over-allocated "
             "silently. The selected tier must partition the asset (sum to 100%) "
             "-- fix this upstream; see `ownership_type` in "
-            "docs/handover/parameters.md.",
+            "docs/handover/parameters.md. Note this is NOT about duplicate stake "
+            "rows: `filter_companies` now totals every stake a company holds in "
+            "one asset-year into a single row automatically, and that merge is "
+            "sum-preserving, so it cannot bring an over-allocated tier back "
+            "under 100%.",
             stacklevel=2,
         )
 

@@ -58,7 +58,7 @@ Run in this order (`nodes.py`):
 | `interpolate_scenarios_annually` | Linearly interpolates the 5- or 10-year scenario grid to every year and extends it |
 | `scale_electricity_price` | Scales the electricity price for CapEx recovery by `theta_capex_recovery` |
 | `inject_carbon_prices` | Merges the AR6 carbon price onto each scenario/geography/year |
-| `filter_companies` | Applies the `company_ids` filter and the `ownership_type` tier |
+| `filter_companies` | Applies the `company_ids` filter and the `ownership_type` tier, then totals the stakes each company holds in one asset-year into a single row |
 | `apply_ccs_suffix` | Points Coal/Gas/Biomass at the with- or without-CCS scenario variant |
 | `filter_assets` | Cuts each asset to `max_forecast_horizon` years from the scenario start year |
 | `assign_scenario_geographies_to_assets` | Matches every asset's country to a scenario geography |
