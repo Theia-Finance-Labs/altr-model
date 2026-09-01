@@ -71,7 +71,12 @@ PATTERNS: dict[str, Callable[[str], object]] = {
     # inside the data payload the recipient is licensed for; a leak anywhere
     # else (docs, comments, notebooks), where it would ship ids for companies
     # outside that licence. Scoped by the EXCEPTIONS below, not by dropping it.
-    "company-id": re.compile(r"\b(?:CN|CP)_\d{8,}\b").search,
+    # Lookarounds, not \b: "_" is a word character, so \b never matches between
+    # it and a letter and the anchored form missed every composite id
+    # ("NEW_CN_<id>_Power_HydroCap_EU"). Treat "_" as a separator instead.
+    "company-id": re.compile(
+        r"(?<![A-Za-z0-9])(?:CN|CP)_\d{8,}(?![0-9])"
+    ).search,
 }
 
 #: Directories never scanned, relative to the export root.
@@ -203,7 +208,18 @@ def scan_file(path: Path, rel_path: str) -> list[str]:
 
 def scan_tree(root: Path) -> list[str]:
     """Scan every scannable file under ``root``; returns all hits."""
+    return scan_tree_with_skips(root)[0]
+
+
+def scan_tree_with_skips(root: Path) -> tuple[list[str], list[str]]:
+    """Scan ``root``; return (hits, binary files that could not be scanned).
+
+    The second list is what keeps a "clean" verdict honest: binaries carry no
+    reviewable line numbers, so they are never grepped, and a gate that reports
+    clean without saying what it never looked at overclaims.
+    """
     hits: list[str] = []
+    unscanned: list[str] = []
     for path in sorted(root.rglob("*")):
         if not path.is_file():
             continue
@@ -211,9 +227,10 @@ def scan_tree(root: Path) -> list[str]:
         if any(rel_path == t or rel_path.startswith(f"{t}/") for t in SKIP_TREES):
             continue
         if not is_scannable(path):
+            unscanned.append(rel_path)
             continue
         hits.extend(scan_file(path, rel_path))
-    return hits
+    return hits, unscanned
 
 
 def selftest() -> int:
@@ -263,13 +280,21 @@ def main(argv: list[str] | None = None) -> int:
         print(f"sanitize: not a directory: {root}", file=sys.stderr)  # noqa: T201
         return 2
 
-    hits = scan_tree(root)
+    hits, unscanned = scan_tree_with_skips(root)
     if hits:
         print(f"sanitize: {len(hits)} hit(s) in {root}", file=sys.stderr)  # noqa: T201
         for hit in hits:
             print(hit, file=sys.stderr)  # noqa: T201
         return 1
     print(f"sanitize: clean ({root})")  # noqa: T201
+    if unscanned:
+        # Never silently: a binary shipping unreviewed is the gate's blind spot,
+        # so name every one rather than let "clean" imply the tree was read.
+        print(  # noqa: T201
+            f"sanitize: {len(unscanned)} binary file(s) NOT scanned - review by hand:"
+        )
+        for rel_path in unscanned:
+            print(f"  {rel_path}")  # noqa: T201
     return 0
 
 

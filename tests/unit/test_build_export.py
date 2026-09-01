@@ -111,3 +111,41 @@ def test_every_suppression_still_matches_something_shipped(suppression):
         f"suppression never fires on the shipped copy: "
         f"{suppression.path_glob} / {suppression.pattern}"
     )
+
+
+# --- company-id pattern: composite forms must not slip the gate -------------
+# Regression for the Santa round-1 refuter finding: the original pattern was
+# anchored with \b, which cannot match between "_" and a word character, so any
+# id embedded in a generated composite identifier passed the gate unnoticed.
+
+COMPOSITE_IDS = [
+    "NEW_CN_2023551807935057693_Power_HydroCap_EU",
+    "NEW_CN_2023551807935057693",
+    "CN_2023551807935057693_Power",
+    "asset=CP_3685197042895689972_Gas",
+]
+
+BARE_IDS = [
+    "company_id,CN_2023551807935057693,2025",
+    "- CP_3685197042895689972",
+]
+
+NOT_IDS = [
+    "SCN_12345678 is not a company id",
+    "CN_12345 too short",
+]
+
+
+@pytest.mark.parametrize("line", COMPOSITE_IDS)
+def test_company_id_pattern_catches_composite_forms(line):
+    assert PATTERNS["company-id"](line), f"composite id slipped the gate: {line}"
+
+
+@pytest.mark.parametrize("line", BARE_IDS)
+def test_company_id_pattern_still_catches_bare_forms(line):
+    assert PATTERNS["company-id"](line), f"bare id no longer caught: {line}"
+
+
+@pytest.mark.parametrize("line", NOT_IDS)
+def test_company_id_pattern_does_not_over_match(line):
+    assert not PATTERNS["company-id"](line), f"false positive on: {line}"
