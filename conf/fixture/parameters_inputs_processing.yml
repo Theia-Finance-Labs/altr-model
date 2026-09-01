@@ -1,0 +1,5 @@
+# Fixture environment parameter overrides.
+# The scenario pair must exist in tests/fixtures/data/downloaded_scenarios.csv.
+baseline_scenario: "AR6_WITCH 5.0_EN_NoPolicy"
+target_scenario: "AR6_WITCH 5.0_EN_NPi2020_500"
+company_ids: []   # slice already filtered

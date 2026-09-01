@@ -1,0 +1,16 @@
+# This is a boilerplate parameters config generated for pipeline 'distribute_impacts_to_asset_level'
+# using Kedro 0.19.12.
+#
+# Documentation for this file format can be found in "Parameters"
+# Link: https://docs.kedro.org/en/0.19.12/configuration/parameters.html
+
+# --- Advanced: asset-level distribution knobs. User-facing run configuration
+# lives in conf/base/parameters.yml.
+
+apply_retirement_baseline: True  # Apply retirement to baseline trajectories
+apply_retirement_shock: True     # Apply retirement to shock (late sudden) trajectories
+apply_decreasing_staggered_shock: False
+
+staggered_shock:
+  g_k: 6.0
+  n_quantiles: 3

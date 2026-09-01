@@ -1,0 +1,92 @@
+# ==================================================================================
+# ALTR run configuration — the single user-facing entry point
+# ==================================================================================
+# Every knob you normally touch to configure a run lives in this file.
+#
+# Kedro merges all `conf/base/parameters*.yml` files into ONE flat namespace, so a
+# key may be defined in exactly one base file (a duplicate breaks the run).
+# Advanced / methodology-internal knobs stay in the per-pipeline
+# `parameters_<pipeline>.yml` files, under their `# --- Advanced:` header.
+#
+# Any value here can be overridden per environment in `conf/<env>/parameters*.yml`
+# (e.g. `conf/fixture/` for the small committed regression slice).
+# ==================================================================================
+
+
+# ── Scenario selection ────────────────────────────────────────────────────────────
+# The scenario pair the run compares: `baseline_scenario` is the counterfactual
+# (current-policy) pathway; `target_scenario` is the climate-policy pathway whose
+# "late & sudden" alignment drives the shock.
+# Values: full scenario names as they appear in the `scenario` column of the
+# scenarios input (`data/05_model_input/downloaded_scenarios.csv`). Both must come
+# from the same IAM provider and start in the same year (asserted in filter_assets).
+# Note: filter_scenarios prepends "AR6_<provider>_" automatically
+# Known pairs per IAM: see docs/handover/scenario_catalog.md
+baseline_scenario: "AR6_REMIND-MAgPIE 2.1-4.2_EN_NPi2020_3000"
+target_scenario: "AR6_REMIND-MAgPIE 2.1-4.2_EN_NPi2020_500"
+
+
+# ── Shock timing ──────────────────────────────────────────────────────────────────
+# Calendar years (integers). `shock_year` is when market participants learn about
+# the policy shock; `alignment_year` is when the target trajectory must be reached.
+# `alignment_year` must be >= `shock_year` (validated by check_input_parameters).
+shock_year: 2033
+alignment_year: 2038  # Extended from 2035 to give 5-year transition window
+                      # Longer window = more realistic phase-out, but still abrupt enough
+                      # for meaningful fossil value destruction
+
+
+# ── Scope filters ─────────────────────────────────────────────────────────────────
+# Empty list = all companies (no filter)
+# Values: list of company_id strings present in the companies input.
+# Read the ids you can choose from off the `company_id` column of your own
+# companies input (`data/05_model_input/downloaded_companies.csv`).
+company_ids: []
+
+# Ownership level used to attach assets to companies.
+# Values: "direct" (ownership_level == 1) | "indirect" (ownership_level >= 2).
+ownership_type: "direct"
+
+# Technology scenario mapping control
+# If True, use w/ CCS scenarios for Coal, Gas, Biomass. If False, use w/o CCS
+# If Null, use technology without distinction.
+ccs_on: False
+
+# Number of forecast years kept per asset, counted from the scenario start year:
+# assets are filtered to production years in [start_year, start_year + N] (years).
+max_forecast_horizon: 5
+
+
+# ── MCPR (market clearing price) ──────────────────────────────────────────────────
+# In wholesale electricity markets, all generators receive the same clearing price
+# set by the marginal (most expensive dispatched) plant. IAM scenarios report
+# technology-specific "prices" approximating LCOE, not market clearing prices.
+# This adjustment derives a reference market clearing price and applies value factors.
+#
+# References:
+#   - Hirth (2013), "The Market Value of Variable Renewables," Energy Economics 38:218-236
+#   - Halttunen et al. (2022), "Global Assessment of the Merit-Order Effect," Nature Energy 7:1154-1164
+#   - Ueckerdt et al. (2013), "System LCOE," Energy 63:61-75
+#   - Borenstein, Bushnell & Wolak (2000), J. Industrial Economics 48(2):197-223
+# Advanced MCPR knobs (method, markup, merit-order alpha/floor, regional and dynamic
+# value factors) live in conf/base/parameters_earnings_model.yml.
+enable_mcpr: True                    # Enable/disable the MCPR price adjustment
+mcpr_mode: "auto"                    # "auto" | "carbon_explicit" | "merit_order_decline"
+                                     #   auto: selects mode based on carbon price coverage in scenario data
+                                     #   carbon_explicit: forces full_ef carbon cost (for IAMs with carbon prices)
+                                     #   merit_order_decline: clearing price declines with VRE share (for IAMs without)
+
+# Share of the differential carbon cost passed through to customers, 0.0–1.0.
+market_passthrough: 0  # 0 => firm absorbs all differential carbon cost (conservative/stress test)
+
+# Price ramp (RC4 fix): blend baseline->target prices over [shock_year, alignment_year]
+# instead of hard-switching at shock_year. Eliminates near-term price windfall where
+# target prices are 30-50% higher than baseline at shock year.
+price_ramp: True  # RC4 fix: blend baseline->target prices over [shock_year, alignment_year]
+
+
+# ── Cost switches ─────────────────────────────────────────────────────────────────
+# Which cost elements the earnings model charges to free cash flow (True/False).
+include_growth_capex: False        # OFF: IAM O&M already bundles annualized capital costs (REMIND/WITCH/POLES)
+include_replacement_capex: True    # Include CapEx for replacing retired eligible assets
+include_decom_costs: True          # Include decommissioning costs for retired assets

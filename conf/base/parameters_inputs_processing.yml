@@ -1,0 +1,11 @@
+# This is a boilerplate parameters config generated for pipeline 'inputs_processing'
+# using Kedro 0.19.12.
+#
+# Documentation for this file format can be found in "Parameters"
+# Link: https://docs.kedro.org/en/0.19.12/configuration/parameters.html
+
+# --- Advanced: this pipeline currently has no advanced-only parameters.
+# Its user-facing keys (baseline_scenario, target_scenario, company_ids,
+# ownership_type, ccs_on, max_forecast_horizon) live in conf/base/parameters.yml.
+# The commented scenario pairs that used to sit here are preserved in
+# docs/handover/scenario_catalog.md.

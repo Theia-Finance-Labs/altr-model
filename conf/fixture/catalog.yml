@@ -1,0 +1,128 @@
+# Fixture environment: tiny committed input slice, outputs quarantined
+# under data/fixture_run/. Everything else inherits from conf/base.
+#
+# Every dataset in conf/base/catalog.yml that carries a `filepath:` is
+# re-declared here. Inputs point at tests/fixtures/data/; outputs are
+# rewritten to data/fixture_run/<path under data/> so a fixture run can
+# never overwrite a real model run.
+
+# ================================================
+# ================== INPUTS ======================
+# ================================================
+
+ar6_carbon_prices:
+  type: pandas.CSVDataset
+  filepath: tests/fixtures/data/ar6_carbon_prices.csv
+  load_args:
+    usecols:
+      - scenario_provider
+      - scenario
+      - scenario_geography
+      - scenario_year
+      - carbon_price_usd_per_tco2
+
+downloaded_scenarios:
+  type: pandas.CSVDataset
+  filepath: tests/fixtures/data/downloaded_scenarios.csv
+
+downloaded_assets:
+  type: pandas.CSVDataset
+  filepath: tests/fixtures/data/downloaded_assets.csv
+
+downloaded_companies:
+  type: pandas.CSVDataset
+  filepath: tests/fixtures/data/downloaded_companies.csv
+
+# ================================================
+# ================== INTERMEDIATE ================
+# ================================================
+
+allocated_assets_to_companies:
+  type: pandas.CSVDataset
+  filepath: data/fixture_run/07_model_output/allocated_assets_to_companies.csv
+
+scenarios_pathways:
+  type: pandas.CSVDataset
+  filepath: data/fixture_run/05_model_output/scenarios_pathways.csv
+
+# ================================================
+# ================== OUTPUTS =====================
+# ================================================
+
+companies_npvs:
+  type: pandas.CSVDataset
+  filepath: data/fixture_run/08_reporting/companies_npvs.csv
+
+companies_late_sudden_trajectories:
+  type: pandas.CSVDataset
+  filepath: data/fixture_run/07_model_output/companies_late_sudden_trajectories.csv
+
+asset_level_staggered_shock:
+  type: pandas.CSVDataset
+  filepath: data/fixture_run/07_model_output/asset_level_staggered_shock.csv
+
+frozen_capacity_at_retirement:
+  type: pandas.CSVDataset
+  filepath: data/fixture_run/07_model_output/frozen_capacity_at_retirement.csv
+
+# ================================================
+# ======= EARNINGS MODEL PIPELINE OUTPUTS =======
+# ================================================
+
+asset_earnings:
+  type: pandas.CSVDataset
+  filepath: data/fixture_run/07_model_output/asset_earnings.csv
+
+# ================================================
+# ================== VALUATION MODEL OUTPUTS ===
+# ================================================
+
+yearly_npv_trajectories:
+  type: pandas.CSVDataset
+  filepath: data/fixture_run/07_model_output/yearly_npv_trajectories.csv
+
+asset_npv:
+  type: pandas.CSVDataset
+  filepath: data/fixture_run/07_model_output/asset_npv.csv
+
+company_technology_npv:
+  type: pandas.CSVDataset
+  filepath: data/fixture_run/07_model_output/company_technology_npv.csv
+
+company_npv:
+  type: pandas.CSVDataset
+  filepath: data/fixture_run/07_model_output/company_npv.csv
+
+# ================================================
+# ================ REPORTING PIPELINE OUTPUTS ===
+# ================================================
+# NOTE: the reporting pipeline is tagged "reporting", not "altrisk", so the
+# fixture regression run does not execute it. Its catalog entries are still
+# quarantined here. Its plot/table directories are hardcoded (data/08_reporting/
+# ...) in reporting/exports.py, plots_trajectories.py, plots_financials.py and
+# plots_staggered.py — reporting/nodes.py is only a re-export shim — so they
+# cannot be redirected from config; see implementation notes.
+
+validation_summary:
+  type: pandas.CSVDataset
+  filepath: data/fixture_run/08_reporting/tables/validation_summary.csv
+
+report_company_summary:
+  type: pandas.CSVDataset
+  filepath: data/fixture_run/08_reporting/tables/compliance_ready/company_summary.csv
+
+report_technology_summary:
+  type: pandas.CSVDataset
+  filepath: data/fixture_run/08_reporting/tables/compliance_ready/technology_summary.csv
+
+report_top_assets:
+  type: pandas.CSVDataset
+  filepath: data/fixture_run/08_reporting/tables/compliance_ready/top_assets.csv
+
+report_methodology:
+  type: pandas.CSVDataset
+  filepath: data/fixture_run/08_reporting/tables/compliance_ready/methodology_parameters.csv
+
+reporting_qc_summary:
+  type: pandas.CSVDataset
+  filepath: data/fixture_run/08_reporting/tables/compliance_ready/reporting_qc.csv

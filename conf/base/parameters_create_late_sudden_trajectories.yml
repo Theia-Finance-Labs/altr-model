@@ -1,0 +1,8 @@
+# This is a boilerplate parameters config generated for pipeline 'create_late_sudden_trajectories'
+# using Kedro 0.19.12.
+#
+# Documentation for this file format can be found in "Parameters"
+# Link: https://docs.kedro.org/en/0.19.12/configuration/parameters.html
+
+# --- Advanced: this pipeline currently has no advanced-only parameters.
+# Its user-facing keys (shock_year, alignment_year) live in conf/base/parameters.yml.

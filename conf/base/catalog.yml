@@ -1,0 +1,143 @@
+# ================================================
+# ================== INPUTS ======================
+# ================================================
+
+
+# AR6 scenario database — used for carbon price injection
+# Contains carbon prices for IAMs that report them (WITCH, REMIND, IMAGE, etc.)
+# Per-IAM strategy: AR6 electricity prices already embed carbon cost, but only
+# partly for IAMs that also report an explicit carbon price (WITCH, REMIND,
+# IMAGE) — those use the differential carbon cost, max(EF - marginal_EF, 0), so
+# the embedded part is not charged twice; IAMs that report no carbon price
+# (AIM/CGE) run at carbon_price = 0 and rely on the price signal alone.
+ar6_carbon_prices:
+  type: pandas.CSVDataset
+  filepath: 6_final_AR6_viable_scenarios.csv
+  load_args:
+    usecols:
+      - scenario_provider
+      - scenario
+      - scenario_geography
+      - scenario_year
+      - carbon_price_usd_per_tco2
+
+# ================================================
+# ================== INTERMEDIATE ================
+# ================================================
+
+# Use the extended AR6 scenario file with cost columns (fuel_price, capex, O&M, etc.)
+# The raw BigQuery scenarios table only has prices/pathways/capacity_factors.
+downloaded_scenarios:
+  type: pandas.CSVDataset
+  filepath: data/05_model_input/downloaded_scenarios.csv
+
+downloaded_assets:
+  type: pandas.CSVDataset
+  filepath: data/05_model_input/downloaded_assets.csv
+
+downloaded_companies:
+  type: pandas.CSVDataset
+  filepath: data/05_model_input/downloaded_companies.csv
+
+allocated_assets_to_companies:
+  type: pandas.CSVDataset
+  filepath: data/07_model_output/allocated_assets_to_companies.csv
+
+scenarios_pathways:
+  type: pandas.CSVDataset
+  filepath: data/05_model_output/scenarios_pathways.csv
+
+# ================================================
+# ================== OUTPUTS =====================
+# ================================================
+
+# Key output from TRISK pipeline - this will be logged to MLflow
+companies_npvs:
+  type: pandas.CSVDataset
+  filepath: data/08_reporting/companies_npvs.csv
+
+# Combined late sudden trajectories and alignment classifications
+companies_late_sudden_trajectories:
+  type: pandas.CSVDataset
+  filepath: data/07_model_output/companies_late_sudden_trajectories.csv
+
+asset_level_staggered_shock:  
+  type: pandas.CSVDataset
+  filepath: data/07_model_output/asset_level_staggered_shock.csv
+
+# Frozen capacity at retirement for fixed cost calculations
+frozen_capacity_at_retirement:
+  type: pandas.CSVDataset
+  filepath: data/07_model_output/frozen_capacity_at_retirement.csv
+
+
+# ================================================
+# ======= EARNINGS MODEL PIPELINE OUTPUTS =======
+# ================================================
+
+# Asset-level earnings with comprehensive financial methodology
+asset_earnings:
+  type: pandas.CSVDataset
+  filepath: data/07_model_output/asset_earnings.csv
+
+# # Company-technology level aggregated earnings
+# company_technology_earnings:
+#   type: pandas.CSVDataset
+#   filepath: data/07_model_output/company_technology_earnings.csv
+
+# # Company level aggregated earnings
+# company_earnings:
+#   type: pandas.CSVDataset
+#   filepath: data/07_model_output/company_earnings.csv
+
+# ================================================
+# ================== VALUATION MODEL OUTPUTS ===
+# ================================================
+
+yearly_npv_trajectories:
+  type: pandas.CSVDataset
+  filepath: data/07_model_output/yearly_npv_trajectories.csv
+
+asset_npv:
+  type: pandas.CSVDataset
+  filepath: data/07_model_output/asset_npv.csv
+
+company_technology_npv:
+  type: pandas.CSVDataset
+  filepath: data/07_model_output/company_technology_npv.csv
+
+company_npv:
+  type: pandas.CSVDataset
+  filepath: data/07_model_output/company_npv.csv
+
+# ================================================
+# ================ REPORTING PIPELINE OUTPUTS ===
+# ================================================
+
+
+validation_summary:
+  type: pandas.CSVDataset
+  filepath: data/08_reporting/tables/validation_summary.csv
+
+# Compliance-ready reporting tables
+report_company_summary:
+  type: pandas.CSVDataset
+  filepath: data/08_reporting/tables/compliance_ready/company_summary.csv
+
+report_technology_summary:
+  type: pandas.CSVDataset
+  filepath: data/08_reporting/tables/compliance_ready/technology_summary.csv
+
+report_top_assets:
+  type: pandas.CSVDataset
+  filepath: data/08_reporting/tables/compliance_ready/top_assets.csv
+
+report_methodology:
+  type: pandas.CSVDataset
+  filepath: data/08_reporting/tables/compliance_ready/methodology_parameters.csv
+
+# Quality control summary
+reporting_qc_summary:
+  type: pandas.CSVDataset
+  filepath: data/08_reporting/tables/compliance_ready/reporting_qc.csv
+
