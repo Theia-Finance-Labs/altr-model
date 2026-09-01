@@ -712,3 +712,25 @@ ADJUDICATE pending a guard run with the drop mounted.
   tests/fixtures/test_fixture_ids_licensed.py, which also refuses any
   ALTR_DELIVERABLES_DIR resolving inside the repo tree. §4.1/§9's ADJUDICATE
   status for this item is superseded by this addendum: O1 is executable.
+
+## Addendum 2 (2026-09-01, owner rulings — governs the behaviour-port pass)
+
+- Q1-Q4 RESOLVED by owner (recorded in implementation-notes-handover.md @
+  cd46ed5/c310339): all four behaviours PORT into Bertrand's structure —
+  minimal diffs inside his modules, his conventions, no imported layouts.
+  Every ADJUDICATE entry becomes PORT-BEHAVIOUR under this ruling.
+- The 056d1f6 NPV-direction feature set ports (price_ramp, stranding,
+  dynamic marginal EF, replacement capex incl. Q1 masks, decom costs).
+  MCPR remains DROP-RETIRED.
+- External delivery superseded: single-repo end state (altr-model);
+  altr-model-refactored deleted after validation. Export tooling is KEPT as
+  an internal utility; its prose references to altr-model-refactored are
+  neutralised (destination is the --dest argument, not a repo name).
+- The 10 pending-adjudication TODO doc blocks are rewritten as each ported
+  behaviour lands (they were staged exactly for this).
+- Frozen source advances 0fc3127 -> c310339 (docs/decision commits only; no
+  code moved on the source branch since 397f26f except the guard hardening
+  already ported).
+- Verification bar: behaviour equivalence — the migration branch's fixture
+  outputs must match the handover branch's fixture outputs within numeric
+  tolerance on an ALIGNED slice (same companies, same scenario pair).
