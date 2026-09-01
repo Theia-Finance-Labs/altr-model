@@ -204,7 +204,7 @@ def _with_an_equity_only_holder() -> pd.DataFrame:
 
 
 def test_sum_mode_totals_the_direct_and_equity_stakes_into_one_row():
-    """Bertrand's semantics: every holding enters, so Acme's 50.00 direct and
+    """Sum semantics (TRISK-style): every holding enters, so Acme's 50.00 direct and
     0.45 equity stakes in plant-1 become a single 50.45 row."""
     out = filter_companies(_multi_stake_frame(), [], ownership_aggregation="sum")
 
