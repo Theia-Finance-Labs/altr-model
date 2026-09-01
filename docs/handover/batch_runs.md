@@ -99,7 +99,8 @@ custom selection), run, and download every output as one zip. It expects the
 converted model inputs to already be in `data/05_model_input/` (quickstart
 steps 3-4).
 
-Run it natively:
+Run it natively (internal builds only - `streamlit_app.py` and the `streamlit`
+dependency group are both absent from a delivered copy):
 
 ```bash
 uv run --group streamlit streamlit run notebooks/streamlit_app.py

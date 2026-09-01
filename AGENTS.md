@@ -36,9 +36,10 @@ first.
 - `conf/fixture/`    the committed regression slice's environment.
 - `docs/handover/`   the documentation site (mkdocs); shipped.
 - `notebooks/`       exploratory analysis; only `walkthrough.ipynb` ships.
-- `scripts/`         `prepare_inputs.py`, `gen_param_docs.py`, `pin_golden.py`
-                     ship; `build_export.py` and `sanitize_check.py` are
-                     internal-only export tooling.
+- `scripts/`         `prepare_inputs.py` and `gen_param_docs.py` ship;
+                     `build_export.py` and `sanitize_check.py` are
+                     internal-only export tooling. Golden pinning moved out to
+                     `tests/golden/pin_golden.py`.
 - `tests/`           pytest suite, including the fixture regression gate.
 
 ## Commands
