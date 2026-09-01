@@ -370,7 +370,7 @@ The reviews report that **26 are licensed and 4 fall outside the deliverables un
 
 **Verification status — read this before acting.** All four identifiers are confirmed
 present in main's list, and the 30-id count and three-file spread are confirmed against
-the tree. The **licensed/unlicensed split itself could not be re-verified here**: it
+the tree. The **licensed/unlicensed split itself was VERIFIED twice on 2026-09-01 (independently by the coordinator and by round-3 Reviewer B, both against the live Dropbox drop) here**: it
 requires the deliverables drop, and `ALTR_DELIVERABLES_DIR` is unset with no drop on
 this machine (`data/05_model_input/` holds only `.gitkeep`). The split is therefore
 carried as **reported by the reviews, ADJUDICATE pending a re-run** of the guard with
@@ -695,7 +695,20 @@ Nine revisions, each verified against `feat/handover-package` @ `397f26f` and
    cross-reference were remapped and re-checked against the frozen diff.
 
 **Carried as unverified.** The 26-licensed / 4-unlicensed split in §4 is reported by the
-reviews and could not be re-verified here: `ALTR_DELIVERABLES_DIR` is unset and no
+reviews and was VERIFIED twice on 2026-09-01 (independently by the coordinator and by round-3 Reviewer B, both against the live Dropbox drop) here: `ALTR_DELIVERABLES_DIR` is unset and no
 deliverables drop is present (`data/05_model_input/` holds only `.gitkeep`). The
 identifiers' presence in main and the three obligations are verified; the split is marked
 ADJUDICATE pending a guard run with the drop mounted.
+
+
+## Addendum (2026-09-01, post round-3 review)
+
+- Licence split of main's 30 conf ids: **VERIFIED** twice, independently
+  (coordinator + round-3 Reviewer B), against
+  `~/Theia Dropbox/ALTR deliverables/companies_ownerships.csv` — exactly 7,512
+  unique company_ids; 26 of the 30 present; 4 absent:
+  CN_3609115420225854555, CN_4440463050459774439, CP_3185202543523296674,
+  CP_8560203160377002286. Drop fingerprint (7,512) is now asserted by
+  tests/fixtures/test_fixture_ids_licensed.py, which also refuses any
+  ALTR_DELIVERABLES_DIR resolving inside the repo tree. §4.1/§9's ADJUDICATE
+  status for this item is superseded by this addendum: O1 is executable.
