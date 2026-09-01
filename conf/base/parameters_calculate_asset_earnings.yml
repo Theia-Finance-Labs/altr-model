@@ -9,11 +9,15 @@ market_passthrough: 0  # 0 => firm absorbs all differential carbon cost (conserv
 # ── Cost switches ─────────────────────────────────────────────────────────────────
 # Which cost elements the earnings model charges to free cash flow (True/False).
 include_growth_capex: False        # OFF: IAM O&M already bundles annualized capital costs (REMIND/WITCH/POLES)
-include_replacement_capex: False   # Include CapEx for replacing retired eligible assets
-# Fraction (0.0–1.0) of each year's non-synthetic capacity growth capitalized as
-# roll-over / replacement CapEx. Read only when include_replacement_capex is True;
-# applied to `capacity_change` for assets that are not synthetic.
-replacement_capex_rate: 0.05
+include_replacement_capex: True    # Include CapEx for routine capital maintenance
+# Fraction (0.0–1.0) of a real asset's INSTALLED capacity capitalized each year as
+# roll-over / replacement CapEx — routine capital maintenance and refurbishment,
+# for which 1–3% of replacement cost per year is the standard utility benchmark
+# (EPRI; Lazard LCOE methodology). Read only when include_replacement_capex is
+# True; charged on `asset_trajectory`, so a flat asset still pays it, and skipped
+# for assets retiring that year (already charged decommissioning) and for
+# synthetic assets (accounting constructs, not plant).
+replacement_capex_rate: 0.02
 include_decom_costs: False         # Include decommissioning costs for retired assets
 
 # ── Continued O&M ─────────────────────────────────────────────────────────────────
