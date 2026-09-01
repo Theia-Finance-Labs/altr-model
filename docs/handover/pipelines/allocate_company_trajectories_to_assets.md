@@ -117,8 +117,9 @@ matter when it is on, and it ships `False`. Defaults and the full annotations:
 
 *ALTR Model User Guide* ([`altr_documentation.pdf`](../altr_documentation.pdf)),
 **Pipeline reference → Staggered shock**, which the PDF already calls
-`allocate_company_trajectories_to_assets`, plus **Additional notes → *Synthetic
-assets for increasing technologies***, which explains why a company only gets a
-synthetic asset in a country/technology where it already has a real presence,
-and **Additional notes → *Asset retirement age: refurbishment wrap-around, not a
-hard cutoff***.
+`allocate_company_trajectories_to_assets`, plus two of the
+[methodology notes](../methodology_notes.md):
+[synthetic assets for increasing technologies](../methodology_notes.md#synthetic-assets-for-increasing-technologies),
+which explains why a company only gets a synthetic asset in a
+country/technology where it already has a real presence, and
+[asset retirement](../methodology_notes.md#asset-retirement-refurbishment-wrap-around-not-a-hard-cutoff).

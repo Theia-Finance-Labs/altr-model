@@ -20,10 +20,18 @@ PIPELINE_OUTPUTS = {
     "yearly_npv_trajectories",
 }
 PIPELINE_PARAMETERS = {
+    "dcf.brown_discount_spread",
+    "dcf.brown_remaining_life_years",
     "dcf.discount_rate_baseline",
     "dcf.discount_rate_shock",
+    "dcf.green_discount_spread",
+    "dcf.stranding_aware_tv",
+    "dcf.stranding_consecutive_years",
+    "dcf.terminal_value.g_real_brown",
     "dcf.terminal_value.g_real_default",
+    "dcf.terminal_value.g_real_green",
     "dcf.terminal_value.method",
+    "dcf.terminal_value.normalization_window",
 }
 
 
@@ -38,6 +46,14 @@ def create_pipeline(**kwargs) -> Pipeline:
                     "discount_rate_shock": "params:dcf.discount_rate_shock",
                     "terminal_growth_rate": "params:dcf.terminal_value.g_real_default",
                     "terminal_method": "params:dcf.terminal_value.method",
+                    "terminal_growth_rate_brown": "params:dcf.terminal_value.g_real_brown",
+                    "terminal_growth_rate_green": "params:dcf.terminal_value.g_real_green",
+                    "terminal_normalization_window": "params:dcf.terminal_value.normalization_window",
+                    "brown_discount_spread": "params:dcf.brown_discount_spread",
+                    "green_discount_spread": "params:dcf.green_discount_spread",
+                    "stranding_aware_tv": "params:dcf.stranding_aware_tv",
+                    "stranding_consecutive_years": "params:dcf.stranding_consecutive_years",
+                    "brown_remaining_life_years": "params:dcf.brown_remaining_life_years",
                 },
                 outputs="yearly_npv_trajectories",
                 name="calculate_yearly_npv_trajectories",

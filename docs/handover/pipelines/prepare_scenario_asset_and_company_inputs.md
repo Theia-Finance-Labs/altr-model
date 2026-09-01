@@ -125,9 +125,13 @@ visible to it. Defaults and the full annotations:
 
 *ALTR Model User Guide* ([`altr_documentation.pdf`](../altr_documentation.pdf)),
 **Pipeline reference → Inputs preparation**, which the PDF already calls
-`prepare_scenario_asset_and_company_inputs`. Also relevant in **Additional
-notes**: *Conditions a scenario has to respect to be economically viable*
-(before you pick a pair), *How assets get matched to a scenario geography* (this
-stage fails rather than guessing when a country maps to more than one scenario
-geography), *Granularity changes the shape of every output*, and *Asset
-retirement age: refurbishment wrap-around, not a hard cutoff*.
+`prepare_scenario_asset_and_company_inputs`. Four of the
+[methodology notes](../methodology_notes.md) bear directly on this stage:
+[economic viability of a scenario pair](../methodology_notes.md#economic-viability-of-a-scenario-pair)
+(before you pick one),
+[geography matching](../methodology_notes.md#how-assets-are-matched-to-a-scenario-geography)
+(this stage fails rather than guessing when a country maps to more than one
+scenario geography),
+[granularity](../methodology_notes.md#granularity-changes-the-shape-of-every-output),
+and
+[asset retirement](../methodology_notes.md#asset-retirement-refurbishment-wrap-around-not-a-hard-cutoff).

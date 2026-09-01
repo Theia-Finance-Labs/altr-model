@@ -403,12 +403,16 @@ def compute_flow_based_capex(
         capex_data["replace_capex"] = 0.0
         logger.info("Replacement CapEx switched OFF - setting to zero")
 
-    # Decommissioning costs: retired capacity (can be switched off)
+    # Decommissioning costs: retired capacity (can be switched off).
+    # scrap_usd_per_mw is negative (= -capex/2), representing the cost to
+    # decommission. abs() makes decom_cost POSITIVE in capex_total — a real cash
+    # outflow that reduces FCFF, covering demolition, remediation and site
+    # restoration. Without it, retiring an asset PAID the owner.
     if include_decom_costs:
         retired_mask = capex_data["capex_indicator"] == "retired_max_cap"
         capex_data["decom_cost"] = np.where(
             retired_mask,
-            capex_data["scrap_usd_per_mw"] * capex_data["capex_capacity"],
+            capex_data["scrap_usd_per_mw"].abs() * capex_data["capex_capacity"],
             0.0,
         )
     else:
@@ -457,6 +461,8 @@ def compute_ops_block(
     market_passthrough: float = 0.5,
     apply_continued_om_baseline: bool = False,
     apply_continued_om_shock: bool = True,
+    carbon_cost_method: str = "full_ef",
+    dynamic_marginal_ef: bool = False,
 ) -> pd.DataFrame:
     """
     Node 8: Compute operations block (production, costs, revenue, EBITDA).
@@ -470,6 +476,29 @@ def compute_ops_block(
         market_passthrough: Fraction of carbon price passed through to market (default 0.5)
         apply_continued_om_baseline: Apply continued O&M at first-year capacity to baseline trajectories
         apply_continued_om_shock: Apply continued O&M at first-year capacity to shock trajectories
+        carbon_cost_method: How emission factors enter the carbon cost.
+            - "full_ef" (default): cost = Q × cp × EF. Each technology pays for
+              everything it emits. Right for IAMs whose electricity prices barely
+              move with carbon stringency (WITCH: a $9/MWh C1→C7 price spread
+              against a $722/tCO2 carbon-price difference), where there is no
+              embedded carbon to double-count.
+            - "differential_ef": cost = Q × cp × max(EF − marginal_EF, 0), i.e.
+              only the excess over the price-setting generator. Right for IAMs
+              whose prices already embed the marginal generator's carbon cost
+              (AIM/CGE: a $64/MWh spread).
+        dynamic_marginal_ef: Let the marginal emission factor decay with the VRE
+            capacity share, marginal_ef(t) = marginal_EF × (1 − vre_share(t))²,
+            so that a technology loses its carbon rent as renewables push it off
+            the margin. Quadratic rather than linear because the merit order
+            turns over non-linearly: at low VRE only coal and oil are displaced,
+            at high VRE gas itself is.
+
+    Both knobs act on ``marginal_emission_factor``, which is produced by the
+    market-clearing-price adjustment. That adjustment is retired in this tree
+    (2026-09-01 owner ruling), so the column is absent, the marginal EF is 0 and
+    the two methods coincide: every technology pays its full EF. They are ported
+    so the differential path is available if the adjustment ever returns — see
+    docs/superpowers/plans/consolidation-clash-report.md, entry Q2-5.
     """
 
     logger.info("Computing operations block...")
@@ -580,12 +609,35 @@ def compute_ops_block(
         ops_data["fom_usd_per_mw_yr"] * ops_data["K_for_fixed_cost"]
     )
 
-    # Carbon cost (net of passthrough)
+    # Carbon cost (net of passthrough), charged on the emission factor the
+    # configured method exposes. See the docstring for when each applies.
+    if carbon_cost_method == "full_ef":
+        marginal_ef = pd.Series(0.0, index=ops_data.index)
+    else:
+        marginal_ef = pd.to_numeric(
+            ops_data.get(
+                "marginal_emission_factor", pd.Series(0.0, index=ops_data.index)
+            ),
+            errors="coerce",
+        ).fillna(0.0)
+
+    if dynamic_marginal_ef:
+        marginal_ef = marginal_ef * (1 - _vre_capacity_share(ops_data)) ** 2
+
+    excess_ef = (ops_data["emission_factor"] - marginal_ef).clip(lower=0.0)
+
     ops_data["carbon_cost_net"] = (
         ops_data["Q"]
         * ops_data["carbon_price_usd_per_tco2"]
-        * ops_data["emission_factor"]
+        * excess_ef
         * (1 - market_passthrough)
+    )
+    logger.info(
+        "Carbon cost (%s): %s asset-year rows with non-zero cost, mean charged "
+        "EF %.4f tCO2/MWh",
+        carbon_cost_method,
+        (ops_data["carbon_cost_net"] > 0).sum(),
+        excess_ef.mean(),
     )
 
     # Revenue (ex-carbon price)
@@ -602,6 +654,25 @@ def compute_ops_block(
     logger.info("Computed operations for %s asset-year rows", len(ops_data))
 
     return ops_data
+
+
+def _vre_capacity_share(ops_data: pd.DataFrame) -> pd.Series:
+    """VRE share of installed capacity per geography-year, per trajectory."""
+    vre_technologies = {
+        "SolarCap - PV",
+        "SolarCap - CSP",
+        "WindCap - Onshore",
+        "WindCap - Offshore",
+    }
+    group_columns = ["trajectory_type", "scenario_geography", "year"]
+    capacity = ops_data["K_avg"]
+    total = capacity.groupby([ops_data[c] for c in group_columns]).transform("sum")
+    vre = (
+        capacity.where(ops_data["technology"].isin(vre_technologies), 0.0)
+        .groupby([ops_data[c] for c in group_columns])
+        .transform("sum")
+    )
+    return (vre / total.clip(lower=1e-6)).clip(0.0, 1.0).fillna(0.0)
 
 
 def compute_fcff(asset_ops_block: pd.DataFrame) -> pd.DataFrame:

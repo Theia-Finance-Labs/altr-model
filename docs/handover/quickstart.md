@@ -34,6 +34,13 @@ curl -LsSf https://astral.sh/uv/install.sh | sh   # if uv is not installed yet
 uv sync
 ```
 
+On Windows, install uv from PowerShell instead; `uv sync` is the same
+everywhere:
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
 `uv sync` installs the `dev` group by default, so `pytest`, `pytest-cov` and
 `ruff` are already there. Two optional groups are *not* installed and are not
 needed to run the model:
@@ -67,6 +74,10 @@ The model is fed by three CSV files. Put them, unmodified, in `data/01_raw/`:
 | `assets_forecasts.csv` | Physical assets and their per-year technical forecasts (capacity, technology, country, age) |
 | `companies_ownerships.csv` | Which company owns which asset, and the ownership percentage of each stake |
 | `scenarios.csv` | IAM scenario pathways, prices, capacity factors and cost assumptions |
+
+Column-level dictionaries for all three files, including the units traps
+(`ownership_percentage` is on the 0-100 scale, not a fraction):
+[input data reference](input_data.md).
 
 ```bash
 mkdir -p data/01_raw
@@ -230,6 +241,10 @@ overrides the scenario pair to one the slice actually contains. Use it to check
 the install before the real data arrives, and after any change to the code or
 configuration.
 
+`notebooks/walkthrough.ipynb` is the guided version of the same run: it
+executes the fixture slice top to bottom and reads each output table with
+commentary, so by the end you know which file answers which question.
+
 !!! note "The fixture environment covers the model stages, not the plots"
     `plot_transition_risk_results` writes to hardcoded `data/08_reporting/`
     paths that configuration cannot redirect, so it is excluded from the fixture
@@ -254,3 +269,11 @@ uv run kedro viz run
 
 Opens a browser UI showing the stages, their nodes, and the datasets flowing
 between them.
+
+## Running several configurations
+
+Comparing parameter sets - different scenario pairs, granularities, cost
+switches - without editing `conf/base/` between runs is what the batch tooling
+is for: [batch runs and the app](batch_runs.md). Note that most of it is
+internal-repository tooling; the page says exactly which pieces ship in the
+delivered package.
