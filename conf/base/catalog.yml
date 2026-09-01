@@ -39,7 +39,11 @@ financial_averages:
 
 # AR6 scenario database — used for carbon price injection
 # Contains carbon prices for IAMs that report them (WITCH, REMIND, IMAGE, etc.)
-# See ALTR_NPV_Direction_Fix_Research.md for IAM-specific carbon price strategy
+# Per-IAM strategy: AR6 electricity prices already embed carbon cost, but only
+# partly for IAMs that also report an explicit carbon price (WITCH, REMIND,
+# IMAGE) — those use the differential carbon cost, max(EF - marginal_EF, 0), so
+# the embedded part is not charged twice; IAMs that report no carbon price
+# (AIM/CGE) run at carbon_price = 0 and rely on the price signal alone.
 ar6_carbon_prices:
   type: pandas.CSVDataset
   filepath: 6_final_AR6_viable_scenarios.csv
