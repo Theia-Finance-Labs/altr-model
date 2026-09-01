@@ -23,6 +23,11 @@ catalog resolves to (``scenarios.csv``, as produced by
 pair is confirmed present. The scenario pair used by ``conf/fixture`` must be in
 it.
 
+Company selection can be pinned explicitly with ``--company-ids``. The committed
+slice uses that path: its five ids are the ones the handover branch's committed
+slice holds, so the two branches' fixture outputs are comparable company for
+company (the behaviour-equivalence bar in the 2026-09-01 owner ruling).
+
 Re-run whenever upstream inputs change, then re-pin
 ``tests/integration/test_fixture_run.py``.
 """
@@ -39,6 +44,17 @@ HERE = Path(__file__).parent
 OUT = HERE / "data"
 N_COMPANIES = 5
 MIN_TECHNOLOGIES = 3
+
+#: The committed slice's companies. Pinned rather than ranked so this tree's
+#: fixture outputs line up company-for-company with the handover branch's
+#: committed slice, which the behaviour-equivalence gate compares against.
+COMMITTED_COMPANY_IDS = [
+    "CN_3371785431787292505",
+    "CN_6166477550945836346",
+    "CN_6488161088428600082",
+    "CN_8676642915009364747",
+    "CP_3685197042895689972",
+]
 
 
 def licensed_company_ids(deliverables: Path | None) -> set[str] | None:
@@ -74,11 +90,18 @@ def pick_companies(
     return ranked.head(N_COMPANIES).index.tolist()
 
 
-def build(source: Path, scenarios: Path, deliverables: Path | None) -> None:
+def build(
+    source: Path,
+    scenarios: Path,
+    deliverables: Path | None,
+    company_ids: list[str] | None = None,
+) -> None:
     assets = pd.read_csv(source / "assets_forecasts.csv", low_memory=False)
     companies = pd.read_csv(source / "companies_ownerships.csv", low_memory=False)
 
-    chosen = pick_companies(companies, assets, licensed_company_ids(deliverables))
+    chosen = company_ids or pick_companies(
+        companies, assets, licensed_company_ids(deliverables)
+    )
     comp_slice = companies[companies["company_id"].isin(chosen)]
     asset_slice = assets[assets["asset_id"].isin(comp_slice["asset_id"])]
 
@@ -119,6 +142,13 @@ if __name__ == "__main__":
         help="Licensed universe to restrict candidates to "
         "(or set ALTR_DELIVERABLES_DIR)",
     )
+    ap.add_argument(
+        "--company-ids",
+        nargs="*",
+        default=COMMITTED_COMPANY_IDS,
+        help="Company ids to slice on (default: the committed slice's five). "
+        "Pass with no values to rank candidates instead.",
+    )
     args = ap.parse_args()
     if not args.source:
         raise SystemExit("pass --source or set ALTR_FULL_INPUTS")
@@ -126,4 +156,5 @@ if __name__ == "__main__":
         Path(args.source),
         args.scenarios or OUT / "scenarios.csv",
         Path(args.deliverables) if args.deliverables else None,
+        list(args.company_ids) or None,
     )

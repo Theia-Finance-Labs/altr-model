@@ -34,10 +34,15 @@ main's asset tables carry one row per owning company, so ``asset_id`` alone is
 not unique (841 of 2274 ``asset_npv`` rows repeat one).
 
 The column lists and counts below were RE-DERIVED from a run of this tree on
-this fixture slice — never copied from the pre-migration branch, whose numbers
-came from a different pipeline (different replacement mask, ``fillna(0)`` vs
-forward-filled emission factors, and none of the unported NPV-direction
-features). Re-pin them ONLY when the fixture inputs change.
+this fixture slice — never copied from the pre-migration branch. Re-pin them
+ONLY when the fixture inputs change.
+
+The slice itself was re-cut on 2026-09-01 onto the FIVE COMPANIES the handover
+branch's committed slice holds (``make_fixture_slice.COMMITTED_COMPANY_IDS``),
+so that the two branches' fixture outputs are comparable company for company —
+the behaviour-equivalence bar in the owner ruling of the same date
+(docs/superpowers/plans/implementation-notes-handover.md, "Owner decisions
+2026-09-01", item 3).
 """
 from pathlib import Path
 
@@ -64,11 +69,11 @@ COMPANY_NPV_COLUMNS = [
 
 # company_id -> (baseline_npv, latesudden_npv), sorted by company_id.
 COMPANY_NPV_VALUES = {
-    "CN_3383264275301584631": (310572803.1272956, 163242418.76125214),
-    "CN_8529384135165789326": (1040019992.3146484, 562947657.597761),
-    "CP_1479959151518835319": (71905712106.5177, 42561940223.14574),
+    "CN_3371785431787292505": (14444851383.538136, 19770203481.453262),
+    "CN_6166477550945836346": (32895227587.00516, 38653047868.446045),
+    "CN_6488161088428600082": (166617808558.14053, 178362502684.41144),
+    "CN_8676642915009364747": (15848006141.37615, 11041375998.798037),
     "CP_3685197042895689972": (83282487176.45253, 101583595057.26031),
-    "CP_7591873127231438166": (31109811383.21491, 43154836858.088936),
 }
 
 ASSET_NPV_COLUMNS = [
@@ -101,7 +106,7 @@ ASSET_NPV_COLUMNS = [
     "latesudden_capex_total",
     "npv_change",
 ]
-ASSET_NPV_ROWS = 2274
+ASSET_NPV_ROWS = 1591
 
 # (asset_id, company_id) -> (baseline_npv, latesudden_npv), one per company.
 # The company totals above survive any reshuffle *within* a company, so these
@@ -110,24 +115,24 @@ ASSET_NPV_ROWS = 2274
 ASSET_NPV_VALUES = {
     (
         "INTERNAL_A_L100000100038_int_ast_power_gem_stage2",
-        "CN_3383264275301584631",
-    ): (2367684.863364606, 868342.885579452),
+        "CN_3371785431787292505",
+    ): (438641600.3250352, 160814261.16432664),
     (
-        "INTERNAL_A_L100000100038_int_ast_power_gem_stage2",
-        "CN_8529384135165789326",
-    ): (7804597.627678895, 2862315.8122880566),
+        "INTERNAL_A_L100000201220_int_ast_power_gem_stage2",
+        "CN_6166477550945836346",
+    ): (-16061995.104730489, -37950247.25718575),
     (
-        "INTERNAL_A_L100000102542_int_ast_power_gem_stage2",
-        "CP_1479959151518835319",
-    ): (147635956.83732957, 27168043.315149102),
+        "INTERNAL_A_L100000100647_int_ast_power_gem_stage2",
+        "CN_6488161088428600082",
+    ): (-23952871.940641385, -137750029.86188442),
+    (
+        "INTERNAL_A_L100000102814_int_ast_power_gem_stage2",
+        "CN_8676642915009364747",
+    ): (471916.3127151702, -106937.43187820396),
     (
         "INTERNAL_A_L100000100087_int_ast_power_gem_stage2_GasCap",
         "CP_3685197042895689972",
     ): (25743371.13094669, -76527953.31856209),
-    (
-        "INTERNAL_A_L100000102542_int_ast_power_gem_stage2",
-        "CP_7591873127231438166",
-    ): (147635956.83732957, 27168043.31514909),
 }
 
 ASSET_EARNINGS_COLUMNS = [
@@ -157,23 +162,23 @@ ASSET_EARNINGS_COLUMNS = [
     "capex_total",
     "FCFF",
 ]
-ASSET_EARNINGS_ROWS = 118248
+ASSET_EARNINGS_ROWS = 82732
 
 # (asset_id, company_id) -> FCFF summed over that pair's rows. Same purpose one
 # stage earlier: the row count above cannot see two assets trading cash flows.
 ASSET_EARNINGS_FCFF = {
     (
         "INTERNAL_A_L100000100038_int_ast_power_gem_stage2",
-        "CN_3383264275301584631",
-    ): 4599823.827269632,
+        "CN_3371785431787292505",
+    ): 852382247.4900097,
     (
-        "INTERNAL_A_L100000100038_int_ast_power_gem_stage2",
-        "CN_8529384135165789326",
-    ): 15162403.289680386,
+        "INTERNAL_A_L100000201220_int_ast_power_gem_stage2",
+        "CN_6166477550945836346",
+    ): -118020727.60238393,
     (
-        "INTERNAL_A_L100000100087_int_ast_power_gem_stage2_GasCap",
-        "CP_3685197042895689972",
-    ): -254495844.2110241,
+        "INTERNAL_A_L100000100647_int_ast_power_gem_stage2",
+        "CN_6488161088428600082",
+    ): -458316739.2883063,
 }
 
 ASSET_TRAJECTORIES_COLUMNS = [
@@ -208,7 +213,7 @@ ASSET_TRAJECTORIES_COLUMNS = [
     "increasing",
     "aligned",
 ]
-ASSET_TRAJECTORIES_ROWS = 118248
+ASSET_TRAJECTORIES_ROWS = 82732
 
 
 @pytest.fixture(scope="module")
