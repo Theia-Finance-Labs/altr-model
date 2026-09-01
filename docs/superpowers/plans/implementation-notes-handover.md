@@ -470,8 +470,9 @@ it, so dropping it would have broken that node.
    matches `main`, which already contains zero MCPR code — so nothing is undone,
    the handover branch's MCPR simply is not carried forward. MCPR lives on in
    `feat/handover-package` history if it is ever wanted back.
-   NOTE: AGENTS.md requires Bertrand's review for ALTR/MCPR changes — this
-   retirement should be confirmed with him on the record.
+   FINAL: Jakub confirmed twice (2026-09-01, second time explicitly "no need
+   to wait for Bertrand") — the retirement stands on the owner's authority and
+   is not gated on further review.
 2. **Repo naming settled and executed.**
    - `Theia-Finance-Labs/altr-model` = INTERNAL repo (was `crispy-kedro`).
      Completes the migration the code already reflects.
