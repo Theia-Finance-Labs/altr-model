@@ -52,12 +52,6 @@ is deliberate: where the number comes from should never be a matter of trust.
     mechanics - commands, file names, pipeline names, the clone URL - **this
     site is correct and the PDF is not**. Four places specifically:
 
-    * **The clone URL in the PDF is wrong for you.** The PDF gives
-      `Theia-Finance-Labs/altr-model`. That name now resolves to the
-      **internal development repository**, which is not this package and which
-      you are not being handed. This package lives at
-      **`Theia-Finance-Labs/altr-model-refactored`** - use the URL in the
-      [quickstart](quickstart.md) and nothing else.
     * It names a Docker Compose configuration and a
       `notebooks/run_kedro_batch.py` batch runner. Both exist, but as
       **internal-repository tooling** that is not part of the delivered

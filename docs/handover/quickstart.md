@@ -12,16 +12,16 @@ copy-pasteable; run them from the repository root unless stated otherwise.
 ## 1. Get the code
 
 ```bash
-git clone https://github.com/Theia-Finance-Labs/altr-model-refactored.git
-cd altr-model-refactored
+git clone https://github.com/Theia-Finance-Labs/altr-model.git
+cd altr-model
 ```
 
-!!! danger "Not `altr-model` - that is the internal repository"
-    The methodology PDF gives the clone URL as `Theia-Finance-Labs/altr-model`.
-    That name resolves to the **internal development repository**: it is not
-    this package, it is not what you were delivered, and it is not what you
-    have access to. Clone **`altr-model-refactored`**, exactly as above. The
-    PDF cannot be corrected in place - this page supersedes it.
+!!! note "One repository"
+    An earlier delivery plan split the work across a second repository,
+    `altr-model-refactored`. The 2026-09-01 owner ruling settled on a single
+    repo - `Theia-Finance-Labs/altr-model`, the clone URL above and the one the
+    methodology PDF already gives - and that second repository is retired. If
+    you were pointed at `altr-model-refactored`, use this URL instead.
 
 ## 2. Install with uv
 
@@ -100,18 +100,24 @@ unzip -o /path/to/scenarios.csv.zip -d data/01_raw/
     in `kedro run` fetches data, so a run can never surprise you by reaching
     for a network source.
 
-### The fourth file: carbon prices
+### Carbon prices: there is no fourth file
 
-!!! warning "Pending adjudication — Q2"
-    This section documented a fourth input file - an `ar6_carbon_prices` catalog
-    entry reading a root-level `6_final_AR6_viable_scenarios.csv` and injecting
-    a carbon price per scenario, geography and year. The behaviour it
-    describes is not present in this codebase and the question of whether to
-    adopt it is open (ledger question Q2). The section will be rewritten once
-    the ruling is recorded; it is deliberately not documented in the meantime.
+Carbon prices reach the model through the `carbon_price_usd_per_tco2` column of
+`scenarios.csv`, which `scripts/prepare_inputs.py` requires. There are three
+input files, not four.
 
-    Carbon prices reach the model today through the `carbon_price_usd_per_tco2`
-    column of `scenarios.csv`, which `scripts/prepare_inputs.py` requires.
+An earlier lineage also carried an `ar6_carbon_prices` catalog entry, reading a
+root-level side-file and injecting a carbon price per scenario, geography and
+year. It is deliberately **not** adopted here. That injection begins by checking
+whether the scenario table already carries carbon prices and returns untouched
+when it does — which is the case for every IAM extract this package ships, so it
+never fired. Adopting it would have added a required fourth input file that
+neither `prepare_inputs.py` produces nor the package ships, in exchange for no
+change in behaviour.
+
+If you bring an IAM extract whose `carbon_price_usd_per_tco2` column is empty,
+the carbon cost will be zero everywhere rather than silently wrong; fill the
+column in your scenarios input rather than reaching for a side-file.
 
 ## 4. Convert the deliverables into model inputs
 
@@ -147,9 +153,9 @@ the cost switches next to theirs:
 
 | File | What it holds |
 | --- | --- |
-| `parameters_prepare_scenario_asset_and_company_inputs.yml` | `baseline_scenario`, `target_scenario`, `company_ids`, `ccs_on`, `max_forecast_horizon`, `reduce_granularity_from_asset_to_company_level` |
-| `parameters_calculate_company_trajectories.yml` | `shock_year`, `alignment_year` |
-| `parameters_calculate_asset_earnings.yml` | `market_passthrough` and the cost switches |
+| `parameters_prepare_scenario_asset_and_company_inputs.yml` | `baseline_scenario`, `target_scenario`, `company_ids`, `ownership_type`, `ccs_on`, `max_forecast_horizon`, `reduce_granularity_from_asset_to_company_level` |
+| `parameters_calculate_company_trajectories.yml` | `shock_year`, `alignment_year`, `price_ramp` |
+| `parameters_calculate_asset_earnings.yml` | `market_passthrough`, the cost switches and the carbon-cost method |
 | `parameters_allocate_company_trajectories_to_assets.yml` | retirement and staggering knobs |
 | `parameters_calculate_asset_and_company_npv.yml` | the `dcf` block |
 | `parameters_plot_transition_risk_results.yml` | plotting toggles |

@@ -3,12 +3,10 @@
 Reads the FULL inputs from the main working tree (source of truth for current
 data) and writes the slice into tests/fixtures/data/, which is committed.
 
-Selection: the N companies that span the most technologies with the fewest
-assets. Unlike the pre-migration builder there is no ``ownership_type ==
-"direct"`` restriction: ``filter_companies`` no longer selects a tier, it calls
-``_consolidate_ownership_stakes`` and SUMS every stake a company holds in an
-asset-year, so equity-only companies do reach the outputs and are legitimate
-fixture material. All ownership rows of the chosen companies are kept.
+Selection (when ranking): the N companies that span the most technologies with
+the fewest assets. Every ownership row of the chosen companies is kept, at every
+tier — the tier is a RUN parameter (``ownership_type``), so a slice that pre-
+filtered on one would stop the run's own tier selection from being exercised.
 
 Licensing: candidates are intersected with the deliverables drop named by
 ``ALTR_DELIVERABLES_DIR`` when it is set, so the builder cannot mint a slice
@@ -23,10 +21,13 @@ catalog resolves to (``scenarios.csv``, as produced by
 pair is confirmed present. The scenario pair used by ``conf/fixture`` must be in
 it.
 
-Company selection can be pinned explicitly with ``--company-ids``. The committed
-slice uses that path: its five ids are the ones the handover branch's committed
-slice holds, so the two branches' fixture outputs are comparable company for
-company (the behaviour-equivalence bar in the 2026-09-01 owner ruling).
+By default the builder re-cuts the slice on the companies ALREADY in the
+committed slice, read off the committed CSV (see ``committed_company_ids``).
+Those are the companies the handover branch's committed slice holds, so the two
+branches' fixture outputs stay comparable company for company — the
+behaviour-equivalence bar in the 2026-09-01 owner ruling. ``--company-ids``
+overrides the selection; ``--company-ids`` with no values ranks candidates
+instead.
 
 Re-run whenever upstream inputs change, then re-pin
 ``tests/integration/test_fixture_run.py``.
@@ -45,16 +46,23 @@ OUT = HERE / "data"
 N_COMPANIES = 5
 MIN_TECHNOLOGIES = 3
 
-#: The committed slice's companies. Pinned rather than ranked so this tree's
-#: fixture outputs line up company-for-company with the handover branch's
-#: committed slice, which the behaviour-equivalence gate compares against.
-COMMITTED_COMPANY_IDS = [
-    "CN_3371785431787292505",
-    "CN_6166477550945836346",
-    "CN_6488161088428600082",
-    "CN_8676642915009364747",
-    "CP_3685197042895689972",
-]
+
+def committed_company_ids() -> list[str] | None:
+    """The companies already in the committed slice, or None if it is absent.
+
+    Read off the slice rather than written down here: the ids are licensed
+    identifiers, so the committed CSV is the one place they belong. Re-running
+    the builder therefore reproduces the committed slice by default instead of
+    re-ranking candidates and silently cutting a different one — which is what
+    keeps this tree's fixture outputs comparable, company for company, with the
+    handover branch's slice that the behaviour-equivalence gate measures
+    against.
+    """
+    path = OUT / "companies_ownerships.csv"
+    if not path.is_file():
+        return None
+    ids = pd.read_csv(path, usecols=["company_id"], low_memory=False)["company_id"]
+    return sorted(ids.dropna().unique())
 
 
 def licensed_company_ids(deliverables: Path | None) -> set[str] | None:
@@ -145,9 +153,9 @@ if __name__ == "__main__":
     ap.add_argument(
         "--company-ids",
         nargs="*",
-        default=COMMITTED_COMPANY_IDS,
-        help="Company ids to slice on (default: the committed slice's five). "
-        "Pass with no values to rank candidates instead.",
+        default=None,
+        help="Company ids to slice on. Default: the ids already in the "
+        "committed slice. Pass with no values to rank candidates instead.",
     )
     args = ap.parse_args()
     if not args.source:
@@ -156,5 +164,9 @@ if __name__ == "__main__":
         Path(args.source),
         args.scenarios or OUT / "scenarios.csv",
         Path(args.deliverables) if args.deliverables else None,
-        list(args.company_ids) or None,
+        (
+            committed_company_ids()
+            if args.company_ids is None
+            else (list(args.company_ids) or None)
+        ),
     )

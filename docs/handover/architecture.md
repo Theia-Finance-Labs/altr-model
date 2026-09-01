@@ -116,14 +116,15 @@ during a run:
 | `asset_npv` | 5 | 5 | `data/07_model_output/asset_npv.csv` |
 | `company_technology_npv` | 5 | 5 | `data/07_model_output/company_technology_npv.csv` |
 | `company_npv` | 5 | - | `data/07_model_output/company_npv.csv` |
+| `frozen_capacity_at_retirement` | 3 | 4 | `data/07_model_output/frozen_capacity_at_retirement.csv` |
 
-!!! warning "Pending adjudication — Q4"
-    This table also carried a row for the frozen-capacity-at-retirement dataset
-    and its producing node, which this codebase deliberately retired (it is
-    listed in `REMOVED_DATASETS` in `tests/test_run.py`). The behaviour it
-    describes is not present in this codebase and the question of whether to
-    adopt it is open (ledger question Q4). The row will be rewritten once the
-    ruling is recorded; it is deliberately not documented in the meantime.
+`frozen_capacity_at_retirement` records, for every asset that retires, the
+capacity it last stood at — the year before retirement, since the retirement
+year is already zeroed — carried across every year from retirement onward.
+Stage 3 produces it because that is where retirement years live; stage 4 merges
+it onto the asset panel. Nothing in the earnings maths reads it: fixed costs use
+first-year capacity. It is a carried surface, the one a stranded-capacity view
+would be built on.
 
 Each stage also keeps intermediates that never leave it - the per-stage pages
 list them.

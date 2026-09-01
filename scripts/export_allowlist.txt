@@ -1,4 +1,5 @@
-# scripts/export_allowlist.txt — everything shipped to altr-model-refactored; nothing else leaves.
+# scripts/export_allowlist.txt — everything an export ships; nothing else leaves.
+# The destination is the build_export.py --dest directory, not a named repo.
 #
 # One path per line, relative to the repository root. A directory entry ships
 # the whole subtree; a file entry ships that one file. Anything not listed here

@@ -10,10 +10,13 @@ Kedro pipeline for ALTR: asset-level transition-risk valuation. Scenario
 pathways in, company and asset NPV impacts out.
 
 ## Repositories
-- `altr-model` — **this repo**, internal. Full history, internal tooling.
-- `altr-model-refactored` — the external repo the export is delivered to.
-  Anything aimed at recipients must name this one; a stale `altr-model`
-  reference points them at private code.
+- `altr-model` — **this repo**. Under the 2026-09-01 owner ruling the end state
+  is a single repo: Bertrand's structure with Jakub's model behaviour ported
+  into it. `altr-model-refactored` is retired once the consolidated repo passes
+  its gates, so nothing new should name it.
+- `scripts/build_export.py` is kept as an internal utility for producing a
+  sanitized copy on demand. Its destination is the `--dest` directory; it names
+  no repository.
 
 ## Team context
 Board: Theia Team Board (org project #5). Issues carry
