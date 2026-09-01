@@ -5,8 +5,13 @@ Run after every refactor task. Asserts the run completes and that the shape
 
 The reporting pipeline is excluded: `plot_transition_risk_results` writes its
 plots and tables to hardcoded `data/08_reporting/...` paths that config cannot
-redirect, so a fixture run of it would escape the quarantine. The five model
-pipelines are run as one session because they hand off through MemoryDatasets
+redirect, so a fixture run of it would escape the quarantine. Selecting by tag
+is how the codebase itself draws that line — the five model pipelines are
+tagged `altrisk` and the plotting one `reporting` — and it is the same
+selection `kedro run --tags altrisk` gives a user, so this gate exercises the
+documented path rather than a parallel one.
+
+They run as ONE session because they hand off through MemoryDatasets
 (`company_projection_inputs`, `company_pathways_pre_allocation`), which do not
 survive a session boundary.
 
@@ -41,8 +46,6 @@ import pandas as pd
 import pytest
 from kedro.framework.session import KedroSession
 from kedro.framework.startup import bootstrap_project
-
-from altr_model.pipeline_registry import register_pipelines
 
 PROJECT = Path(__file__).resolve().parents[2]
 FIXTURE_OUT = PROJECT / "data" / "fixture_run"
@@ -211,10 +214,8 @@ ASSET_TRAJECTORIES_ROWS = 118248
 @pytest.fixture(scope="module")
 def fixture_run():
     bootstrap_project(PROJECT)
-    pipelines = register_pipelines()
-    model_only = pipelines["__default__"] - pipelines["plot_transition_risk_results"]
     with KedroSession.create(project_path=PROJECT, env="fixture") as session:
-        return session.run(node_names=[node.name for node in model_only.nodes])
+        return session.run(tags=["altrisk"])
 
 
 def _read(name: str) -> pd.DataFrame:
