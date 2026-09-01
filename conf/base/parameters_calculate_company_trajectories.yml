@@ -1,4 +1,13 @@
 # Company trajectory timing.
+#
+# Part of ALTR's six-file parameter namespace; the run-configuration entry point is
+# `parameters_prepare_scenario_asset_and_company_inputs.yml`.
 
+# ── Shock timing ──────────────────────────────────────────────────────────────────
+# Calendar years (integers). `shock_year` is when market participants learn about
+# the policy shock; `alignment_year` is when the target trajectory must be reached.
+# `alignment_year` must be >= `shock_year` (validated by `check_input_parameters`).
+# The gap between them is the transition window: a longer window is a more realistic
+# phase-out, a shorter one a more abrupt repricing.
 shock_year: 2033
 alignment_year: 2035
