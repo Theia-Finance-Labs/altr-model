@@ -133,6 +133,13 @@ def _consolidate_ownership_stakes(companies_ownerships: pd.DataFrame) -> pd.Data
     (company_id, asset_id, sector, technology, year) - otherwise the
     duplicate rows survive into the per-company asset pivot later in the
     pipeline and it fails with "Index contains duplicate entries".
+
+    ``dropna=False``: pandas' default DELETES every row carrying NaN in any one
+    of the seven group keys, so a blank ``company_name`` or ``asset_name`` --
+    cosmetic columns nothing computes on -- would silently drop that company's
+    stake and its capacity with it. This is a roll-up, not a filter; it must
+    return the same total ownership it was handed. The NPV stage groups with
+    ``dropna=False`` for the same reason.
     """
     group_cols = [
         "company_id",
@@ -143,9 +150,24 @@ def _consolidate_ownership_stakes(companies_ownerships: pd.DataFrame) -> pd.Data
         "technology",
         "year",
     ]
-    return companies_ownerships.groupby(group_cols, as_index=False)[
+    return companies_ownerships.groupby(group_cols, as_index=False, dropna=False)[
         "ownership_percentage"
     ].sum()
+
+
+#: Configured `ownership_type` values the NUMBERED (`ownership_level`) schema
+#: understands, mapped to the rung they select. These are the two names the
+#: NAMED schema uses plus "indirect", the numbered schema's own word for 2+.
+#: A bare integer ("2") selects that level exactly. ANYTHING ELSE RAISES: the
+#: previous `level >= 2` fallback turned every typo into a silent request for
+#: the indirect rungs, so "dirct" quietly reported on the wrong tier.
+_NUMBERED_DIRECT = frozenset({"direct"})
+_NUMBERED_INDIRECT = frozenset({"indirect", "equity"})
+
+
+def _normalize_tier(value: object) -> str:
+    """Case- and whitespace-insensitive form of one tier label."""
+    return str(value).strip().casefold()
 
 
 def _select_ownership_tier(
@@ -160,44 +182,71 @@ def _select_ownership_tier(
     to the same company twice.
 
     Two schemas are in circulation: `ownership_type`, which names the rungs
-    (the shipped companies input holds "direct" and "equity"), and the newer
+    ("direct" and "equity" in the marts export), and the newer
     `ownership_level`, which numbers them (1 = direct, 2+ = indirect).
 
     A tier the data does not carry is a configuration error, not an empty
     result: silently returning an empty panel takes every company out of the
     run and the failure only surfaces as zero rows several stages later. Both
     schemas therefore raise `ValueError` naming the configured value and what
-    the frame actually offers. That also makes a "kept 0 rows" warning
-    unreachable on the tier paths - the louder error fires first - so the
-    only surviving zero-row case is the no-tier-column branch below, which
-    keeps every row by design.
+    the frame actually offers.
+
+    Matching is case- and whitespace-insensitive on BOTH sides, and the
+    selection uses the same normalized comparison the validation does - a
+    check that accepted "Direct" and then filtered on `== "Direct"` would
+    hand back the empty panel this exists to prevent. Under the numbered
+    schema only the labels in `_NUMBERED_DIRECT` / `_NUMBERED_INDIRECT` and a
+    bare integer are accepted; a typo raises instead of falling through to
+    "level >= 2".
+
+    Neither path can return zero rows without raising first. Two silent
+    reductions remain OUTSIDE this function, and both are handled where they
+    happen: the no-tier-column branch below keeps every row (and
+    `scripts/prepare_inputs.py` refuses a delivered file that reaches it), and
+    `_consolidate_ownership_stakes` groups with `dropna=False` so a NaN in a
+    cosmetic group key cannot delete a stake.
     """
     if "ownership_type" in companies_ownerships.columns:
-        available = sorted(
-            str(v) for v in companies_ownerships["ownership_type"].dropna().unique()
-        )
-        if ownership_type not in available:
+        column = companies_ownerships["ownership_type"]
+        available = sorted(str(v) for v in column.dropna().unique())
+        wanted = _normalize_tier(ownership_type)
+        matches = column.map(_normalize_tier).eq(wanted) & column.notna()
+        if not matches.any():
             raise ValueError(
                 f"ownership_type {ownership_type!r} is not present in the "
                 f"companies input; its 'ownership_type' column holds "
                 f"{available}. Set `ownership_type` in "
                 "conf/base/parameters_prepare_scenario_asset_and_company_inputs"
-                ".yml to one of those."
+                ".yml to one of those (matching ignores case and surrounding "
+                "whitespace)."
             )
-        selected = companies_ownerships.loc[
-            companies_ownerships["ownership_type"] == ownership_type
-        ]
+        selected = companies_ownerships.loc[matches]
     elif "ownership_level" in companies_ownerships.columns:
-        level = companies_ownerships["ownership_level"]
-        selected = companies_ownerships.loc[
-            level.eq(1) if ownership_type == "direct" else level.ge(2)
-        ]
+        level = pd.to_numeric(companies_ownerships["ownership_level"], errors="coerce")
+        rungs = sorted(str(v) for v in level.dropna().unique())
+        wanted = _normalize_tier(ownership_type)
+        if wanted in _NUMBERED_DIRECT:
+            mask = level.eq(1)
+        elif wanted in _NUMBERED_INDIRECT:
+            mask = level.ge(2)
+        elif wanted.isdigit():
+            mask = level.eq(int(wanted))
+        else:
+            raise ValueError(
+                f"ownership_type {ownership_type!r} means nothing under the "
+                f"'ownership_level' schema, whose column holds {rungs}. Use "
+                f"{sorted(_NUMBERED_DIRECT)} for level 1, "
+                f"{sorted(_NUMBERED_INDIRECT)} for level 2+, or a bare level "
+                "number. It is NOT taken as 'some indirect rung': that "
+                "fallback reported a typo on the wrong tier without saying so."
+            )
+        selected = companies_ownerships.loc[mask]
         if selected.empty:
-            rungs = sorted(str(v) for v in level.dropna().unique())
             raise ValueError(
                 f"ownership_type {ownership_type!r} selects no rung of the "
                 f"'ownership_level' column, which holds {rungs} "
-                "('direct' selects level 1, any other value selects level 2+)."
+                "('direct' selects level 1, 'indirect'/'equity' select level "
+                "2+, a bare number selects that level)."
             )
     else:
         logger.warning(
