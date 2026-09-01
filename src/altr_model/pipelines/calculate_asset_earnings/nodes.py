@@ -80,6 +80,19 @@ def validate_asset_trajectories(asset_trajectories: pd.DataFrame) -> pd.DataFram
             assets[column] = pd.to_numeric(assets[column], errors="coerce")
 
     assets = assets.dropna(subset=["year"]).copy()
+
+    # Forward-fill emission_factor along each asset series before any zero-fill.
+    # The EF input is a shorter series than the trajectory horizon, so the tail
+    # years arrive empty; without this they reach compute_ops_block's
+    # fillna(0.0) and a coal plant is priced as emitting nothing for the back
+    # half of its life. A forward fill never backfills, so a leading gap stays
+    # NaN and is handled by the renewable rule below (or by that fillna).
+    if not assets.empty:
+        assets = assets.sort_values(ASSET_SERIES_KEYS + ["year"])
+        assets["emission_factor"] = assets.groupby(ASSET_SERIES_KEYS, dropna=False)[
+            "emission_factor"
+        ].ffill()
+
     renewable_technologies = {
         "SolarCap - CSP",
         "SolarCap - PV",
