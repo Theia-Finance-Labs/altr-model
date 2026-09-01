@@ -519,3 +519,19 @@ it, so dropping it would have broken that node.
    validation, so a rollback path exists throughout.
 5. Merge to main still goes through a PR with Bertrand as reviewer
    (AGENTS.md gate) — also the natural venue for the clash report.
+
+### Amendment (same day): Bertrand's structure is the hard constraint
+
+Owner emphasis: "stick as much as possible to Bertrand's structure."
+Consequences:
+- Behaviour ports are implemented INSIDE Bertrand's existing modules and
+  functions, following his naming and parameter conventions — smallest
+  possible diffs, no imported module layouts from the handover branch, new
+  helpers only where his layout has no home and then named in his style.
+- The planned refactor of main's two oversized files
+  (plot_transition_risk_results/nodes.py 2,440 lines,
+  _allocation_nodes.py 1,620) is DESCOPED — splitting his files is our
+  structural preference, not his. If wanted later, it is Bertrand's call in
+  his own review.
+- Config: Jakub's toggles land in Bertrand's six per-pipeline parameter
+  files under his key style; no new config files.
