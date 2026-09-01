@@ -1,11 +1,11 @@
-# Stage 2 — `inputs_postproc`
+# Stage 2 - `inputs_postproc`
 
 | | |
 | --- | --- |
 | Source | `src/crispy_kedro/pipelines/inputs_postproc/` |
 | Tags | `altrisk` |
-| Runs after | [Stage 1 — `inputs_processing`](inputs_processing.md) |
-| Runs before | [Stage 3 — `create_baseline_and_target_trajectories`](create_baseline_and_target_trajectories.md) |
+| Runs after | [Stage 1 - `inputs_processing`](inputs_processing.md) |
+| Runs before | [Stage 3 - `create_baseline_and_target_trajectories`](create_baseline_and_target_trajectories.md) |
 
 ## Purpose
 

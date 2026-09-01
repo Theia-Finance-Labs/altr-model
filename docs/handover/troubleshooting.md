@@ -1,7 +1,7 @@
 # Troubleshooting
 
 The failure modes you are most likely to hit, keyed by the error text you will
-see. Kedro prints the failing node's name immediately before the traceback —
+see. Kedro prints the failing node's name immediately before the traceback - 
 read that line first; it tells you which of the eight stages you are in.
 
 ## Install and environment
@@ -11,7 +11,7 @@ read that line first; it tells you which of the eight stages you are in.
 **Cause:** wrong Python version. The dependency set pins `>=3.10,<3.11`.
 
 ```bash
-python --version          # inside the activated venv — must say 3.10.x
+python --version          # inside the activated venv - must say 3.10.x
 ```
 
 Recreate the environment with 3.10 explicitly:
@@ -32,8 +32,8 @@ which version is compatible with other requirements. This could take a while.
 ```
 
 Not a failure. The dependency set pulls in the Google Cloud client stack and pip
-backtracks through its releases. Budget 10–20 minutes and leave it alone. Kill it
-only if it is still resolving after half an hour, then retry — pip caches what it
+backtracks through its releases. Budget 10-20 minutes and leave it alone. Kill it
+only if it is still resolving after half an hour, then retry - pip caches what it
 already fetched, and a second environment on the same machine installs in under a
 minute.
 
@@ -75,7 +75,7 @@ per shell. `.telemetry` is already listed in `.gitignore`.
 ### `FileNotFoundError: … /6_final_AR6_viable_scenarios.csv`
 
 Raised at task 6 of 46, while loading `ar6_carbon_prices`. This is the fourth
-input file, and it lives at the **repository root** rather than under `data/` —
+input file, and it lives at the **repository root** rather than under `data/` - 
 `scripts/prepare_inputs.py` does not produce it, so placing the three delivered
 files is not enough. See [the fourth file: carbon
 prices](quickstart.md#the-fourth-file-carbon-prices) for what it must contain
@@ -86,14 +86,14 @@ and when a header-only stand-in will do.
 The converted model inputs are missing. Three files must exist in
 `data/05_model_input/`: `downloaded_assets.csv`, `downloaded_companies.csv`,
 `downloaded_scenarios.csv`. Produce them from the delivered files with
-`python scripts/prepare_inputs.py` (see [quickstart](quickstart.md) steps 3–4).
+`python scripts/prepare_inputs.py` (see [quickstart](quickstart.md) steps 3-4).
 If that script itself stops on a missing file under `data/01_raw/`, the
-delivered files were never placed there — check for a stray `.zip` you forgot to
+delivered files were never placed there - check for a stray `.zip` you forgot to
 unzip.
 
 ### `ValueError` naming a missing column, raised by `prepare_inputs.py`
 
-An input file does not carry the deliverables schema — usually an older extract,
+An input file does not carry the deliverables schema - usually an older extract,
 or a file re-saved by a spreadsheet application (which silently renames or
 reorders columns). The script validates everything before it writes anything, so
 `data/05_model_input/` is untouched: fix the source file and re-run.
@@ -144,10 +144,10 @@ and the model will happily run the arithmetic on one that is not. Two checks
 against the scenario data before blaming the model, both described in the
 *Additional notes* section of [ALTR Model User Guide](altr_documentation.pdf):
 
-* **Fixed cost check** — if annual fixed O&M per MW exceeds
+* **Fixed cost check** - if annual fixed O&M per MW exceeds
   `capacity_factor × 8760 × price`, EBITDA is negative for that row no matter
   what else happens.
-* **Variable cost check** — if `fuel_price ÷ efficiency` exceeds the price, every
+* **Variable cost check** - if `fuel_price ÷ efficiency` exceeds the price, every
   unit produced loses money before fixed costs are counted.
 
 ## Filtering and coverage
@@ -159,7 +159,7 @@ lists ids that are not in `downloaded_companies.csv`; `ownership_type` is set to
 a level nobody in the file has; the scenario pair's start year lies outside the
 asset forecast years; `max_forecast_horizon` is too small for the data.
 
-Start by emptying the filter (`company_ids: []`) and re-running — if that works,
+Start by emptying the filter (`company_ids: []`) and re-running - if that works,
 the ids were the problem.
 
 ### `ValueError: Ambiguous scenario geography assignment detected`
@@ -167,8 +167,8 @@ the ids were the problem.
 Two scenario geographies of equal specificity cover the same country, so the
 model refuses to pick one arbitrarily. The message lists every offending
 `asset_id` and country. Fix it in the scenario data: drop one of the tied
-geographies, or narrow one of them. How geography matching works — most specific
-wins — is described in the *Additional notes* section of the PDF.
+geographies, or narrow one of them. How geography matching works - most specific
+wins - is described in the *Additional notes* section of the PDF.
 
 ### `AssertionError: Some assets are not assigned to a scenario geography`
 
@@ -184,8 +184,8 @@ The full scenarios file is the largest input by a wide margin and is read into
 memory whole. If the process dies during `Loading data from
 downloaded_scenarios`, reduce it rather than the machine:
 
-* Keep only the rows for the providers you actually use — the pair you set in
-  `parameters.yml` plus nothing else — and re-run `prepare_inputs.py`.
+* Keep only the rows for the providers you actually use - the pair you set in
+  `parameters.yml` plus nothing else - and re-run `prepare_inputs.py`.
 * Shrink the asset side too: a short `company_ids` list cuts the asset panel and
   every downstream table with it.
 * Prove the install works on the committed slice first:
@@ -193,7 +193,7 @@ downloaded_scenarios`, reduce it rather than the machine:
 
 ### A re-run picks up stale intermediate data
 
-Outputs are plain CSVs written in place — a re-run overwrites
+Outputs are plain CSVs written in place - a re-run overwrites
 `data/07_model_output/`, it does not version it. Two consequences:
 
 * Copy the outputs elsewhere before re-running if you want to compare two
@@ -213,9 +213,9 @@ kedro run --tags altrisk --nodes <node-name>        # a single node
 
 The node names are the ones printed as `Running node: ...`;
 `kedro registry describe full` lists them all up front (`full` is the registered
-pipeline covering the eight stages — `altrisk` is a tag, not a pipeline name, so
+pipeline covering the eight stages - `altrisk` is a tag, not a pipeline name, so
 it belongs after `--tags`, never after `--pipeline`). This only works when every input
-that node needs is a *persisted* dataset — datasets that are not declared in
+that node needs is a *persisted* dataset - datasets that are not declared in
 `conf/base/catalog.yml` live in memory for the length of one run and cannot be
 picked up by a later one. If a partial run complains about a missing dataset,
 run the full `--tags altrisk` instead.
@@ -223,7 +223,7 @@ run the full `--tags altrisk` instead.
 ### The `reporting` stage fails or produces nothing
 
 `reporting` consumes the outputs of the `altrisk` stages. It cannot run on its
-own against an empty `data/07_model_output/` — run `kedro run --tags
+own against an empty `data/07_model_output/` - run `kedro run --tags
 altrisk,reporting`, or run `altrisk` first and `reporting` after it in the same
 working directory.
 

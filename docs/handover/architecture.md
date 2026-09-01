@@ -1,7 +1,7 @@
 # Architecture
 
 Two maps of the package: how data moves through the eight stages, and how
-configuration reaches them. Both are drawn from the code — every arrow below is
+configuration reaches them. Both are drawn from the code - every arrow below is
 a dataset name that appears in some `pipeline.py`, not an idealised sketch.
 
 !!! info "If the diagrams do not appear"
@@ -14,7 +14,7 @@ a dataset name that appears in some `pipeline.py`, not an idealised sketch.
 
 ```mermaid
 flowchart TB
-    subgraph ING["Ingestion — before Kedro"]
+    subgraph ING["Ingestion - before Kedro"]
         RAW["data/01_raw/<br>assets_forecasts.csv<br>companies_ownerships.csv<br>scenarios.csv"]
         PREP["scripts/prepare_inputs.py"]
         IN["data/05_model_input/<br>downloaded_assets.csv<br>downloaded_companies.csv<br>downloaded_scenarios.csv"]
@@ -46,7 +46,7 @@ flowchart TB
         S6 -->|"asset_earnings"| S7
     end
 
-    S8["8 · reporting — kedro run --tags reporting"]
+    S8["8 · reporting - kedro run --tags reporting"]
     OUT["data/08_reporting/<br>compliance tables + figure packs"]
 
     IN --> S1
@@ -70,7 +70,7 @@ flowchart TB
   stages further down.
 * **`--tags altrisk` stops after stage 7.** Stage 8 carries the `reporting`
   tag. Run `kedro run --tags altrisk,reporting`, or `kedro run --pipeline full`,
-  for the whole thing — see [Stage 8](pipelines/reporting.md).
+  for the whole thing - see [Stage 8](pipelines/reporting.md).
 * **The ingestion box is outside Kedro.** `scripts/prepare_inputs.py` is an
   ordinary script, run once by hand before the pipeline
   ([quickstart](quickstart.md)). The carbon-price file is a fourth input read
@@ -78,7 +78,7 @@ flowchart TB
 
 ## What crosses stage boundaries
 
-The complete hand-off list — the arrows above, with where each table lives
+The complete hand-off list - the arrows above, with where each table lives
 during a run:
 
 | Dataset | Produced by | Read by | Persisted to |
@@ -101,7 +101,7 @@ during a run:
 | `asset_npv` | 7 | 8 | `data/07_model_output/asset_npv.csv` |
 | `company_npv` | 7 | 8 | `data/07_model_output/company_npv.csv` |
 
-Each stage also keeps intermediates that never leave it — the per-stage pages
+Each stage also keeps intermediates that never leave it - the per-stage pages
 list them.
 
 !!! note "In memory means gone when the run ends"
@@ -110,7 +110,7 @@ list them.
     for the duration of one run. That is why restarting mid-pipeline with
     `--from-nodes` usually fails: the node's inputs were never persisted. See
     [Troubleshooting → a re-run picks up stale intermediate data](troubleshooting.md#a-re-run-picks-up-stale-intermediate-data).
-    The reporting figures are the mirror-image case — the plot nodes write them
+    The reporting figures are the mirror-image case - the plot nodes write them
     to `data/08_reporting/` themselves rather than through the catalog, so no
     environment override can redirect them.
 
@@ -118,15 +118,15 @@ list them.
 
 ```mermaid
 flowchart LR
-    subgraph BASE["conf/base — always loaded"]
+    subgraph BASE["conf/base - always loaded"]
         P["parameters.yml<br>every knob you normally touch"]
-        ADV["parameters_*.yml — one per stage<br>advanced / methodology knobs"]
+        ADV["parameters_*.yml - one per stage<br>advanced / methodology knobs"]
         CAT["catalog.yml<br>where each dataset is read and written"]
     end
 
     subgraph ENV["exactly one environment, layered on top"]
-        LOCAL["conf/local — the default env<br>your machine only, never committed"]
-        FIX["conf/fixture — kedro run --env fixture<br>committed test slice in, data/fixture_run/ out"]
+        LOCAL["conf/local - the default env<br>your machine only, never committed"]
+        FIX["conf/fixture - kedro run --env fixture<br>committed test slice in, data/fixture_run/ out"]
     end
 
     MERGED["one merged configuration for the run"]
@@ -143,14 +143,14 @@ flowchart LR
 Three rules follow from that shape:
 
 1. **`conf/base` is always loaded**, and exactly one environment is layered on
-   top of it — `local` unless you pass `--env`. Environments override; they do
+   top of it - `local` unless you pass `--env`. Environments override; they do
    not replace. `conf/fixture` overrides three input datasets, every persisted
    output path and two scenario parameters, and inherits the rest from `base`.
 2. **All parameter files merge into one flat namespace.** A node asking for
    `params:shock_year` does not care which file defined it, which is why
    `conf/base/parameters.yml` can collect the headline knobs while the advanced
    ones stay next to the stage that uses them. The corollary: a key may be
-   defined in **exactly one** file per environment — a duplicate aborts the run.
+   defined in **exactly one** file per environment - a duplicate aborts the run.
 3. **The catalog is the only place file paths live** (except the reporting
    figure directories noted above). Point the model at different data by
    editing `catalog.yml` or adding an environment, never by editing node code.

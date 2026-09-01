@@ -1,14 +1,14 @@
-# Stage 8 — `reporting`
+# Stage 8 - `reporting`
 
 | | |
 | --- | --- |
 | Source | `src/crispy_kedro/pipelines/reporting/` |
 | Tags | `reporting` |
-| Runs after | [Stage 7 — `valuation_model`](valuation_model.md) |
-| Runs before | — (last stage) |
+| Runs after | [Stage 7 - `valuation_model`](valuation_model.md) |
+| Runs before | - (last stage) |
 
 !!! note "Not part of `--tags altrisk`"
-    Stages 1–7 carry the `altrisk` tag and produce the numbers. This stage
+    Stages 1-7 carry the `altrisk` tag and produce the numbers. This stage
     carries `reporting` instead, so `kedro run --tags altrisk` stops after the
     NPV tables. Run `kedro run --tags reporting` afterwards, or
     `kedro run --pipeline full` for everything.
@@ -94,7 +94,7 @@ an error. Read today: `basis` and `base_year` (labelling and the basis check),
 !!! warning "Declared but not read"
     `reporting.baseline_filter`, `reporting.top_n_companies`,
     `reporting.show_synthetic_assets`, `reporting.show_sensitivity_tornado` and
-    `reporting.sensitivity_params` appear in the YAML but no node reads them —
+    `reporting.sensitivity_params` appear in the YAML but no node reads them - 
     changing them has no effect on a run. In particular `baseline_filter` still
     names a WITCH scenario, which is inert rather than inconsistent.
 
