@@ -547,3 +547,15 @@ Consequences:
   Candidates for the followups branch: Bertrand's DECIDE outcomes, the
   Dockerfile entrypoint fix, golden pinning post carbon-price fix,
   Q1-5 dead validate cleanup.
+
+### 2026-09-01 evening — ownership-column finding (stack review round 2)
+
+The deliverables companies_ownerships.csv (2026-08-25 drop) has NO ownership
+tier column; the internal downloaded_companies.csv (BigQuery marts) HAS
+ownership_type. On tier-less data every rung enters: 92% of asset-years sum
+>105% ownership (median 227%, max 903%). This is the 2026-08-25
+"check_ownership_tier BLOCKED" item traced to its consequence. Owner ruling:
+data-export defect — prepare_inputs now hard-fails on tier-less companies
+data; the deliverables must be RE-EXPORTED including ownership_type
+(Bertrand / BigQuery marts side). Until that re-export exists, recipients
+cannot run — deliberate, prevents 2.5x-inflated first results.
