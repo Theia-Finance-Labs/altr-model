@@ -67,6 +67,11 @@ PATTERNS: dict[str, Callable[[str], object]] = {
     "bertrand": re.compile(r"\bbertrand\w*", re.IGNORECASE).search,
     "private-key": re.compile(r"BEGIN[A-Z ]*PRIVATE KEY").search,
     "secret-token": looks_like_secret,
+    # Licensed company identifiers from the deliverables universe. Legitimate
+    # inside the data payload the recipient is licensed for; a leak anywhere
+    # else (docs, comments, notebooks), where it would ship ids for companies
+    # outside that licence. Scoped by the EXCEPTIONS below, not by dropping it.
+    "company-id": re.compile(r"\b(?:CN|CP)_\d{8,}\b").search,
 }
 
 #: Directories never scanned, relative to the export root.
@@ -142,6 +147,21 @@ EXCEPTIONS: tuple[Suppression, ...] = (
     ),
     Suppression(
         "tests/fixtures/data/*.csv",
+        "company-id",
+        "The committed input slice is licensed deliverables data: its "
+        "`company_id` column is the payload, not a leak. The delivered payload "
+        "under data/01_raw/ is skipped wholesale (SKIP_TREES) for the same "
+        "reason; tests/fixtures/test_fixture_ids_licensed.py checks these ids "
+        "stay inside the licensed universe.",
+    ),
+    Suppression(
+        "tests/integration/test_fixture_run.py",
+        "company-id",
+        "Golden values pinned per company from the fixture slice — the ids are "
+        "the assertion keys, and they come from that same licensed slice.",
+    ),
+    Suppression(
+        "tests/fixtures/data/*.csv",
         "bertrand",
         "Real asset names in the committed input slice, e.g. 'L'Etang Bertrand "
         "solar farm' — a public French power plant, not a colleague.",
@@ -202,7 +222,8 @@ def selftest() -> int:
         root = Path(tmp)
         (root / "leak.py").write_text(
             'HOME = "/Users/someone/secret-project"\n'
-            'API_TOKEN = "sk_live_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5"\n',
+            'API_TOKEN = "sk_live_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5"\n'
+            "# - CN_1234567890123456789\n",
             encoding="utf-8",
         )
         (root / ".gitignore").write_text("credentials/\n", encoding="utf-8")
@@ -215,6 +236,7 @@ def selftest() -> int:
     patterns = {hit.split("[", 1)[1].split("]", 1)[0] for hit in hits}
     assert "users-path" in patterns, f"internal path not detected: {hits}"
     assert "secret-token" in patterns, f"secret token not detected: {hits}"
+    assert "company-id" in patterns, f"company id not detected: {hits}"
     assert not any(h.startswith(".gitignore") for h in hits), "exception not applied"
     assert not any("01_raw" in h for h in hits), "data/01_raw should not be scanned"
     print(f"sanitize: selftest OK ({len(hits)} planted hits found)")  # noqa: T201

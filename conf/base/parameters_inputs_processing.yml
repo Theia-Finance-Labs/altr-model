@@ -7,5 +7,5 @@
 # --- Advanced: this pipeline currently has no advanced-only parameters.
 # Its user-facing keys (baseline_scenario, target_scenario, company_ids,
 # ownership_type, ccs_on, max_forecast_horizon) live in conf/base/parameters.yml.
-# The commented scenario pairs and company id list that used to sit here are
-# preserved in docs/handover/scenario_catalog.md.
+# The commented scenario pairs that used to sit here are preserved in
+# docs/handover/scenario_catalog.md.

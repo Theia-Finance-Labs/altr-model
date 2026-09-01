@@ -39,7 +39,8 @@ alignment_year: 2038  # Extended from 2035 to give 5-year transition window
 # ── Scope filters ─────────────────────────────────────────────────────────────────
 # Empty list = all companies (no filter)
 # Values: list of company_id strings present in the companies input.
-# The full id list of the internal universe: see docs/handover/scenario_catalog.md
+# Read the ids you can choose from off the `company_id` column of your own
+# companies input (`data/05_model_input/downloaded_companies.csv`).
 company_ids: []
 
 # Ownership level used to attach assets to companies.
