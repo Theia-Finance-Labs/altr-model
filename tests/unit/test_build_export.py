@@ -130,6 +130,9 @@ def test_dockerignore_ships_alongside_the_dockerfile():
     entries = read_allowlist(ALLOWLIST)
     assert "Dockerfile" in entries
     assert ".dockerignore" in entries
+    # It ships untransformed, so its comments must not point recipients at
+    # internal-only files.
+    assert "compose" not in _transformed(".dockerignore").lower()
 
 
 def test_every_transform_target_is_still_a_repo_file():

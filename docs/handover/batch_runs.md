@@ -11,11 +11,14 @@ run-configurations format.
 !!! warning "Maintainer tooling - most of this page is not in a sanitized copy"
     Everything on this page lives in this repository. What is excluded is the
     **sanitized copy** `scripts/build_export.py` produces on demand for
-    delivery: of the files documented here, only the `Dockerfile` and
-    `notebooks/walkthrough.ipynb` are on its allowlist - the Streamlit app,
-    `run_kedro_batch.py`, `generate_results.ipynb`, the example configuration
-    files and `docker-compose.yml` stay behind. If you received this site as
-    part of a sanitized copy, the supported path is the
+    delivery: of the files documented here, only the `Dockerfile` (with its
+    `.dockerignore`) and `notebooks/walkthrough.ipynb` are on its allowlist -
+    the Streamlit app, `run_kedro_batch.py`, `generate_results.ipynb`, the
+    example configuration files and `docker-compose.yml` stay behind. The
+    copy's `Dockerfile` is rewritten on export: its image runs the pipeline
+    itself (`kedro run`, with the local `data/` folder mounted per the
+    comments in the file) rather than the app described below. If you
+    received this site as part of a sanitized copy, the supported path is the
     [quickstart](quickstart.md); everything below describes tooling the
     maintainers run for you.
 
