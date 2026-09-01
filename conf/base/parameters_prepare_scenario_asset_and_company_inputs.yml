@@ -32,8 +32,12 @@ target_scenario: "AR6_AIM/CGE 2.2_EN_NPi2020_900f"
 
 # ── Ownership tier ────────────────────────────────────────────────────────────────
 # Which rung of the ownership tree attaches assets to companies.
-# Values: "direct" (ownership_type == "direct", or ownership_level == 1)
-#       | "indirect" (ownership_type == "indirect", or ownership_level >= 2).
+# Values: whatever the companies input's tier column actually holds. Under the
+# NAMED schema (`ownership_type` column) the shipped input holds "direct" and
+# "equity" — not "indirect". Under the NUMBERED schema (`ownership_level`)
+# "direct" selects level 1 and any other value selects level 2+.
+# A tier the data does not carry is rejected with a ValueError listing the
+# values that are available, rather than silently emptying the run.
 # A company's stake in an asset is recorded at several tiers — a direct holding
 # and the equity stakes rolling up through subsidiaries. They are alternative
 # views of the same capacity, not additive ones, so a run reports on one tier.

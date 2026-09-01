@@ -159,10 +159,31 @@ def _select_ownership_tier(
     the tier it reports on. Summing across tiers would allocate the same plant
     to the same company twice.
 
-    Two schemas are in circulation: `ownership_type` ("direct"/"indirect") and
-    the newer `ownership_level` (1 = direct, 2+ = indirect).
+    Two schemas are in circulation: `ownership_type`, which names the rungs
+    (the shipped companies input holds "direct" and "equity"), and the newer
+    `ownership_level`, which numbers them (1 = direct, 2+ = indirect).
+
+    A tier the data does not carry is a configuration error, not an empty
+    result: silently returning an empty panel takes every company out of the
+    run and the failure only surfaces as zero rows several stages later. Both
+    schemas therefore raise `ValueError` naming the configured value and what
+    the frame actually offers. That also makes a "kept 0 rows" warning
+    unreachable on the tier paths - the louder error fires first - so the
+    only surviving zero-row case is the no-tier-column branch below, which
+    keeps every row by design.
     """
     if "ownership_type" in companies_ownerships.columns:
+        available = sorted(
+            str(v) for v in companies_ownerships["ownership_type"].dropna().unique()
+        )
+        if ownership_type not in available:
+            raise ValueError(
+                f"ownership_type {ownership_type!r} is not present in the "
+                f"companies input; its 'ownership_type' column holds "
+                f"{available}. Set `ownership_type` in "
+                "conf/base/parameters_prepare_scenario_asset_and_company_inputs"
+                ".yml to one of those."
+            )
         selected = companies_ownerships.loc[
             companies_ownerships["ownership_type"] == ownership_type
         ]
@@ -171,6 +192,13 @@ def _select_ownership_tier(
         selected = companies_ownerships.loc[
             level.eq(1) if ownership_type == "direct" else level.ge(2)
         ]
+        if selected.empty:
+            rungs = sorted(str(v) for v in level.dropna().unique())
+            raise ValueError(
+                f"ownership_type {ownership_type!r} selects no rung of the "
+                f"'ownership_level' column, which holds {rungs} "
+                "('direct' selects level 1, any other value selects level 2+)."
+            )
     else:
         logger.warning(
             "Neither 'ownership_type' nor 'ownership_level' is present in the "

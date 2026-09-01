@@ -145,10 +145,33 @@ def test_direct_tier_excludes_the_equity_stake_in_the_same_asset():
     assert out.set_index(KEY)["ownership_percentage"].loc[("C1", "A1", 2030)] == 50.00
 
 
-def test_indirect_tier_selects_the_other_rung():
-    out = filter_companies(_multi_stake_frame(), [], ownership_type="indirect")
+def test_equity_tier_selects_the_other_rung():
+    """The named schema's other rung is "equity". Selecting it returns the
+    equity rows — the direct 50.00 stake drops out and the 0.45 one remains."""
+    out = filter_companies(_multi_stake_frame(), [], ownership_type="equity")
 
-    assert set(out.company_id) == set()
+    assert out.set_index(KEY)["ownership_percentage"].loc[("C1", "A1", 2030)] == 0.45
+
+
+def test_a_tier_the_data_does_not_carry_is_rejected():
+    """"indirect" is the documented-but-wrong name for the equity rung. Under
+    the named schema it matches nothing, and an empty panel takes every company
+    out of the run silently — so it must raise, naming what is available."""
+    with pytest.raises(ValueError, match="indirect") as excinfo:
+        filter_companies(_multi_stake_frame(), [], ownership_type="indirect")
+
+    assert "'direct'" in str(excinfo.value) and "'equity'" in str(excinfo.value)
+
+
+def test_a_numbered_rung_that_maps_to_nothing_is_rejected():
+    """The numbered schema keeps its rung semantics — "direct" is level 1, any
+    other value is level 2+ — but a selection that maps to no row still raises
+    rather than emptying the panel."""
+    frame = _multi_stake_frame().rename(columns={"ownership_type": "ownership_level"})
+    frame["ownership_level"] = 1
+
+    with pytest.raises(ValueError, match="ownership_level"):
+        filter_companies(frame, [], ownership_type="equity")
 
 
 def test_ownership_level_schema_maps_onto_the_same_tiers():
