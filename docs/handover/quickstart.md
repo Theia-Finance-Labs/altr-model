@@ -40,8 +40,12 @@ needed to run the model:
 
 | Group | Install with | What it is for |
 | --- | --- | --- |
-| `bigquery` | `uv sync --group bigquery` | The maintainer-only input downloader. Recipients never need it. |
+| `docs` | `uv sync --group docs` | Building this documentation site locally. |
 | `streamlit` | `uv sync --group streamlit` | The batch-run app under `notebooks/`. |
+
+`pyproject.toml` declares one further optional group used only by the
+maintainers' internal input tooling. It is not installed by default, the module
+it serves is not part of this package, and you never need it.
 
 Verify the install - this must print a `0.19.x` version and exit cleanly:
 
@@ -79,11 +83,11 @@ unzip -o /path/to/scenarios.csv.zip -d data/01_raw/
 ```
 
 !!! note "There is no download pipeline"
-    Ingestion is not part of the Kedro graph. Maintainers with BigQuery access
-    produce these three files with the standalone
-    `src/altr_model/bigquery_marts_downloader.py` script; everyone else
-    receives them through another channel and places them as above. Nothing in
-    `kedro run` fetches data.
+    Ingestion is not part of the Kedro graph. The three files are produced by
+    the maintainers with internal tooling that is not part of this package;
+    you receive them through another channel and place them as above. Nothing
+    in `kedro run` fetches data, so a run can never surprise you by reaching
+    for a network source.
 
 ### The fourth file: carbon prices
 
