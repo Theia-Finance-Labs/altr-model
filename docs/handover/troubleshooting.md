@@ -98,9 +98,12 @@ downstream number silently.
 
 The usual cause is an extract that flattens every rung of an ownership chain, so
 different companies on different rungs each claim the same capacity. Note that
-consolidation cannot rescue it: `_consolidate_ownership_stakes` sums **every**
-stake a company holds in one asset-year into a single row, and that merge is
-sum-preserving. Fix it in the source extract.
+consolidation cannot rescue it: `_consolidate_ownership_stakes` sums the stakes
+it is given into a single row, and that merge is sum-preserving. It only ever
+sees one rung - `ownership_type` selects the tier first, which is what stops a
+company's own direct and equity stakes in one asset being added together - but
+it cannot separate two DIFFERENT companies claiming the same capacity. Fix that
+in the source extract.
 
 ## Scenario selection
 
@@ -166,9 +169,9 @@ for the data; the `ccs_on` setting sent every asset to a technology variant the
 scenario file does not carry.
 
 Start by emptying the filter (`company_ids: []`) and re-running - if that works,
-the ids were the problem. Note that there is **no ownership-tier filter**:
-companies are not selected by ownership level, so a tier setting cannot be what
-emptied the panel.
+the ids were the problem. Check `ownership_type` next: it selects one rung of
+the ownership tree (`"direct"` by default), so an input whose stakes are all
+recorded at the other tier comes through empty.
 
 ### `ValueError: ownership_percentage looks like a 0-1 fraction (max=…)`
 

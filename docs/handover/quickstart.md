@@ -183,7 +183,7 @@ afterwards. Full per-key annotations: [parameters reference](parameters.md).
 uv run kedro run --tags altrisk
 ```
 
-That runs stages 1-5 (28 nodes) and produces the numbers. To also produce the
+That runs stages 1-5 (29 nodes) and produces the numbers. To also produce the
 figures:
 
 ```bash
