@@ -105,6 +105,20 @@ def test_consolidation_drops_the_tier_column():
     assert "ownership_type" not in out.columns
 
 
+def test_a_nan_in_a_cosmetic_group_key_does_not_delete_the_stake():
+    """`groupby` drops NaN keys by default, and the roll-up groups on seven
+    columns — two of which (`company_name`, `asset_name`) are labels nothing
+    computes on. A blank one used to delete that company's stake outright, and
+    the capacity with it, with no row count to notice it by."""
+    frame = _multi_stake_frame()
+    frame.loc[frame.company_id == "C2", "company_name"] = pd.NA
+
+    out = _consolidate_ownership_stakes(frame)
+
+    assert "C2" in set(out.company_id), "an unnamed company kept its stake"
+    assert out.set_index(KEY)["ownership_percentage"].loc[("C2", "A1", 2030)] == 20.00
+
+
 def test_consolidation_preserves_the_asset_year_ownership_total():
     """Consolidation merges rows; it must never change how much of an asset is
     owned. ``allocate_assets_to_companies`` multiplies capacity by this column,
@@ -161,6 +175,39 @@ def test_a_tier_the_data_does_not_carry_is_rejected():
         filter_companies(_multi_stake_frame(), [], ownership_type="indirect")
 
     assert "'direct'" in str(excinfo.value) and "'equity'" in str(excinfo.value)
+
+
+def test_a_case_variant_of_the_tier_name_selects_the_same_rung():
+    """Matching normalizes both sides. The alternative — exact `==` against an
+    unnormalized column — accepts nothing and hands back the empty panel the
+    validation above exists to prevent, so a config typed "Direct" must select
+    the direct rung rather than quietly emptying the run."""
+    out = filter_companies(_multi_stake_frame(), [], ownership_type="  Direct ")
+
+    assert out.set_index(KEY)["ownership_percentage"].loc[("C1", "A1", 2030)] == 50.00
+
+
+def test_a_case_variant_in_the_data_is_matched_too():
+    """The same normalization applies to the column: an export that writes
+    "Equity" is the equity rung, not a tier the run does not carry."""
+    frame = _multi_stake_frame()
+    frame["ownership_type"] = frame["ownership_type"].str.capitalize()
+
+    out = filter_companies(frame, [], ownership_type="equity")
+
+    assert out.set_index(KEY)["ownership_percentage"].loc[("C1", "A1", 2030)] == 0.45
+
+
+def test_a_typo_under_the_numbered_schema_raises_instead_of_selecting_2_plus():
+    """The old numbered branch was `level == 1 if "direct" else level >= 2`, so
+    ANY value that was not exactly "direct" selected the indirect rungs. A
+    misspelled "dirct" therefore reported on the opposite tier and said
+    nothing. It must raise."""
+    frame = _multi_stake_frame().rename(columns={"ownership_type": "ownership_level"})
+    frame["ownership_level"] = frame["ownership_level"].map({"direct": 1, "equity": 2})
+
+    with pytest.raises(ValueError, match="dirct"):
+        filter_companies(frame, [], ownership_type="dirct")
 
 
 def test_a_numbered_rung_that_maps_to_nothing_is_rejected():
