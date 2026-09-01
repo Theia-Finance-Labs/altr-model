@@ -11,12 +11,17 @@ entries".
 The implementation is already here (``_consolidate_ownership_stakes``); this
 regression test was not, so it is ported to pin the behaviour.
 
-Two of the four pre-migration cases described a ``filter_companies`` that took
-an ``ownership_type`` tier argument and selected ``direct`` or
-``ownership_level >= 2`` rows. That function does not exist here: this
-``filter_companies`` takes ``(companies_ownerships, company_ids)``, consolidates
-FIRST and never selects a tier. Those two cases are re-derived against the real
-signature rather than ported.
+``filter_companies`` selects an ownership TIER before consolidating, restored
+from the handover branch under the 2026-09-01 owner ruling. The two operations
+have to run in that order: a direct holding and the equity stakes rolling up
+through subsidiaries are alternative views of the same capacity, not additive
+ones, so summing across tiers allocates the same plant to the same company
+twice. Consolidation then only ever sums within one rung — several stakes of
+the same tier in one asset-year, which do add up.
+
+``_consolidate_ownership_stakes`` is still tested on its own, on a frame that
+mixes tiers, because its contract is "sum whatever you are given" and that is
+what the ordering above relies on.
 """
 
 import pandas as pd
@@ -108,20 +113,54 @@ def test_consolidation_preserves_the_asset_year_ownership_total():
 
 
 def test_filter_companies_is_duplicate_free_with_no_company_filter():
-    """The empty `company_ids` list keeps every company, and consolidation runs
-    first, so no duplicate (company, asset, year) key can reach the merge."""
+    """The empty `company_ids` list keeps every company, and the tier selection
+    plus consolidation run first, so no duplicate (company, asset, year) key can
+    reach the merge."""
     out = filter_companies(_multi_stake_frame(), [])
 
     assert not out.duplicated(KEY).any(), "duplicate (company, asset, year) keys"
     assert set(out.company_id) == {"C1", "C2"}
-    assert out.set_index(KEY)["ownership_percentage"].loc[("C1", "A1", 2030)] == 50.45
+    assert out.set_index(KEY)["ownership_percentage"].loc[("C1", "A1", 2030)] == 50.00
 
 
-def test_filter_companies_selects_the_requested_companies_after_consolidating():
-    """A company_ids filter narrows the CONSOLIDATED frame, so a selected
-    company still carries its summed stake rather than one of its two rows."""
+def test_filter_companies_selects_the_requested_companies():
     out = filter_companies(_multi_stake_frame(), ["C1"])
 
     assert set(out.company_id) == {"C1"}
     assert not out.duplicated(KEY).any()
+
+
+def test_direct_tier_excludes_the_equity_stake_in_the_same_asset():
+    """The 0.45 equity rung is a view of the same holding as the 50.00 direct
+    one. Adding them to 50.45 would allocate that plant to Acme twice."""
+    out = filter_companies(_multi_stake_frame(), [], ownership_type="direct")
+
+    assert out.set_index(KEY)["ownership_percentage"].loc[("C1", "A1", 2030)] == 50.00
+
+
+def test_indirect_tier_selects_the_other_rung():
+    out = filter_companies(_multi_stake_frame(), [], ownership_type="indirect")
+
+    assert set(out.company_id) == set()
+
+
+def test_ownership_level_schema_maps_onto_the_same_tiers():
+    """The newer companies schema numbers the rungs instead of naming them."""
+    frame = _multi_stake_frame().rename(columns={"ownership_type": "ownership_level"})
+    frame["ownership_level"] = frame["ownership_level"].map({"direct": 1, "equity": 2})
+
+    direct = filter_companies(frame, [], ownership_type="direct")
+    indirect = filter_companies(frame, [], ownership_type="indirect")
+
+    assert direct.set_index(KEY)["ownership_percentage"].loc[("C1", "A1", 2030)] == 50.00
+    assert indirect.set_index(KEY)["ownership_percentage"].loc[("C1", "A1", 2030)] == 0.45
+
+
+def test_a_companies_input_with_no_tier_column_keeps_every_row():
+    """Older inputs carry neither column; the run warns rather than dropping
+    every stake, and consolidation then sums what it is given."""
+    frame = _multi_stake_frame().drop(columns="ownership_type")
+
+    out = filter_companies(frame, [])
+
     assert out.set_index(KEY)["ownership_percentage"].loc[("C1", "A1", 2030)] == 50.45

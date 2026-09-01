@@ -69,11 +69,11 @@ COMPANY_NPV_COLUMNS = [
 
 # company_id -> (baseline_npv, latesudden_npv), sorted by company_id.
 COMPANY_NPV_VALUES = {
-    "CN_3371785431787292505": (-4742612547.635713, -9301685299.551826),
-    "CN_6166477550945836346": (7984809847.638236, 11505895714.14153),
-    "CN_6488161088428600082": (22669670505.825607, 32056351038.033707),
-    "CN_8676642915009364747": (7589015017.885206, -8339876103.755816),
-    "CP_3685197042895689972": (25459033755.95073, 46230272941.86572),
+    "CN_3371785431787292505": (-4993101829.613022, -7097823755.342253),
+    "CN_6166477550945836346": (7561824575.349692, 12858758761.724388),
+    "CN_6488161088428600082": (-18280161120.13081, -71108467857.1024),
+    "CN_8676642915009364747": (5642084833.022628, -6357381430.212817),
+    "CP_3685197042895689972": (14241241560.291767, 43511299210.83599),
 }
 
 ASSET_NPV_COLUMNS = [
@@ -106,7 +106,7 @@ ASSET_NPV_COLUMNS = [
     "latesudden_capex_total",
     "npv_change",
 ]
-ASSET_NPV_ROWS = 1591
+ASSET_NPV_ROWS = 721
 
 # (asset_id, company_id) -> (baseline_npv, latesudden_npv), one per company.
 # The company totals above survive any reshuffle *within* a company, so these
@@ -122,17 +122,17 @@ ASSET_NPV_VALUES = {
         "CN_6166477550945836346",
     ): (-33179888.457690075, -53702645.06381515),
     (
-        "INTERNAL_A_L100000100647_int_ast_power_gem_stage2",
+        "INTERNAL_A_L100000101856_int_ast_power_gem_stage2",
         "CN_6488161088428600082",
-    ): (-91141553.92512016, -803215233.3960264),
+    ): (-958591367.5157268, -1831803226.303148),
     (
-        "INTERNAL_A_L100000102814_int_ast_power_gem_stage2",
+        "INTERNAL_A_L100000102910_int_ast_power_gem_stage2",
         "CN_8676642915009364747",
-    ): (253368.7518593569, -733838.0196985481),
+    ): (2079762157.3295617, -1893563716.8535323),
     (
-        "INTERNAL_A_L100000100087_int_ast_power_gem_stage2_GasCap",
+        "INTERNAL_A_L100000103087_int_ast_power_gem_stage2_GasCap",
         "CP_3685197042895689972",
-    ): (-91890432.64206252, -337496977.6573663),
+    ): (-96965768.51927318, -137950223.50345284),
 }
 
 ASSET_EARNINGS_COLUMNS = [
@@ -162,7 +162,7 @@ ASSET_EARNINGS_COLUMNS = [
     "capex_total",
     "FCFF",
 ]
-ASSET_EARNINGS_ROWS = 82732
+ASSET_EARNINGS_ROWS = 37492
 
 # (asset_id, company_id) -> FCFF summed over that pair's rows. Same purpose one
 # stage earlier: the row count above cannot see two assets trading cash flows.
@@ -176,9 +176,9 @@ ASSET_EARNINGS_FCFF = {
         "CN_6166477550945836346",
     ): -210086705.59162578,
     (
-        "INTERNAL_A_L100000100647_int_ast_power_gem_stage2",
+        "INTERNAL_A_L100000101856_int_ast_power_gem_stage2",
         "CN_6488161088428600082",
-    ): -2069683380.5020213,
+    ): -4364579162.536558,
 }
 
 ASSET_TRAJECTORIES_COLUMNS = [
@@ -213,7 +213,7 @@ ASSET_TRAJECTORIES_COLUMNS = [
     "increasing",
     "aligned",
 ]
-ASSET_TRAJECTORIES_ROWS = 82732
+ASSET_TRAJECTORIES_ROWS = 37492
 
 
 @pytest.fixture(scope="module")
