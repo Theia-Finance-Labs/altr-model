@@ -43,6 +43,9 @@ SKIP_RELATIVE = (
     # Full-input smoke test: needs the internal data drop, so it can only fail
     # for a recipient. Kept in the internal repo, not shipped.
     "tests/test_run.py",
+    # Tests the export tooling, which is itself internal-only (build_export.py
+    # and sanitize_check.py are not allowlisted) — it would fail on import.
+    "tests/unit/test_build_export.py",
 )
 
 #: The three deliverables files staged into ``data/01_raw/`` by --data-source.
