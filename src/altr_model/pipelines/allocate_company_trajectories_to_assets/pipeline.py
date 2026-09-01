@@ -98,7 +98,10 @@ def create_pipeline(**kwargs) -> Pipeline:
             ),
             node(
                 create_frozen_capacity_at_retirement,
-                inputs="_asset_allocation_wide",
+                inputs={
+                    "asset_allocation_wide": "_asset_allocation_wide",
+                    "alignment_year": "params:alignment_year",
+                },
                 outputs="frozen_capacity_at_retirement",
                 name="create_frozen_capacity_at_retirement",
             ),

@@ -11,6 +11,7 @@ from altr_model.pipelines.allocate_company_trajectories_to_assets._allocation_no
 )
 from altr_model.pipelines.allocate_company_trajectories_to_assets.nodes import (
     build_canonical_asset_trajectories,
+    create_frozen_capacity_at_retirement,
     extend_asset_panel_and_attach_retirement,
     reconcile_realized_company_trajectories,
 )
@@ -373,3 +374,43 @@ def test_retirement_is_carried_on_panel_and_missing_retirement_stays_null():
         .isna()
         .all()
     )
+
+
+def _wide_panel_for_frozen_capacity() -> pd.DataFrame:
+    """One asset whose raw retirement year precedes the alignment floor.
+
+    Allocation never retires before ``alignment_year + 1``, so with
+    ``alignment_year=2032`` this asset effectively retires in 2033 and is still
+    running — at capacity 30.0 — in the raw retirement year 2031.
+    """
+    shared = {
+        "asset_id": "early-retiree",
+        "company_id": "company",
+        "scenario_geography": "World",
+        "sector": "Power",
+        "technology": "CoalCap",
+        "retirement_year": 2031.0,
+    }
+    capacity = {2030: 50.0, 2031: 40.0, 2032: 30.0, 2033: 0.0}
+    return pd.DataFrame(
+        [{**shared, "year": y, "capacity_after_shock": c} for y, c in capacity.items()]
+    )
+
+
+def test_frozen_capacity_anchors_on_the_effective_retirement_year():
+    """The floor moves retirement to 2033, so the frozen level is 2032's 30.0
+    and it is carried from 2033 on — not 2030's 50.0 carried from 2031."""
+    frozen = create_frozen_capacity_at_retirement(
+        _wide_panel_for_frozen_capacity(), alignment_year=2032
+    )
+
+    assert set(frozen["year"]) == {2033}
+    assert frozen["frozen_capacity_at_retirement"].tolist() == [30.0]
+
+
+def test_frozen_capacity_without_an_alignment_year_uses_the_raw_retirement():
+    """No floor configured: the raw retirement year is the effective one."""
+    frozen = create_frozen_capacity_at_retirement(_wide_panel_for_frozen_capacity())
+
+    assert set(frozen["year"]) == {2031, 2032, 2033}
+    assert set(frozen["frozen_capacity_at_retirement"]) == {50.0}
