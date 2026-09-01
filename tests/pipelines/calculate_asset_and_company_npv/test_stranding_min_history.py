@@ -56,3 +56,30 @@ def test_a_history_shorter_than_n_is_not_stranded():
 def test_a_full_length_loss_history_is_stranded():
     """N loss years is exactly the criterion: TV is written to zero."""
     assert _terminal_value(_loss_making_years(N)) == 0.0
+
+
+def test_a_missing_fcff_year_is_not_counted_as_a_loss_year():
+    """A gap in the middle of the trailing window is not a loss.
+
+    `compute_yearly_npv_trajectories` collapses the CapEx flow-split rows with
+    `groupby(...).sum()`, and pandas sums an all-NaN cell to 0.0. That filled
+    zero satisfies `FCFF <= 0`, so a year with no data used to complete a run
+    of N consecutive loss years and write off the asset's whole terminal value
+    on evidence that was never measured. "loss, gap, loss" is not a run of
+    three."""
+    frame = _loss_making_years(N)
+    frame.loc[frame.year == 2049, "FCFF"] = float("nan")
+
+    assert _terminal_value(frame) != 0.0
+
+
+def test_a_history_of_only_missing_years_is_not_stranded():
+    """The minimum-history guard counts OBSERVED years, not rows: a group whose
+    FCFF is missing throughout has no evidence of anything."""
+    frame = _loss_making_years(N + 2)
+    frame.loc[frame.year <= 2050, "FCFF"] = float("nan")
+
+    assert _terminal_value(frame) == 0.0, (
+        "an all-missing group has no terminal FCFF either, so it falls out at "
+        "`has_terminal_fcff` with TV 0 — but never via the stranded tier"
+    )
