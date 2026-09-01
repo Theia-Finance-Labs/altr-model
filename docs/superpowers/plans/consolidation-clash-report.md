@@ -77,6 +77,15 @@ Note the knock-on: because roll-over is no longer a capacity *movement*, the
 flow identity `K_t = K_{t-1} − retired + replaced + new_build` can no longer
 balance by construction. See Q1-5.
 
+**The switch default flipped too — `include_replacement_capex: False → True`**
+(`parameters_calculate_asset_earnings.yml`). On `main` the whole replacement
+term is OFF out of the box, so the form above is not merely different from
+yours, it is *newly live*: a default run now charges routine capital
+maintenance on installed capacity every year where before it charged nothing.
+Every absolute `capex_total`, FCFF and NPV moves on that flip alone,
+independently of the mask change. If the switch should ship OFF and the form
+change be adopted only for runs that ask for it, this is the line to say so on.
+
 ### Q1-3 · `replacement_capex_rate` default · FYI
 
 | | |
@@ -104,6 +113,18 @@ form therefore *raises* FCFF when an asset retires — retiring a plant pays its
 owner. If the intent was to model recoverable scrap value net of demolition,
 that is a defensible model, but it belongs as its own signed term, not folded
 into a cost line whose sign convention is "outflow".
+
+**The switch default flipped too — `include_decom_costs: False → True`**
+(`parameters_calculate_asset_earnings.yml`). As with Q1-2, on `main` the term
+is OFF out of the box, so the sign fix above only bites because the switch is
+now on by default: a default run charges decommissioning on every retiring
+asset where before it charged nothing. Same call to make, on the same line.
+
+**Both flips together.** `include_replacement_capex` and `include_decom_costs`
+both move `False → True` against `main`; `include_growth_capex` stays `False`.
+These are the two default changes in this report that move every absolute
+number in a run nobody has reconfigured, so they are called out here rather
+than left to the parameter diff.
 
 ### Q1-5 · `validate_capacity_flow_identity` is now unreachable-and-wrong · FYI
 
@@ -273,6 +294,17 @@ in the allocation pipeline, filtering the wide allocation panel — `retirement_
 is already carried on every row, so it is a filter, not a join, and no new
 pipeline or intermediate dataset was created.
 
+**Correction (2026-09-01 review).** This entry originally said the carried
+`retirement_year` was sufficient to filter on. It is not: allocation clips
+retirement to `max(retirement_year, alignment_year + 1)`
+(`_allocation_nodes.py`), so for any asset dated to retire on or before the
+alignment year the raw column names a year the asset is still running. The
+node anchored on the raw value and therefore froze the wrong capacity for
+exactly those assets. Fixed — the node now takes `alignment_year` and applies
+the same clip. The pins did not move, because the dataset is numerically inert
+(Q4-1); this is a latent defect that would have surfaced the moment anything
+started reading the column.
+
 ### Q4-3 · Merge keys · FYI
 
 The handover branch merges on five keys (no `sector`); this merges on your
@@ -369,6 +401,18 @@ The consolidation regression test documented the no-tier behaviour in prose
 restored ordering, with new cases for both company schemas (`ownership_type`
 naming the rungs, `ownership_level` numbering them) and for an input carrying
 neither, which warns and keeps every row.
+
+**Correction (2026-09-01 review).** "Both schemas covered" was true of the
+happy path only. Under the named `ownership_type` schema a configured tier the
+data does not carry — and the documented value `"indirect"` was exactly that,
+since the shipped input holds `direct` and `equity` — matched nothing and
+returned an EMPTY panel, taking every company out of the run silently;
+arbitrary values were accepted the same way. The test that should have caught
+it asserted the empty result as if it were the feature (it was even named
+"…selects the other rung"). Both schemas now validate and raise a `ValueError`
+naming the configured value and what is available, the parameter comment names
+`direct`/`equity` rather than `direct`/`indirect`, and the test asserts the
+equity rows come back and that an absent tier raises.
 
 **If you think summing tiers is right**, it is now a setting rather than an
 argument: `ownership_aggregation: "sum"`. The 2.2× is the reason the default is
@@ -485,6 +529,7 @@ tests, consistent with the 37 already there.
 | ~~**OWN-1** ownership tier~~ — settled: `ownership_aggregation`, default `"tier_filter"` | was 2.2× on every absolute output; now a documented mode switch |
 | **Q2-1** price ramp labels rows `baseline` | silently neutralises any future split between the two discount rates |
 | **Q2-3** negative perpetuity | reverses an explicit design choice of yours |
+| **Q1-2 / Q1-4** the two switch defaults flip `False → True` vs `main` (`include_replacement_capex`, `include_decom_costs`) | both terms are newly LIVE in a default run, so every absolute number moves before either form change is even considered |
 | **Q1-2** replacement CapEx base | changes what "maintenance" means in the model |
 | **NAME-4** raise vs drop | your guard kept; may stop a full-data run |
 | **Q2-7** carbon-price side-file | the one place the ruling was not applied |
