@@ -30,6 +30,18 @@
 baseline_scenario: "AR6_AIM/CGE 2.2_EN_NPi2020_1200f"
 target_scenario: "AR6_AIM/CGE 2.2_EN_NPi2020_900f"
 
+# ── Ownership tier ────────────────────────────────────────────────────────────────
+# Which rung of the ownership tree attaches assets to companies.
+# Values: "direct" (ownership_type == "direct", or ownership_level == 1)
+#       | "indirect" (ownership_type == "indirect", or ownership_level >= 2).
+# A company's stake in an asset is recorded at several tiers — a direct holding
+# and the equity stakes rolling up through subsidiaries. They are alternative
+# views of the same capacity, not additive ones, so a run reports on one tier.
+# The tier is selected BEFORE stakes are consolidated, so consolidation only ever
+# sums within the tier it was given.
+ownership_type: "direct"
+
+
 # ── Output granularity ────────────────────────────────────────────────────────────
 # True collapses asset-level results up to one row per company before the earnings
 # model runs; False keeps every asset distinct. Company-level runs are much cheaper
