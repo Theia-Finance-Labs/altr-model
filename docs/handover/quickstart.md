@@ -153,7 +153,7 @@ the cost switches next to theirs:
 
 | File | What it holds |
 | --- | --- |
-| `parameters_prepare_scenario_asset_and_company_inputs.yml` | `baseline_scenario`, `target_scenario`, `company_ids`, `ownership_type`, `ccs_on`, `max_forecast_horizon`, `reduce_granularity_from_asset_to_company_level` |
+| `parameters_prepare_scenario_asset_and_company_inputs.yml` | `baseline_scenario`, `target_scenario`, `company_ids`, `ownership_type`, `ownership_aggregation`, `ccs_on`, `max_forecast_horizon`, `reduce_granularity_from_asset_to_company_level` |
 | `parameters_calculate_company_trajectories.yml` | `shock_year`, `alignment_year`, `price_ramp` |
 | `parameters_calculate_asset_earnings.yml` | `market_passthrough`, the cost switches and the carbon-cost method |
 | `parameters_allocate_company_trajectories_to_assets.yml` | retirement and staggering knobs |

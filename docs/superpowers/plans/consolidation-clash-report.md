@@ -321,15 +321,26 @@ lean on it.
 
 ## Ownership
 
-### OWN-1 · Ownership tier selection restored · **DECIDE — the big one**
+### OWN-1 · Ownership tier selection · **RESOLVED-AS-PARAMETER**
 
 | | |
 | --- | --- |
 | Your form | `filter_companies(companies_ownerships, company_ids)` — consolidates across every tier, summing all stakes a company holds in an asset-year. No `ownership_type` parameter |
 | Handover form | Selects a tier (`ownership_type`, default `"direct"`) **first**, then consolidates within it |
-| Done | Ported the handover form: one parameter in `parameters_prepare_scenario_asset_and_company_inputs.yml`, the tier filter inside your `filter_companies`, consolidation untouched |
+| Done | **Both, under `ownership_aggregation`.** The owner ruled on 2026-09-01 that this is a parameter, not a winner: `"tier_filter"` (DEFAULT — the handover form, tier then consolidate) and `"sum"` (your form, every holding totalled). One key in `parameters_prepare_scenario_asset_and_company_inputs.yml`, one branch inside your `filter_companies`; `_consolidate_ownership_stakes` still untouched |
 
-**What to look at.** This is the largest behavioural difference between the two
+**Which mode to use.** Run `"tier_filter"` for anything that has to match the
+validated baseline — it is what last year's published results and the pinned
+fixture NPVs were produced under — and `"sum"` when the numbers have to line up
+with a TRISK run, which reads a company's holding as direct + equity.
+
+**Ruling lineage.** Owner decision of 2026-09-01, the same ruling this report
+applies (`implementation-notes-handover.md`, "Owner decisions 2026-09-01" +
+Amendment; `migration-disposition-ledger.md`, Addendum 2). The entry below is
+kept as the record of *why* the default is the tier filter — the argument no
+longer decides which code ships, only which mode a run should pick.
+
+**What to look at.** This was the largest behavioural difference between the two
 lineages and the change that closed the equivalence gate, so it deserves the
 most scrutiny.
 
@@ -359,8 +370,15 @@ restored ordering, with new cases for both company schemas (`ownership_type`
 naming the rungs, `ownership_level` numbering them) and for an input carrying
 neither, which warns and keeps every row.
 
-**If you think summing tiers is right**, this is the entry to argue, and the
-number to argue about is the 2.2×.
+**If you think summing tiers is right**, it is now a setting rather than an
+argument: `ownership_aggregation: "sum"`. The 2.2× is the reason the default is
+not that — a run must state which reading it used, and two runs on different
+readings cannot be compared on absolute numbers.
+
+The consolidation regression test carries both modes: the tier-first cases
+above, plus `"sum"` totalling one company's 50.00% direct and 0.45% equity
+stakes to 50.45%, an equity-only holder that `"tier_filter"` drops and `"sum"`
+keeps, and a `ValueError` naming both options on anything else.
 
 ---
 
@@ -464,7 +482,7 @@ tests, consistent with the 37 already there.
 
 | Decide first | Why it matters |
 | --- | --- |
-| **OWN-1** ownership tier | 2.2× on every absolute output |
+| ~~**OWN-1** ownership tier~~ — settled: `ownership_aggregation`, default `"tier_filter"` | was 2.2× on every absolute output; now a documented mode switch |
 | **Q2-1** price ramp labels rows `baseline` | silently neutralises any future split between the two discount rates |
 | **Q2-3** negative perpetuity | reverses an explicit design choice of yours |
 | **Q1-2** replacement CapEx base | changes what "maintenance" means in the model |
