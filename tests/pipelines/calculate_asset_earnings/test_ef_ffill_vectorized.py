@@ -20,7 +20,6 @@ docs/superpowers/plans/consolidation-clash-report.md, entry Q3-1.
 
 import numpy as np
 import pandas as pd
-
 from altr_model.pipelines.calculate_asset_earnings.nodes import (
     ASSET_SERIES_KEYS,
     validate_asset_trajectories,

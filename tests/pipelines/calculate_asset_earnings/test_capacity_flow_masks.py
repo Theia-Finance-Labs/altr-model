@@ -20,7 +20,6 @@ annual capital maintenance).
 """
 
 import pandas as pd
-
 from altr_model.pipelines.calculate_asset_earnings.nodes import compute_capacity_flows
 
 YEARS = [2025, 2026, 2027]

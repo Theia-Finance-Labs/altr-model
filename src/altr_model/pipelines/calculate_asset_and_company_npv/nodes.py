@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 CARBONTECH_ALIGNMENTS = {"misaligned_high_carbon", "aligned_high_carbon"}
 
 
-def compute_yearly_npv_trajectories(  # noqa: PLR0913, PLR0917
+def compute_yearly_npv_trajectories(
     asset_earnings: pd.DataFrame,
     discount_rate_baseline: float = 0.07,
     discount_rate_shock: float = 0.08,

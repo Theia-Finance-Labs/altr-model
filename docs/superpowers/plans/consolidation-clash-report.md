@@ -442,6 +442,22 @@ Row counts match exactly at both levels and no key exists on one side only.
 Every deviation is at float64 accumulation noise; **no residual difference
 requires an explanation, and none is attributed to MCPR.**
 
+### GATE-4 · Lint delta · FYI
+
+`ruff check src` goes 105 → 109. The four are all the mechanical consequence of
+the parameters the ruling adds, in rule categories that already had hits:
+
+* `PLR0913` +3 — `compute_yearly_npv_trajectories`, `compute_ops_block`,
+  `combine_company_trajectory_cases` and `prepare_asset_forecast_panel` each
+  gained ported parameters;
+* `PLR0912` +1 — the terminal-value ladder branches.
+
+**No new rule category, and zero net-new `# noqa`.** A `# noqa: PLR0913` was
+briefly added to `compute_yearly_npv_trajectories` and then removed: the honest
+count is better than a suppressed one. `src/` now carries no `noqa` at all. The
+remaining `tests/` delta is `PLR2004` magic values in the new characterization
+tests, consistent with the 37 already there.
+
 ---
 
 ## Summary for review
