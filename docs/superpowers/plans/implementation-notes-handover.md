@@ -535,3 +535,15 @@ Consequences:
   his own review.
 - Config: Jakub's toggles land in Bertrand's six per-pipeline parameter
   files under his key style; no new config files.
+
+### Branching model (owner, 2026-09-01): stacked PRs, one merge train
+
+- `feat/portable-handover` (PR #55) is FROZEN pending Bertrand's review — no
+  further commits; his review target must not move under him.
+- All follow-up work stacks: `feat/consolidation-followups` branches off
+  `feat/portable-handover` (pushed); subsequent branches stack on that.
+  Each gets its own PR based on its parent branch.
+- Merge: the whole stack lands on `main` in one go, in order, after reviews.
+  Candidates for the followups branch: Bertrand's DECIDE outcomes, the
+  Dockerfile entrypoint fix, golden pinning post carbon-price fix,
+  Q1-5 dead validate cleanup.
