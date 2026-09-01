@@ -463,3 +463,32 @@ it, so dropping it would have broken that node.
 - **Fixture outputs therefore did not change and the pinned integration values
   in `tests/integration/test_fixture_run.py` were left untouched** — verified by
   the pins passing unmodified, not by assumption.
+
+## Decisions recorded 2026-09-01 (Jakub)
+
+1. **MCPR is retired.** It is NOT ported to the client/external version. This
+   matches `main`, which already contains zero MCPR code — so nothing is undone,
+   the handover branch's MCPR simply is not carried forward. MCPR lives on in
+   `feat/handover-package` history if it is ever wanted back.
+   NOTE: AGENTS.md requires Bertrand's review for ALTR/MCPR changes — this
+   retirement should be confirmed with him on the record.
+2. **Repo naming settled and executed.**
+   - `Theia-Finance-Labs/altr-model` = INTERNAL repo (was `crispy-kedro`).
+     Completes the migration the code already reflects.
+   - `Theia-Finance-Labs/altr-model-refactored` = EXTERNAL package repo
+     (was the placeholder `altr-model`). Temporary name while the refactored
+     package is tested; the long-term intent is consolidation under one repo.
+   - Both private. Renamed, never deleted — `export-package` @ df1432f intact,
+     and also archived internally as branch `export-package-archive`.
+   - CONSEQUENCE: the name `altr-model` was reused, so GitHub redirects from the
+     old external `altr-model` are broken. Any remote still pointing at
+     `altr-model.git` and expecting the external package now reaches the
+     INTERNAL repo. Local remotes updated; teammates must repoint by hand.
+   - The shipped `altr_documentation.pdf` hardcodes the `altr-model` clone URL,
+     which is now internal. The PDF is a delivered binary and cannot be edited,
+     so docs/handover/{index,quickstart}.md now supersede it explicitly.
+3. **`bwdy9jzmvv-code` ("Jakob") is a known colleague** — org member, read access
+   via org `default_repository_permission: read`. Not an incident.
+   Still true and worth acting on: org-wide default read means any future member
+   gets every private repo, and `two_factor_requirement_enabled` is false.
+   External collaborators must be added as OUTSIDE collaborators, never members.

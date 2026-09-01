@@ -45,13 +45,21 @@ is deliberate: where the number comes from should never be a matter of trust.
 | Methodology reference (PDF) | [ALTR Model User Guide](altr_documentation.pdf) |
 | This site | `docs/handover/`, built with `mkdocs` |
 
-!!! warning "Where the PDF names tooling this package does not have"
+!!! warning "Where the PDF describes the internal setup, not this package"
     The PDF documents the *methodology*, and was written against the internal
-    setup: it refers in places to a Docker Compose configuration and to a
-    `notebooks/run_kedro_batch.py` batch runner, neither of which ships here.
-    The equivalents in this package are `scripts/prepare_inputs.py` to stage
-    the delivered data and `kedro run` to run the model - both exactly as the
-    [quickstart](quickstart.md) gives them.
+    setup. Three places where it does not describe what you have:
+
+    * It names a Docker Compose configuration and a
+      `notebooks/run_kedro_batch.py` batch runner, neither of which ships here.
+      The equivalents are `scripts/prepare_inputs.py` to stage the delivered
+      data and `kedro run` to run the model - both exactly as the
+      [quickstart](quickstart.md) gives them.
+    * It gives the clone URL as `Theia-Finance-Labs/altr-model`. **That is the
+      internal repository.** This package lives at
+      `Theia-Finance-Labs/altr-model-refactored`; use the URL in the
+      [quickstart](quickstart.md).
+    * Its worked examples carry identifiers from the full internal run. They
+      illustrate the format; they are not the data you were delivered.
 
 The eight stages, in the order they run:
 

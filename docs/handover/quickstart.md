@@ -11,9 +11,14 @@ copy-pasteable; run them from the repository root unless stated otherwise.
 ## 1. Get the code
 
 ```bash
-git clone <repository-url> altr-model
-cd altr-model
+git clone https://github.com/Theia-Finance-Labs/altr-model-refactored.git
+cd altr-model-refactored
 ```
+
+!!! warning "Not `altr-model`"
+    The methodology PDF gives the clone URL as `Theia-Finance-Labs/altr-model`.
+    That is the internal development repository and is not what this package
+    is - clone `altr-model-refactored`, as above.
 
 ## 2. Create a virtual environment and install
 
