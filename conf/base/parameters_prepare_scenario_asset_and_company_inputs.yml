@@ -39,7 +39,27 @@ target_scenario: "AR6_AIM/CGE 2.2_EN_NPi2020_900f"
 # views of the same capacity, not additive ones, so a run reports on one tier.
 # The tier is selected BEFORE stakes are consolidated, so consolidation only ever
 # sums within the tier it was given.
+# Read only when `ownership_aggregation` is "tier_filter" (the default); "sum"
+# keeps every tier and ignores this key.
 ownership_type: "direct"
+
+# ── Ownership aggregation ─────────────────────────────────────────────────────────
+# How the several stakes one company holds in one asset-year are combined.
+# Values: "tier_filter" (DEFAULT) | "sum".
+#   "tier_filter" — select the `ownership_type` rung above, then consolidate the
+#     duplicate stakes WITHIN that rung into one row per company-asset-year. The
+#     tiers are alternative views of the same capacity, so only one is reported.
+#     This is the validated baseline: it is the behaviour the pinned fixture NPVs
+#     and last year's published results were produced under.
+#   "sum" — total every holding: direct + equity per company-asset-year, all
+#     tiers entering. This is TRISK's reading, and the mode to pick when results
+#     have to line up with a TRISK run.
+# Absolute outputs are NOT comparable across the two modes. On the fixture slice
+# one company holds a plant at 50.00% direct and 0.45% equity: "tier_filter"
+# gives it 50.00%, "sum" gives it 50.45%, and the owner-asset universe grows
+# roughly 2.2× under "sum" — every absolute number (NPV, earnings, capacity)
+# scales with it. Only within-mode comparisons mean anything.
+ownership_aggregation: "tier_filter"
 
 
 # ── Output granularity ────────────────────────────────────────────────────────────

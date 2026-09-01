@@ -188,14 +188,38 @@ def _select_ownership_tier(
     return selected
 
 
+#: Accepted values of the `ownership_aggregation` parameter, in the order the
+#: error message lists them; the first is the default.
+OWNERSHIP_AGGREGATIONS = ("tier_filter", "sum")
+
+
 def filter_companies(
     companies_ownerships: pd.DataFrame,
     company_ids: List[str],
     ownership_type: str = "direct",
+    ownership_aggregation: str = OWNERSHIP_AGGREGATIONS[0],
 ) -> pd.DataFrame:
+    """Reduce the ownership table to one stake row per company-asset-year.
+
+    `ownership_aggregation` decides how a company's several stakes in one asset
+    combine - see the annotated key in
+    `conf/base/parameters_prepare_scenario_asset_and_company_inputs.yml`.
+    """
+    if ownership_aggregation not in OWNERSHIP_AGGREGATIONS:
+        raise ValueError(
+            f"ownership_aggregation must be one of {OWNERSHIP_AGGREGATIONS}, "
+            f"got {ownership_aggregation!r}. Use 'tier_filter' to report on one "
+            "ownership tier (the validated default) or 'sum' to total every "
+            "holding a company has in an asset-year."
+        )
+
     # Tier first, then consolidate: consolidation sums the stakes it is given,
-    # so it must only ever see one rung of the tree.
-    companies_ownerships = _select_ownership_tier(companies_ownerships, ownership_type)
+    # so under "tier_filter" it must only ever see one rung of the tree. Under
+    # "sum" it is handed every rung deliberately.
+    if ownership_aggregation == "tier_filter":
+        companies_ownerships = _select_ownership_tier(
+            companies_ownerships, ownership_type
+        )
     companies_ownerships = _consolidate_ownership_stakes(companies_ownerships)
 
     if company_ids:

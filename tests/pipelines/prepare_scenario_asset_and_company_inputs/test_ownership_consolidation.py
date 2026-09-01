@@ -22,9 +22,16 @@ the same tier in one asset-year, which do add up.
 ``_consolidate_ownership_stakes`` is still tested on its own, on a frame that
 mixes tiers, because its contract is "sum whatever you are given" and that is
 what the ordering above relies on.
+
+That ordering is the DEFAULT, not the only behaviour: the same ruling made it
+the ``ownership_aggregation: "tier_filter"`` mode, alongside ``"sum"``, which
+skips the tier selection so a company's direct and equity holdings are totalled
+(TRISK's reading). The tests up to ``test_a_companies_input_with_no_tier_column…``
+pin the default; the section after it pins the alternative.
 """
 
 import pandas as pd
+import pytest
 
 from altr_model.pipelines.prepare_scenario_asset_and_company_inputs._input_nodes import (  # noqa: E501
     _consolidate_ownership_stakes,
@@ -164,3 +171,66 @@ def test_a_companies_input_with_no_tier_column_keeps_every_row():
     out = filter_companies(frame, [])
 
     assert out.set_index(KEY)["ownership_percentage"].loc[("C1", "A1", 2030)] == 50.45
+
+
+# ── ownership_aggregation ────────────────────────────────────────────────────
+# The owner ruling of 2026-09-01 made the tier-first ordering above a MODE
+# rather than the only behaviour: `tier_filter` (default, the validated
+# baseline) versus `sum` (total direct + equity per company-asset-year, the
+# TRISK-comparable reading). The tests above pin `tier_filter`; these pin the
+# alternative and the boundary between them.
+
+
+def _with_an_equity_only_holder() -> pd.DataFrame:
+    """The multi-stake frame plus a company whose ONLY stake is an equity one.
+
+    It is the case that separates the modes at the company level, not just the
+    percentage level: `tier_filter` on "direct" drops such a holder entirely,
+    `sum` keeps it.
+    """
+    equity_only = pd.DataFrame(
+        [("A3", "plant-3", "C3", "Gamma", 2030, "equity", 10.00)],
+        columns=[
+            "asset_id",
+            "asset_name",
+            "company_id",
+            "company_name",
+            "year",
+            "ownership_type",
+            "ownership_percentage",
+        ],
+    ).assign(sector="Power", technology="CoalCap")
+    return pd.concat([_multi_stake_frame(), equity_only], ignore_index=True)
+
+
+def test_sum_mode_totals_the_direct_and_equity_stakes_into_one_row():
+    """Bertrand's semantics: every holding enters, so Acme's 50.00 direct and
+    0.45 equity stakes in plant-1 become a single 50.45 row."""
+    out = filter_companies(_multi_stake_frame(), [], ownership_aggregation="sum")
+
+    assert not out.duplicated(KEY).any(), "duplicate (company, asset, year) keys"
+    assert out.set_index(KEY)["ownership_percentage"].loc[("C1", "A1", 2030)] == 50.45
+
+
+def test_tier_filter_is_the_default_and_keeps_only_the_selected_rung():
+    """The default is the validated baseline: the equity rung is not added in."""
+    out = filter_companies(_multi_stake_frame(), [])
+
+    assert out.set_index(KEY)["ownership_percentage"].loc[("C1", "A1", 2030)] == 50.00
+
+
+def test_an_equity_only_holder_is_dropped_by_tier_filter_and_kept_by_sum():
+    frame = _with_an_equity_only_holder()
+
+    tiered = filter_companies(frame, [], ownership_aggregation="tier_filter")
+    summed = filter_companies(frame, [], ownership_aggregation="sum")
+
+    assert "C3" not in set(tiered.company_id)
+    assert summed.set_index(KEY)["ownership_percentage"].loc[("C3", "A3", 2030)] == 10.00
+
+
+def test_an_unknown_ownership_aggregation_names_both_options():
+    with pytest.raises(ValueError, match="tier_filter"):
+        filter_companies(_multi_stake_frame(), [], ownership_aggregation="average")
+    with pytest.raises(ValueError, match="sum"):
+        filter_companies(_multi_stake_frame(), [], ownership_aggregation="average")
