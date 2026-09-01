@@ -48,12 +48,14 @@ def _git_sha() -> str:
         return "unknown"
 
 
-def _as_source_path(csv: Path) -> str:
-    """Path recorded in the manifest: relative to cwd when possible."""
-    try:
-        return str(csv.resolve().relative_to(Path.cwd().resolve()))
-    except ValueError:
-        return str(csv.resolve())
+def _as_source_path(csv: Path, run_dir: Path) -> str:
+    """Path recorded in the manifest: relative to the run directory.
+
+    Relative to ``--run-dir`` rather than to the cwd so a snapshot directory
+    copied into another checkout still resolves (the test joins these onto the
+    manifest's ``run_dir``).
+    """
+    return str(csv.resolve().relative_to(run_dir.resolve()))
 
 
 def pin(run_dir: Path, out_dir: Path) -> list[dict[str, str]]:
@@ -72,7 +74,7 @@ def pin(run_dir: Path, out_dir: Path) -> list[dict[str, str]]:
         frame.to_parquet(out_dir / snapshot, index=False)
         tables.append(
             {
-                "source": _as_source_path(csv),
+                "source": _as_source_path(csv, run_dir),
                 "snapshot": snapshot,
                 "pinned_at": pinned_at,
                 "git_sha": sha,
@@ -83,7 +85,17 @@ def pin(run_dir: Path, out_dir: Path) -> list[dict[str, str]]:
     if not tables:
         raise SystemExit(f"no key output tables found under {run_dir}")
     (out_dir / "manifest.json").write_text(
-        json.dumps({"pinned_at": pinned_at, "git_sha": sha, "tables": tables}, indent=2)
+        json.dumps(
+            {
+                "pinned_at": pinned_at,
+                "git_sha": sha,
+                # Table sources are relative to this; edit it if the run
+                # directory moves rather than re-pinning.
+                "run_dir": str(run_dir),
+                "tables": tables,
+            },
+            indent=2,
+        )
     )
     return tables
 
