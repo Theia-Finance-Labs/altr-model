@@ -493,3 +493,29 @@ it, so dropping it would have broken that node.
    Still true and worth acting on: org-wide default read means any future member
    gets every private repo, and `two_factor_requirement_enabled` is false.
    External collaborators must be added as OUTSIDE collaborators, never members.
+
+## Owner decisions 2026-09-01 (consolidation — supersedes the external-delivery framing)
+
+1. **End-state: ONE repo, `Theia-Finance-Labs/altr-model`.** Bertrand's structure
+   (naming, pipeline layout, cleanup, incl. his last-week commits) is the frame;
+   ALL of Jakub's model fixes are implemented into it. External-delivery phases
+   (P5, Phase 6, altr-model-refactored) are superseded.
+2. **P3 adjudications RESOLVED by owner ruling:** the model must behave as it
+   did for Jakub on the handover lineage, with all fixes — Q1 (replacement/
+   retirement masks), Q2 (056d1f6 NPV-direction feature set: price_ramp,
+   stranding, dynamic marginal EF, replacement capex, decom costs), Q3 (EF
+   forward-fill), Q4 (frozen capacity at retirement) are PORTED onto main's
+   structure. Every place Bertrand's recent behaviour differs is FLAGGED in a
+   clash report for joint review — his structural conventions win, Jakub's
+   behaviour wins, clashes surface rather than silently resolve.
+   MCPR remains retired (unchanged).
+3. **Verification bar:** the consolidated repo's fixture outputs must
+   reproduce the handover branch's outputs (Jakub's behaviour) within
+   tolerance — behaviour equivalence, not just green tests.
+4. **`altr-model-refactored` will be DELETED** (owner instruction) once the
+   consolidated repo passes its gates. Nothing unique is lost: its
+   export-package (df1432f) is archived internally as export-package-archive;
+   its main duplicates internal main. Deletion is the LAST step, after
+   validation, so a rollback path exists throughout.
+5. Merge to main still goes through a PR with Bertrand as reviewer
+   (AGENTS.md gate) — also the natural venue for the clash report.
