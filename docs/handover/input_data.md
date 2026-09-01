@@ -58,6 +58,18 @@ asset-company ownership link per year.
 | `technology` | string | Technology the asset uses within its sector. |
 | `year` | int | Year this ownership link applies to. |
 | `ownership_percentage` | float | Share of the asset owned by the company, on the **0-100 percent scale**. |
+| `ownership_type` | string | Which rung of the ownership tree the row records: `direct` or `equity`. The newer `ownership_level` column, which numbers the rungs (1 = direct, 2+ = indirect), satisfies the same requirement. |
+
+!!! warning "The ownership tier column is required"
+    A companies file carrying neither `ownership_type` nor `ownership_level`
+    is rejected by `scripts/prepare_inputs.py` with a `ValueError` naming the
+    column. It is not an optional refinement: the tiers are alternative views
+    of the same capacity, so without one the whole ownership chain enters the
+    run and the same plant is allocated to every rung that claims it. On the
+    2026-08-25 deliverables drop, which predates the column, 92% of
+    asset-years summed above 105% (median 227%). If your drop lacks it, ask
+    for a re-export that includes `ownership_type` rather than converting
+    what you have.
 
 !!! warning "Percent scale, not fraction"
     `ownership_percentage` is on the 0-100 scale: a half-owned asset carries

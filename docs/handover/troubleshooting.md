@@ -82,6 +82,10 @@ or a file re-saved by a spreadsheet application (which silently renames or
 reorders columns). The script validates everything before it writes anything, so
 `data/05_model_input/` is untouched: fix the source file and re-run.
 
+A companies file with no `ownership_type` (or `ownership_level`) column fails
+the same way: the 2026-08-25 deliverables drop predates that column, so it needs
+the re-exported version rather than a conversion of what you have.
+
 The scenarios check is the strictest of the three: beyond the pathway columns it
 requires the whole cost block (`lifetime_years`, `efficiency_decimal`,
 `capital_cost_usd_per_mw`, `om_cost_usd_per_mw_per_yr`,
