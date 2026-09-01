@@ -23,6 +23,7 @@ import re
 import shutil
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -39,10 +40,13 @@ SKIP_RELATIVE = (
     "src/crispy_kedro/pipelines/download_inputs",
     "tests/pipelines/download_inputs",
     "conf/base/parameters_download_inputs.yml",
+    # Full-input smoke test: needs the internal data drop, so it can only fail
+    # for a recipient. Kept in the internal repo, not shipped.
+    "tests/test_run.py",
 )
 
 #: The three deliverables files staged into ``data/01_raw/`` by --data-source.
-#: ``scenarios.csv`` is often delivered zipped; either form is accepted.
+#: ``scenarios.csv`` is often delivered zipped; a zip is extracted, not copied.
 DELIVERABLES = ("assets_forecasts.csv", "companies_ownerships.csv", "scenarios.csv")
 
 #: Warehouse-backed catalog entries used only by ``download_inputs``. They carry
@@ -232,6 +236,26 @@ def write_readme(dest_root: Path) -> None:
     )
 
 
+def extract_deliverable(archive: Path, raw: Path, name: str) -> None:
+    """Extract ``name`` out of a zipped deliverable into ``raw``.
+
+    ``prepare_inputs.py`` reads CSVs, so a copied-through archive would only
+    surface as a confusing "deliverable not found" later. The member is written
+    to ``raw / name`` by hand rather than with ``extractall``, so a member path
+    inside the archive cannot decide where anything lands.
+    """
+    with zipfile.ZipFile(archive) as bundle:
+        member = next(
+            (m for m in bundle.namelist() if Path(m).name == name), None
+        )
+        if member is None:
+            raise SystemExit(
+                f"{archive}: no {name} inside (members: {bundle.namelist()[:10]})"
+            )
+        with bundle.open(member) as source, (raw / name).open("wb") as target:
+            shutil.copyfileobj(source, target)
+
+
 def stage_data(dest_root: Path, data_source: Path | None) -> list[str]:
     """Stage the deliverables into ``data/01_raw/``; returns what was staged."""
     raw = dest_root / "data" / "01_raw"
@@ -251,6 +275,10 @@ def stage_data(dest_root: Path, data_source: Path | None) -> list[str]:
         found = next((c for c in candidates if c.is_file()), None)
         if found is None:
             raise SystemExit(f"deliverable not found in {data_source}: {name}[.zip]")
+        if found.suffix == ".zip":
+            extract_deliverable(found, raw, name)
+            staged.append(f"{name} (extracted from {found.name})")
+            continue
         shutil.copy2(found, raw / found.name)
         staged.append(found.name)
     return staged

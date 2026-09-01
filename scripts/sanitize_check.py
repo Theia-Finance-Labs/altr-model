@@ -134,12 +134,6 @@ EXCEPTIONS: tuple[Suppression, ...] = (
         "stripped by build_export.py.",
     ),
     Suppression(
-        "conf/fixture/catalog.yml",
-        "bigquery",
-        "Comment noting which base datasets need no fixture override. Names a "
-        "public product, carries no project or dataset identifier.",
-    ),
-    Suppression(
         "src/crispy_kedro/pipelines/inputs_processing/nodes.py",
         "bigquery",
         "Comments recording input-schema history (which columns the current "

@@ -18,6 +18,7 @@ notebooks/walkthrough.ipynb
 tests/                       # minus pipelines/download_inputs — handled in code
 scripts/prepare_inputs.py
 scripts/gen_param_docs.py
+scripts/pin_golden.py        # lets recipients pin their own golden baseline
 pyproject.toml
 poetry.lock
 LICENSE
