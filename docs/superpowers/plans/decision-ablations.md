@@ -54,6 +54,61 @@ baseline pathway untouched (Δ exactly 0) and moves only the shock side.
 
 ---
 
+## D2 resolved 2026-09-02 — synthetic top-ups inherit their fleet's emission factor
+
+The owner took D2's real question — not the inert ffill-vs-zero-fill choice, but
+the zero-fill fallback behind it — and ruled on it. The 181 synthetic assets no
+longer burn free.
+
+**The rule as shipped.** Per synthetic asset and per year, the emission factor is
+the **capacity-weighted mean EF of the company's own real assets in the same
+(sector, technology, scenario_geography) group**. Where the company has no real
+asset in that group the fallback chain runs: (1) all real assets in that
+**technology × geography**, (2) the **technology** as a whole, (3) only then zero,
+logging a WARNING naming the technology. A year in which the weighting basis
+carries no capacity — every real asset in the group retired or standing at
+zero — takes the group's **nearest available year** (forward-fill, then
+backward-fill, within the constructed EF series).
+
+Implemented in `combine_asset_allocation_branches`
+(`allocate_company_trajectories_to_assets/nodes.py`), immediately after the merge
+that leaves synthetics with a null EF — the same place the pre-existing renewable
+zero-fill sits. That renewable rule **runs first and is untouched**: renewable
+synthetics keep their explicit zero rather than inheriting one, so the change
+lands only on the population D2 named.
+
+**One interpretive choice, recorded.** The spec says "weight by the same year's
+capacity" without naming which capacity. The shipped weight is **BAU capacity**
+(`asset_baseline_trajectory`), not post-shock capacity. The EF column is
+single-valued per asset-year and is read by both pathways, so weighting it by a
+shocked capacity would make the *baseline's* carbon cost a function of the shock.
+
+**Measured impact — fixture slice.** The committed fixture holds 52 synthetic
+`OilCap - w/o CCS` rows, which now carry **EF 0.842126** inherited from the real
+OilCap fleet. One pinned value moves: company `CN_6488161088428600082`'s
+late-and-sudden NPV, **−71,108,467,857.10 → −71,117,122,653.48**, a change of
+**−8,654,796.38 (−0.0122%)**. Every baseline pin, every asset-level pin, both row
+counts and all three FCFF pins are unchanged.
+
+**Only the shock pathway can move.** A synthetic top-up's baseline capacity is
+zero by construction (`asset_baseline_trajectory = 0` at creation), so it has no
+baseline production for the new emission factor to act on. The adjustment
+therefore widens the shock-minus-baseline gap rather than shifting both sides —
+which is the direction D2 argued was missing.
+
+**Full-universe delta: not yet measured.** Re-running `--env full --tags altrisk`
+and re-pinning the golden snapshots is blocked on the same constraint that killed
+A1 (see *Method, caveats, and run failures* below): the volume now sits at
+**~0.42 GB free** and `data/07_model_output` needs an estimated **~1.8 GB**
+(≈0.50 GB `asset_earnings`, ≈0.52 GB `asset_trajectories`, ≈0.49 GB
+`yearly_npv_trajectories`, plus the company-level tables). The golden snapshots in
+`tests/golden/snapshots/` are still pinned to `015a861` and therefore **predate
+this change** — `test_outputs_match_golden` will report drift on the affected
+technologies until the run is done and the baseline re-pinned with
+`pin_golden.py --require-sha <run sha>`.
+
+---
+
 ## Detail: A6 and the 2039 capex spike
 
 Capex (bn USD, both trajectories summed) and total capacity (GW):

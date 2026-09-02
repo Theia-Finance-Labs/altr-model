@@ -273,6 +273,43 @@ Inert on the committed fixture slice, whose EF series already spans the horizon 
 the regression pins did not move. It bites on inputs whose EF series is shorter
 than the trajectory, which is the production case the handover branch hit.
 
+### Q3-2 · Synthetic top-ups had no emission factor at all · **OWNER-ORDERED**
+
+| | |
+| --- | --- |
+| Your form | Synthetic assets match nothing in the EF merge; the null reaches `fillna(0.0)` and they pay no carbon cost |
+| Handover form | Identical — neither lineage attaches an EF to a synthetic asset |
+| Done | Synthetic top-ups inherit the capacity-weighted EF of the real assets they are built out from (`combine_asset_allocation_branches`, 2026-09-02) |
+
+**What to look at.** This is not a clash between the two lineages — both behave
+the same way, and the ablation work (decision D2) found the behaviour rather than
+the merge. Allocation joins EF from the real-asset panel on `asset_id`; the
+synthetic `NEW_<company>_<sector>_<technology>_<geography>` rows match nothing,
+and the resulting null is zero-filled a stage later. **181 synthetic assets /
+9,412 rows — `BiomassCap - w/o CCS` and `OilCap - w/o CCS` — were therefore
+priced as emitting nothing in both pathways**, which flatters exactly the
+technologies a transition shock should penalise.
+
+The owner ruled on 2026-09-02: per synthetic asset and year, EF is the
+capacity-weighted mean EF of the company's own real assets in the same
+(sector, technology, scenario_geography) group; failing that, all real assets in
+that technology × geography; failing that, the technology as a whole; and only
+then zero, with a warning naming the technology. Years whose weighting basis
+carries no capacity take the group's nearest available year.
+
+Two things worth your judgement. **The weight is BAU capacity, not post-shock
+capacity** — the EF column is single-valued per asset-year and read by both
+pathways, so a shocked weight would make the baseline's carbon cost depend on the
+shock. And **the renewable zero-fill still runs first**, so renewable synthetics
+keep their explicit zero instead of inheriting one; the change lands only on the
+non-renewable population above.
+
+Not inert. The fixture slice's 52 synthetic `OilCap - w/o CCS` rows now carry EF
+0.842126 and one pin was re-derived: `CN_6488161088428600082`'s shock NPV by
+**−8,654,796.38 (−0.0122%)**. Only the shock side moves — a synthetic's baseline
+capacity is zero, so it has no baseline carbon cost to change. The full-universe
+delta is pending a run (see `decision-ablations.md`, *D2 resolved 2026-09-02*).
+
 ---
 
 ## Q4 — Frozen capacity at retirement
