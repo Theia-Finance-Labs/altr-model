@@ -40,10 +40,12 @@ baseline and the target assumptions.
     **`"tier_filter"` (default)** treats the tiers as alternative **views** of
     the same capacity, not additive components of it, so `ownership_type`
     selects one rung (`"direct"` by default) before anything is summed.
-    `_consolidate_ownership_stakes` then groups on `(company_id, company_name,
-    asset_id, asset_name, sector, technology, year)` and **sums**
-    `ownership_percentage` within that rung, collapsing several same-tier stakes
-    in one asset-year into one row. The order matters: consolidating first would
+    `_consolidate_ownership_stakes` then groups on `(company_id, asset_id,
+    sector, technology, year)` and **sums** `ownership_percentage` within that
+    rung, collapsing several same-tier stakes in one asset-year into one row.
+    `company_name` and `asset_name` are carried along as labels rather than
+    grouped on: as keys, a blank name deletes the stake outright, and a name
+    filled on one sibling row but not the other splits one stake into two. The order matters: consolidating first would
     give a company holding a plant at 50.00% direct **and** 0.45% equity a
     50.45% claim on it. This is the validated baseline - the pinned fixture NPVs
     were produced under it.

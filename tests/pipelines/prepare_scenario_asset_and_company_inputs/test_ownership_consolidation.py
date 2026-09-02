@@ -40,7 +40,8 @@ from altr_model.pipelines.prepare_scenario_asset_and_company_inputs._input_nodes
 
 KEY = ["company_id", "asset_id", "year"]
 
-#: The columns `_consolidate_ownership_stakes` groups on, plus the summed one.
+#: What `_consolidate_ownership_stakes` returns: the five keys it groups on,
+#: the two name labels it carries as `first`, and the summed percentage.
 #: `ownership_type` is deliberately absent — see the assertion below.
 CONSOLIDATED_COLUMNS = {
     "company_id",
@@ -97,19 +98,22 @@ def test_multi_stake_rows_collapse_to_one_summed_row():
 
 
 def test_consolidation_drops_the_tier_column():
-    """`ownership_type` is not a group key and not summed, so it does not
-    survive. That is the point: a company's total stake is direct + equity, and
-    once they are added the tier of the merged row is meaningless. Nothing
-    downstream may read it — the parameter of the same name is gone too."""
+    """`ownership_type` is not a group key, not carried, and not summed, so it
+    does not survive. That is the point: a company's total stake is direct +
+    equity, and once they are added the tier of the merged row is meaningless.
+    Nothing downstream may read it. The PARAMETER of the same name is still
+    live — `filter_companies` reads it to pick the tier BEFORE consolidating
+    (see the `tier_filter` tests below) — it is the per-row column that ends
+    here."""
     out = _consolidate_ownership_stakes(_multi_stake_frame())
     assert "ownership_type" not in out.columns
 
 
 def test_nan_in_cosmetic_group_column_does_not_delete_the_stake():
-    """`groupby` drops NaN keys by default, and the roll-up groups on seven
-    columns — two of which (`company_name`, `asset_name`) are labels nothing
-    computes on. A blank one used to delete that company's stake outright, and
-    the capacity with it, with no row count to notice it by."""
+    """`groupby` drops NaN keys by default, and `company_name` / `asset_name`
+    are labels nothing computes on. Keyed on, a blank one deleted that
+    company's stake outright, and the capacity with it, with no row count to
+    notice it by. They are carried as `first` instead, so they cannot."""
     frame = _multi_stake_frame()
     frame.loc[frame.company_id == "C2", "company_name"] = pd.NA
 
@@ -117,6 +121,44 @@ def test_nan_in_cosmetic_group_column_does_not_delete_the_stake():
 
     assert "C2" in set(out.company_id), "an unnamed company kept its stake"
     assert out.set_index(KEY)["ownership_percentage"].loc[("C2", "A1", 2030)] == 20.00
+
+
+def test_siblings_disagreeing_about_a_name_are_still_one_stake():
+    """The other half of the same bug, and the reason the names are carried
+    rather than kept as NaN-tolerant keys.
+
+    Two rows of ONE stake — same company, asset, tier and year — where the
+    export filled the name on one and left it blank on the other. Keyed on the
+    name (NaN-tolerant or not) they land in different groups and the roll-up
+    emits TWO rows for one (company, asset, year): exactly the duplicate that
+    fails the per-asset pivot downstream with "Index contains duplicate
+    entries". They must sum to one row, and the row must be labelled from the
+    sibling that has a label."""
+    frame = pd.DataFrame(
+        [
+            ("A1", "plant-1", "C1", "Acme", 2030, "direct", 50.00),
+            ("A1", "plant-1", "C1", pd.NA, 2030, "direct", 20.00),
+        ],
+        columns=[
+            "asset_id",
+            "asset_name",
+            "company_id",
+            "company_name",
+            "year",
+            "ownership_type",
+            "ownership_percentage",
+        ],
+    ).assign(sector="Power", technology="CoalCap")
+
+    out = _consolidate_ownership_stakes(frame)
+
+    assert len(out) == 1, "one stake, one row — a blank name is not a second one"
+    assert out.loc[0, "ownership_percentage"] == 70.00
+    assert out.loc[0, "company_name"] == "Acme", "`first` skips the blank sibling"
+
+    # And through the tier selection, which is where it was first reproduced.
+    tiered = filter_companies(frame, [], ownership_type="direct")
+    assert not tiered.duplicated(KEY).any()
 
 
 def test_consolidation_preserves_the_asset_year_ownership_total():
@@ -211,9 +253,11 @@ def test_a_typo_under_the_numbered_schema_raises_instead_of_selecting_2_plus():
 
 
 def test_a_numbered_rung_that_maps_to_nothing_is_rejected():
-    """The numbered schema keeps its rung semantics — "direct" is level 1, any
-    other value is level 2+ — but a selection that maps to no row still raises
-    rather than emptying the panel."""
+    """The numbered schema keeps its rung semantics — "direct" is level 1,
+    "indirect"/"equity" are level 2+, a bare number is that level, and nothing
+    else is accepted — but a selection that maps to no row still raises rather
+    than emptying the panel. Here every row is level 1, so "equity" is a valid
+    name for a rung this frame does not carry."""
     frame = _multi_stake_frame().rename(columns={"ownership_type": "ownership_level"})
     frame["ownership_level"] = 1
 

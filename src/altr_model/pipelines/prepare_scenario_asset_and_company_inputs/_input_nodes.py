@@ -134,25 +134,53 @@ def _consolidate_ownership_stakes(companies_ownerships: pd.DataFrame) -> pd.Data
     duplicate rows survive into the per-company asset pivot later in the
     pipeline and it fails with "Index contains duplicate entries".
 
-    ``dropna=False``: pandas' default DELETES every row carrying NaN in any one
-    of the seven group keys, so a blank ``company_name`` or ``asset_name`` --
-    cosmetic columns nothing computes on -- would silently drop that company's
-    stake and its capacity with it. This is a roll-up, not a filter; it must
-    return the same total ownership it was handed. The NPV stage groups with
-    ``dropna=False`` for the same reason.
+    ``company_name`` and ``asset_name`` are NOT group keys. They are labels
+    nothing computes on, and keying on them broke the roll-up in both
+    directions: pandas' default drops every row with NaN in a key, so a blank
+    name deleted that company's stake and its capacity with it; and
+    ``dropna=False`` alone then SPLIT one stake into two whenever sibling rows
+    disagreed about a name (typically one blank, one filled), reinstating the
+    duplicate key this function exists to remove. Carried as ``first``
+    instead, they cannot do either - ``first`` skips NaN, so a name blank on
+    one row of a stake is taken from the row that has it, and a stake with no
+    name anywhere keeps its row with a NaN label.
+
+    ``dropna=False`` stays for the load-bearing keys: a NaN there is a real
+    data defect that must reach the run, not vanish from it. This is a
+    roll-up, not a filter; it must return the same total ownership it was
+    handed. The company-grain aggregations downstream
+    (``aggregate_assets_to_company_level``,
+    ``apply_reduce_granularity_from_asset_to_company_level``) carry the names
+    the same way, so an unnamed company survives to the company projection
+    inputs rather than being dropped one stage later.
     """
     group_cols = [
         "company_id",
-        "company_name",
         "asset_id",
-        "asset_name",
         "sector",
         "technology",
         "year",
     ]
-    return companies_ownerships.groupby(group_cols, as_index=False, dropna=False)[
-        "ownership_percentage"
-    ].sum()
+    consolidated = companies_ownerships.groupby(
+        group_cols, as_index=False, dropna=False
+    ).agg(
+        company_name=("company_name", "first"),
+        asset_name=("asset_name", "first"),
+        ownership_percentage=("ownership_percentage", "sum"),
+    )
+    # Column order as callers have always seen it (names beside their ids).
+    return consolidated[
+        [
+            "company_id",
+            "company_name",
+            "asset_id",
+            "asset_name",
+            "sector",
+            "technology",
+            "year",
+            "ownership_percentage",
+        ]
+    ]
 
 
 #: Configured `ownership_type` values the NUMBERED (`ownership_level`) schema
@@ -203,8 +231,9 @@ def _select_ownership_tier(
     reductions remain OUTSIDE this function, and both are handled where they
     happen: the no-tier-column branch below keeps every row (and
     `scripts/prepare_inputs.py` refuses a delivered file that reaches it), and
-    `_consolidate_ownership_stakes` groups with `dropna=False` so a NaN in a
-    cosmetic group key cannot delete a stake.
+    `_consolidate_ownership_stakes` keeps the cosmetic name columns out of its
+    group keys (and groups with `dropna=False`) so a blank name cannot delete
+    a stake.
     """
     if "ownership_type" in companies_ownerships.columns:
         column = companies_ownerships["ownership_type"]

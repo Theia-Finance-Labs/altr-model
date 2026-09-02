@@ -22,7 +22,8 @@ assets_forecasts.csv        none -- the deliverables schema is already the one
                             reshaped.
 companies_ownerships.csv    none. ``sector`` / ``technology`` / ``asset_name``
                             are KEPT: ``_consolidate_ownership_stakes`` groups
-                            on them, so dropping them breaks the roll-up. An
+                            on the first two and carries the third, so dropping
+                            any of them breaks the roll-up. An
                             ownership TIER column (``ownership_type``, or the
                             newer ``ownership_level``) is required -- see
                             ``require_ownership_tier``.

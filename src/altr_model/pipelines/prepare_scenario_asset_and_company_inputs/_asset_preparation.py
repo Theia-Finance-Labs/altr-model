@@ -13,19 +13,21 @@ def apply_reduce_granularity_from_asset_to_company_level(
     reduce_granularity_from_asset_to_company_level: bool,
 ) -> pd.DataFrame:
     if reduce_granularity_from_asset_to_company_level:
+        # `company_name` is carried as `first`, not grouped on: as a group key
+        # it deletes an unnamed company's whole synthetic asset (pandas drops
+        # NaN keys). See `_consolidate_ownership_stakes` for the full argument.
+        group_cols = [
+            "company_id",
+            "scenario_geography",
+            "sector",
+            "technology",
+            "year",
+            "capacity_unit",
+        ]
         companies_forecasts = (
-            assets_forecasts.groupby(
-                [
-                    "company_id",
-                    "company_name",
-                    "scenario_geography",
-                    "sector",
-                    "technology",
-                    "year",
-                    "capacity_unit",
-                ],
-            )
+            assets_forecasts.groupby(group_cols)
             .agg(
+                company_name=("company_name", "first"),
                 asset_age=("asset_age", "mean"),
                 age_is_inferred=("age_is_inferred", "first"),
                 ownership_percentage=("ownership_percentage", "mean"),
@@ -35,6 +37,19 @@ def apply_reduce_granularity_from_asset_to_company_level(
             )
             .reset_index()
         )
+        # Column order as callers have always seen it (name beside its id).
+        companies_forecasts = companies_forecasts[
+            ["company_id", "company_name"]
+            + group_cols[1:]
+            + [
+                "asset_age",
+                "age_is_inferred",
+                "ownership_percentage",
+                "asset_activity",
+                "capacity_factor",
+                "emission_factor",
+            ]
+        ]
 
         companies_forecasts["asset_id"] = (
             "unique_company_asset_"

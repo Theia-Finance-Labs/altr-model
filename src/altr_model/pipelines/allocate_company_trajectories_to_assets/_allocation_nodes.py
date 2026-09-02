@@ -1266,8 +1266,13 @@ def stagger_increasing_technologies(
     Increasing techs:
       - Real assets: BAU passthrough (alloc=0, before=after=BAU).
       - Synthetic: for each year t >= shock_year, take max(0, company[t] - sum_real[t]).
-        This guarantees sum(real + synthetic) matches the company L&S each year
-        even when real BAU grows after the shock.
+
+    The top-up is ONE-SIDED: it closes a shortfall and never corrects a
+    surplus. So sum(real + synthetic) tracks the company L&S only where real
+    BAU falls short of it. Where real BAU has already grown past the company
+    series the clip pins the synthetic build at zero and the asset sum stays
+    ABOVE it; before ``shock_year`` there is no synthetic capacity at all and
+    the sum is plain BAU.
 
     Returns:
         Tuple[pd.DataFrame, pd.DataFrame]: (asset_level_results, company_level_trajectories)
