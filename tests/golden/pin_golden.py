@@ -2,7 +2,10 @@
 
 Snapshots the key output tables of a completed run to parquet under
 `tests/golden/snapshots/` plus a `manifest.json`, so `tests/golden/test_golden.py`
-can compare later runs against them with a numeric tolerance.
+can compare later runs against them with a numeric tolerance. The manifest also
+records the SHA-256 of the three model inputs the run was fed, so a later golden
+failure can be read as "the code moved" or "the data moved" rather than guessed
+at.
 
 Usage (from the repo root of the tree that holds the run):
 
@@ -25,6 +28,7 @@ re-label it.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import subprocess
@@ -32,6 +36,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
+
+#: The three CSVs `conf/base/catalog.yml` feeds the run from. Hashed into the
+#: manifest so a baseline names the DATA it was produced from, not just the
+#: code: identical outputs off different inputs are a coincidence, not a pass,
+#: and a golden diff is unreadable without knowing whether the inputs moved.
+MODEL_INPUT_DIR = Path(__file__).resolve().parents[2] / "data" / "05_model_input"
+MODEL_INPUTS = ("scenarios.csv", "assets_forecasts.csv", "companies_ownerships.csv")
 
 # Filenames from conf/base/catalog.yml: the earnings series plus the four
 # valuation tables the model is judged on.
@@ -85,6 +96,37 @@ def validate_run_sha(sha: str | None) -> str:
     return sha
 
 
+def _sha256(path: Path) -> str:
+    """Hash a file in chunks -- the model inputs run to ~130MB."""
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def input_fingerprints(input_dir: Path = MODEL_INPUT_DIR) -> list[dict[str, str]]:
+    """Name, size and SHA-256 of each model input present.
+
+    Missing inputs are recorded as such rather than skipped: a pin taken
+    without one of the three is a fact worth keeping in the manifest.
+    """
+    prints: list[dict[str, str]] = []
+    for name in MODEL_INPUTS:
+        path = input_dir / name
+        if not path.is_file():
+            prints.append({"name": name, "sha256": "MISSING", "bytes": "0"})
+            continue
+        prints.append(
+            {
+                "name": name,
+                "sha256": _sha256(path),
+                "bytes": str(path.stat().st_size),
+            }
+        )
+    return prints
+
+
 def _as_source_path(csv: Path, run_dir: Path) -> str:
     """Path recorded in the manifest: relative to the run directory.
 
@@ -132,6 +174,8 @@ def pin(run_dir: Path, out_dir: Path, run_sha: str) -> list[dict[str, str]]:
                 # Table sources are relative to this; edit it if the run
                 # directory moves rather than re-pinning.
                 "run_dir": str(run_dir),
+                # SHA-256 of the three CSVs that fed the run.
+                "inputs": input_fingerprints(),
                 "tables": tables,
             },
             indent=2,
