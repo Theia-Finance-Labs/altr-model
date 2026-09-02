@@ -24,7 +24,11 @@ members must exist in the `scenario` column of
 # target_scenario: "AR6_IMACLIM 1.1_ADVANCE_INDC_WP6"
 # baseline_scenario: "AR6_AIM/CGE 2.2_EN_NPi2020_1200f"
 # target_scenario: "AR6_AIM/CGE 2.2_EN_NPi2020_900f"
-# Note: filter_scenarios prepends "AR6_<provider>_" automatically
+# Note (corrected 2026-09-02): filter_scenarios does NOT prepend
+# "AR6_<provider>_" — it asserts the configured name appears VERBATIM in the
+# `scenario` column and prefixes nothing. Copy the full prefixed names exactly
+# as listed above. If your scenarios extract ships bare names, the prefix must
+# be restored during staging — scripts/stage_marts_inputs.py does it.
 ```
 
 The AIM/CGE pair at the bottom is the one shipped as the default. The committed

@@ -27,8 +27,9 @@ scenarios   `scenario_year` -> `year`, and the `AR6_<provider>_` prefix is
             `scenario`; the round-trip is kept so the marts drop enters through
             the same validated door as every other drop).
 
-            The prefix matters. Several comments in this repo claim
-            `filter_scenarios` prepends `AR6_<provider>_` automatically -- it
+            The prefix matters. Several comments in this repo used to claim
+            (corrected 2026-09-02) that `filter_scenarios` prepends
+            `AR6_<provider>_` automatically -- it
             does NOT. `_input_nodes.filter_scenarios` asserts the configured
             scenario name is present in the `scenario` column verbatim and
             performs no prefixing, and the committed fixture

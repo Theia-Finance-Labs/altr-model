@@ -128,8 +128,10 @@ print(sorted(pd.read_csv('data/05_model_input/scenarios.csv', \
 usecols=['scenario'])['scenario'].unique()))"
 ```
 
-The trap: the model prepends `AR6_<provider>_` to names that lack it, so the
-value you set must be the full prefixed name as it appears in the file. The
+The trap: nothing in the model prepends `AR6_<provider>_` — names are matched
+verbatim, so the value you set must be the full prefixed name as it appears in
+the file. A marts extract that ships bare names has the prefix restored during
+staging by `scripts/stage_marts_inputs.py`. The
 [scenario catalog](scenario_catalog.md) lists known-good pairs.
 
 ### `AssertionError: Baseline and target scenarios start at different years`

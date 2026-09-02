@@ -27,10 +27,14 @@ companies_ownerships.csv    none. ``sector`` / ``technology`` / ``asset_name``
                             ownership TIER column (``ownership_type``, or the
                             newer ``ownership_level``) is required -- see
                             ``require_ownership_tier``.
-scenarios.csv               ``scenario_name`` -> ``scenario`` (``filter_scenarios``
-                            adds the ``AR6_<provider>_`` prefix only where it is
-                            absent). ``year`` is left alone -- the pipeline
-                            indexes the scenario frame on ``year``.
+scenarios.csv               ``scenario_name`` -> ``scenario``. Names must
+                            already carry the full ``AR6_<provider>_`` prefix:
+                            ``filter_scenarios`` matches them verbatim and
+                            prefixes nothing. A marts extract that ships bare
+                            names goes through ``scripts/stage_marts_inputs.py``
+                            first, which restores the prefix. ``year`` is left
+                            alone -- the pipeline indexes the scenario frame on
+                            ``year``.
 
 Everything is transformed and validated BEFORE anything is written, so a failed
 check cannot leave the model inputs half-swapped.
@@ -191,8 +195,9 @@ def build_scenarios(source: Path) -> pd.DataFrame:
     frame = pd.read_csv(source / "scenarios.csv", low_memory=False)
     require_columns(frame, ["scenario_provider", "scenario_name"], "scenarios")
 
-    # `filter_scenarios` prefixes "AR6_<provider>_" only where it is absent, so
-    # names pass through either way — no strip needed, just the rename.
+    # `filter_scenarios` matches names verbatim and prefixes nothing, so the
+    # values must already carry "AR6_<provider>_" (stage_marts_inputs.py
+    # restores it for marts extracts that ship bare names) — just the rename.
     frame = frame.rename(columns={"scenario_name": "scenario"})
     require_columns(frame, SCENARIOS_REQUIRED, "scenarios")
     return frame
