@@ -9,7 +9,11 @@ dependencies = [
     "kedro>=0.19.12,<0.20.0",
     "pandas>=2.1,<2.2",
     "numpy>=1.26,<1.27",
-    "kedro-datasets[pandas]>=6.0.0,<7.0.0",
+    # pandas-csvdataset only: the catalog uses pandas.CSVDataset exclusively, and
+    # the full [pandas] extra drags in lxml 4.x (GHSA-vfmq-68hx-4jfw) plus gbq/
+    # hdf/sql/parquet deps nothing here touches. Widen the extra if the catalog
+    # ever grows a new pandas dataset type.
+    "kedro-datasets[pandas-csvdataset]>=6.0.0,<7.0.0",
     "matplotlib>=3.10.1,<4.0.0",
     "seaborn>=0.13.2,<0.14.0",
     "openpyxl>=3.1.5,<4.0.0",
@@ -27,9 +31,11 @@ dev = [
     "ipython>=8.10",
     "jupyterlab>=3.0",
     "notebook",
-    "pytest-cov~=3.0",
-    "pytest-mock>=1.7.1,<2.0",
-    "pytest~=7.2",
+    # The golden-baseline snapshots are parquet (tests/golden/); pandas needs
+    # pyarrow to read/write them. Runtime code is CSV-only and does not.
+    "pyarrow>=14.0.0",
+    "pytest-cov>=5.0,<8.0",
+    "pytest>=9.0.3,<10.0",
     "ruff~=0.1.8",
 ]
 # Only needed to run bigquery_marts_downloader.py (maintainer-only input
@@ -70,6 +76,11 @@ source_dir = "src"
 project_id = "0bec92a005924635896a5c2b9e02dc93"
 
 [tool.pytest.ini_options]
+# The suite imports `scripts.*` from the repo root (see
+# tests/unit/test_build_export.py). pytest 7's prepend import mode put the
+# root on sys.path implicitly; pytest 9's importlib default does not, so
+# declare it.
+pythonpath = ["."]
 addopts = """
 --cov-report term-missing \
 --cov src/altr_model -ra"""
