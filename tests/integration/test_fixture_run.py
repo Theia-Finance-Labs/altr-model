@@ -68,10 +68,18 @@ COMPANY_NPV_COLUMNS = [
 ]
 
 # company_id -> (baseline_npv, latesudden_npv), sorted by company_id.
+#
+# CN_6488161088428600082's late-and-sudden value was re-derived on 2026-09-02
+# when synthetic top-ups began inheriting the emission factor of the assets they
+# are built out from (decision D2). The fixture slice holds 52 synthetic
+# `OilCap - w/o CCS` rows that used to burn free and now carry EF 0.842126,
+# moving that company's shock NPV by -8,654,796.38 (-0.0122%). Only the shock
+# pathway moves: a synthetic's baseline capacity is zero, so it has no baseline
+# carbon cost to change. This is a sanctioned model change, not drift.
 COMPANY_NPV_VALUES = {
     "CN_3371785431787292505": (-4993101829.613022, -7097823755.342253),
     "CN_6166477550945836346": (7561824575.349692, 12858758761.724388),
-    "CN_6488161088428600082": (-18280161120.13081, -71108467857.1024),
+    "CN_6488161088428600082": (-18280161120.13081, -71117122653.48465),
     "CN_8676642915009364747": (5642084833.022628, -6357381430.212817),
     "CP_3685197042895689972": (14241241560.291767, 43511299210.83599),
 }
