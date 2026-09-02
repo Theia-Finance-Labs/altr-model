@@ -1,0 +1,31 @@
+# Full-universe environment parameter overrides.
+#
+#     uv run kedro run --env full --tags altrisk
+#
+# The configuration the golden baseline in `tests/golden/snapshots/` is pinned
+# from. Everything not listed here stays at the `conf/base` default
+# (ownership_type: direct, ownership_aggregation: tier_filter,
+# max_forecast_horizon: 5, ccs_on: False, shock_year 2033, alignment_year 2038).
+# The catalog is `conf/base/catalog.yml` unchanged: real inputs from
+# `data/05_model_input/`, outputs to `data/07_model_output/`.
+#
+# Why an environment rather than editing `conf/base`: the shipped
+# `company_ids` list is load-bearing for the export gate. `build_export.py`
+# strips those ids on the way out, and
+# `tests/unit/test_build_export.py::test_example_company_ids_are_emptied_out_of_the_exported_conf`
+# proves the transform works by checking there is something for it to strip.
+# Emptying the list in `conf/base` removes the test's evidence and the gate
+# fails. Overriding here leaves that gate intact.
+
+# The shipped AIM/CGE pair (EN_NPi2020_1200f / EN_NPi2020_900f) is NOT in the
+# 2026-09-01 scenarios extract -- AIM/CGE 2.2 appears there as EN_INDCi2100 /
+# EN_NPi2020_500f. This WITCH pair is the documented equivalent already used by
+# the committed fixture slice, and the best-covered pair in the extract: 9,360
+# rows each, 26 years, 20 geographies, 18 technologies, with a target carbon
+# price ramping 0 -> 722 USD/tCO2 against a flat-zero baseline. Names carry the
+# AR6_<provider>_ prefix because nothing in the pipeline adds it.
+baseline_scenario: "AR6_WITCH 5.0_EN_NoPolicy"
+target_scenario: "AR6_WITCH 5.0_EN_NPi2020_500"
+
+# Whole universe, no company filter.
+company_ids: []
