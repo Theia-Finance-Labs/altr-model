@@ -54,7 +54,11 @@ KEY_TABLES = (
     "company_npv.csv",
 )
 
-DEFAULT_OUT = Path(__file__).resolve().parents[1] / "tests" / "golden" / "snapshots"
+# Must be the SAME directory `test_golden.py` reads (`SNAP`), or a pin lands
+# somewhere the gate never looks and the suite stays silently skipped. Derive it
+# from this file rather than rebuilding the path from a parent, which is how it
+# previously resolved to `tests/tests/golden/snapshots`.
+DEFAULT_OUT = Path(__file__).resolve().parent / "snapshots"
 
 
 #: A git object name: 7-40 lowercase hex characters.
