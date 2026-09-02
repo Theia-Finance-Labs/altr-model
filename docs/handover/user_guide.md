@@ -14,17 +14,35 @@ A run always compares two IAM scenarios:
 * **`target_scenario`** - the climate-policy pathway the shock forces it onto.
 
 Both names must exist in the `scenario` column of
-`data/05_model_input/scenarios.csv`, and both must come from the same IAM
-provider - the model asserts that the two scenarios also start in the same year.
-The [scenario catalog](scenario_catalog.md) lists candidate pairs per provider;
-copy one from there, or keep the pair shipped in the file.
+`data/05_model_input/scenarios.csv`. Two rules govern the pair - one the model
+enforces, one it does not:
 
-For this example we use the shipped AIM/CGE pair:
+* **Same start year - enforced.** The model asserts both scenarios start in the
+  same year and stops the run if they do not.
+* **Same IAM provider - your job.** The model does not check the provider. A
+  cross-provider pair that happens to share a start year runs to completion,
+  silently intersecting the two providers' geographies and technologies and
+  logging one warning you will not spot in a 29-node stream - a completed run
+  on a shrunken universe. Enforce same-provider yourself, because the model
+  will not.
+
+The [scenario catalog](scenario_catalog.md) lists candidate pairs per provider.
+For this example we use the WITCH pair - the best-covered pair in the
+2026-09-01 extract, and the one the committed fixture and the full-universe
+environment (`conf/full/`) both run:
 
 | Role | Scenario |
 | --- | --- |
-| Baseline | `AR6_AIM/CGE 2.2_EN_NPi2020_1200f` |
-| Target | `AR6_AIM/CGE 2.2_EN_NPi2020_900f` |
+| Baseline | `AR6_WITCH 5.0_EN_NoPolicy` |
+| Target | `AR6_WITCH 5.0_EN_NPi2020_500` |
+
+!!! warning "The pair shipped in `conf/base` is not in the 2026-09-01 extract"
+    The parameters file ships AIM/CGE names (`EN_NPi2020_1200f` / `900f`) that
+    the 2026-09-01 scenarios extract does not carry - AIM/CGE 2.2 appears there
+    as `EN_INDCi2100` / `EN_NPi2020_500f`. Scenario names change between
+    extract vintages, so before your first run, list what your extract actually
+    carries and set a pair from that list - the one-liner is in
+    [Troubleshooting](troubleshooting.md#assertionerror-target-scenario-not-found-in-scenarios-pathways).
 
 ## 2. Set three keys, in two files
 
@@ -32,13 +50,13 @@ There is no consolidated `conf/base/parameters.yml`. Scenario selection lives
 with the input-preparation pipeline, shock timing with the trajectory pipeline:
 
 ```yaml
-# conf/base/parameters_prepare_scenario_asset_and_company_inputs.yml
-baseline_scenario: "AR6_AIM/CGE 2.2_EN_NPi2020_1200f"
-target_scenario: "AR6_AIM/CGE 2.2_EN_NPi2020_900f"
+# set in conf/base/parameters_prepare_scenario_asset_and_company_inputs.yml:
+baseline_scenario: "AR6_WITCH 5.0_EN_NoPolicy"
+target_scenario: "AR6_WITCH 5.0_EN_NPi2020_500"
 ```
 
 ```yaml
-# conf/base/parameters_calculate_company_trajectories.yml
+# set in conf/base/parameters_calculate_company_trajectories.yml:
 shock_year: 2033       # the year the policy shock becomes known
 alignment_year: 2038   # the year the target pathway must be reached; >= shock_year
 ```
@@ -46,20 +64,34 @@ alignment_year: 2038   # the year the target pathway must be reached; >= shock_y
 `shock_year` and `alignment_year` bracket the transition window. A wider window
 is a gentler, more realistic phase-out; a narrower one is a harder shock. Setting
 `alignment_year` below `shock_year` stops the run immediately with
-`ValueError: Alignment year must be greater than shock year`.
+`ValueError: Alignment year cannot be earlier than shock year`; equal years are
+legal and leave an empty transition window.
 
 Two more keys are worth knowing before your first run, both in
 `parameters_prepare_scenario_asset_and_company_inputs.yml`:
 
-* `company_ids: []` - an empty list means *all companies*. Put a handful of ids
-  in the list to get a fast run while you are still finding your feet. The file
-  ships with an example selection, not a required one.
-* `max_forecast_horizon: 5` - how many forecast years past the scenario start
-  year each asset is valued over. Bigger horizon, longer run, more terminal-value
-  sensitivity.
+* `company_ids` - check what your copy ships before trusting a "full" run. In
+  this repository the file carries a **30-company example selection**, so an
+  out-of-the-box run covers those 30 companies, not the universe; a sanitized
+  delivered copy carries an **empty list** (the export strips the ids). An
+  empty list means *all companies*. In this repository,
+  `uv run kedro run --env full --tags altrisk` empties the filter and sets the
+  verified scenario pair in one step; `conf/full/` is not part of a delivered
+  copy, so there you edit `conf/base` directly.
+* `max_forecast_horizon: 5` - how many years of *observed* forecast data each
+  asset keeps, counted from the scenario start year (2025 in the 2026-09-01
+  extract; the cut is inclusive at both ends, so `5` keeps six calendar years).
+  This is **not** the valuation window: after the cut, every asset is
+  flat-extended to the scenario's last year (2050), so the 2033 shock and the
+  2038 alignment year are always inside the valued period. The knob decides how
+  much of the path rests on data versus flat extension - bigger horizon, more
+  data, longer run.
 
-Every key in all six files is annotated in place, and the generated
-[parameters reference](parameters.md) collects them with their defaults.
+Every key in all six files is annotated in place. The generated
+[parameters reference](parameters.md) collects the top-level keys with their
+defaults; the nested `dcf.*` valuation defaults are collected on
+[Stage 5](pipelines/calculate_asset_and_company_npv.md) and annotated in the
+YAML file itself.
 
 ## 3. Run
 
@@ -102,9 +134,13 @@ discounted and includes the terminal value, the components are raw sums of the
 yearly figures. A large NPV gap with near-identical revenue and cost sums points
 at the terminal value or the discount rates, not at the physical trajectory.
 
-!!! note "One asset can appear more than once"
+!!! note "One asset can appear more than once, and every number is the owner's share"
     Asset-level tables carry one row per **owning company**, so `asset_id`
-    alone is not a unique key - `(asset_id, company_id)` is.
+    alone is not a unique key - `(asset_id, company_id)` is. Every value in
+    these tables is the owner's share: capacity is allocated as
+    `capacity × ownership_percentage / 100` before any money is computed, so a
+    40%-owned plant contributes 40% of its cash flows to that company's NPV -
+    never the whole asset.
 
 Two tables sit between these and the raw model if you need to go further:
 `yearly_npv_trajectories.csv` (per asset, per year, per trajectory: discount
@@ -143,6 +179,14 @@ large and economically meaningless.
     "no additional headwinds" counterfactuals elsewhere - but they are not
     comparable, and this one is the current-policy framing.
 
+One historical source of positive values is worth knowing when you compare
+against older runs: under a hard price switch (`price_ramp: False`) target
+prices sit 30-50% above baseline at the shock year, handing fossil assets a
+near-term windfall - a pricing artefact, not economics. The shipped
+`price_ramp: True` blends the two surfaces across the transition window and
+removes it, so a positive `npv_change` under the shipped configuration is the
+real current-policy-baseline effect described above, not the artefact.
+
 Two more conventions worth holding onto when reading any output table:
 
 * Cost columns are **subtracted**, not added:
@@ -169,9 +213,13 @@ yourself.
   absorb. A large persistent gap means the allocation, not the valuation, is
   where a surprising number comes from.
 * **Do the levels reconcile?** `asset_npv` summed by company must equal
-  `company_npv`, and `asset_earnings` FCFF discounted must reproduce
-  `yearly_npv_trajectories`. Both roll-ups are plain sums, so a mismatch is a
-  data problem rather than a methodology one.
+  `company_npv` - that roll-up is a plain sum. One level down, mind the
+  terminal value: per asset and pathway, `yearly_npv_trajectories`'s `pv_fcff`
+  summed across years **plus its `terminal_value`** reproduces the `*_npv`
+  columns, while hand-discounting `asset_earnings` FCFF reproduces `pv_fcff`
+  only - the terminal value is added in the valuation stage and appears in no
+  earnings row. A mismatch in the company roll-up is a data problem; a mismatch
+  in a hand-discounted check is usually the missing terminal value, not a bug.
 * **Record the configuration next to the result.** Nothing in the pipeline
   stamps the parameters onto the outputs. Copy the six
   `conf/base/parameters_*.yml` files alongside any result you share - it is the
@@ -204,6 +252,17 @@ The switches with the largest, most interpretable effect on the headline number:
   exactly why the shipped default has it on for the shock pathway and off for
   the baseline (`apply_continued_om_baseline: False`). Flipping both to the same
   value removes the asymmetry and, with it, most of the transition signal.
+
+    Why the asymmetry is deliberate: under a disorderly transition a plant
+    sheds output faster than it sheds its fixed cost base - contracts, staffing
+    and site obligations keep billing while the shock cuts production, while on
+    the baseline pathway the plant winds down on schedule and sheds costs on
+    schedule. The asymmetry is the stranded-cost mechanism itself, not an
+    accounting trick. Size it on your own data before you present: flip the
+    switch, re-run, diff `company_npv.csv`. On the committed fixture slice,
+    turning `apply_continued_om_shock` off moves the median `npv_change` from
+    -0.42 to -0.16 - the switch carries roughly 60% of the median signal there,
+    and per-company effects range far wider.
 * **`dcf.discount_rate_shock`** (in `parameters_calculate_asset_and_company_npv.yml`)
   - the scenario base rate for cash flows on the target-scenario surface, and
   inert under the shipped configuration. See [Discount rates](#discount-rates)

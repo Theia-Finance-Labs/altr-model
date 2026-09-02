@@ -151,6 +151,16 @@ Both directories can be overridden: `uv run python scripts/prepare_inputs.py
 input before it writes anything, so a schema problem stops it with a named
 missing column rather than leaving a half-converted `data/05_model_input/`.
 
+!!! note "Marts extracts are staged upstream - not by anything in your copy"
+    `prepare_inputs.py` expects the deliverables schema: prefixed scenario
+    names (`AR6_<provider>_...`) and a `year` column. A raw warehouse (marts)
+    extract - bare scenario names, `production_year` / `scenario_year` columns
+    - is converted to that schema by an internal staging script
+    (`scripts/stage_marts_inputs.py`) that **is not part of a delivered
+    copy**. If your `scenarios.csv` carries bare names, have the data provider
+    restore the `AR6_<provider>_` prefix upstream - nothing in the pipeline
+    adds it, and no script in your copy will.
+
 ## 5. Choose the run configuration
 
 There is **no `conf/base/parameters.yml`**. Kedro merges every
@@ -173,19 +183,40 @@ the cost switches next to theirs:
 The three keys you will almost always touch:
 
 ```yaml
-# conf/base/parameters_prepare_scenario_asset_and_company_inputs.yml
-baseline_scenario: "AR6_AIM/CGE 2.2_EN_NPi2020_1200f"
-target_scenario: "AR6_AIM/CGE 2.2_EN_NPi2020_900f"
+# set in conf/base/parameters_prepare_scenario_asset_and_company_inputs.yml:
+baseline_scenario: "AR6_WITCH 5.0_EN_NoPolicy"
+target_scenario: "AR6_WITCH 5.0_EN_NPi2020_500"
 
-# conf/base/parameters_calculate_company_trajectories.yml
+# set in conf/base/parameters_calculate_company_trajectories.yml:
 shock_year: 2033
 ```
 
-Both scenario names must appear in the `scenario` column of
+Both scenario names must appear **verbatim** in the `scenario` column of
 `data/05_model_input/scenarios.csv`, and both must come from the same IAM
-provider. See the [scenario catalog](scenario_catalog.md) for candidate pairs.
-The defaults shipped in the files are a valid pair - you can run first and tune
-afterwards. Full per-key annotations: [parameters reference](parameters.md).
+provider - a rule you enforce, not the model (see the
+[scenario catalog](scenario_catalog.md)).
+
+!!! warning "Check the shipped defaults against your extract before running"
+    Two of the shipped defaults do not do what a first read suggests:
+
+    * The scenario pair shipped in `conf/base` (AIM/CGE `EN_NPi2020_1200f` /
+      `900f`) is **not in the 2026-09-01 scenarios extract** - names change
+      between extract vintages. The WITCH pair above is verified against that
+      extract; list what yours carries before running (the one-liner is in
+      [Troubleshooting](troubleshooting.md#assertionerror-target-scenario-not-found-in-scenarios-pathways)).
+    * `company_ids` - in this repository it ships **populated with a
+      30-company example selection**, so an out-of-the-box run covers 30
+      companies, not the universe; a sanitized delivered copy ships it
+      **empty** (the export strips the ids). Check your file, and empty the
+      list (`company_ids: []`) for a full run.
+
+    In this repository, `uv run kedro run --env full --tags altrisk` does both
+    in one step: the `conf/full` environment overrides the pair to the
+    verified WITCH pair and empties the company filter, leaving `conf/base`
+    untouched. `conf/full/` is not part of a delivered copy - there, set the
+    pair and the empty list in `conf/base` directly.
+
+Full per-key annotations: [parameters reference](parameters.md).
 
 ## 6. Run the model
 
@@ -221,8 +252,10 @@ Node names are namespaced with their pipeline (`<pipeline>.<node>`), which is
 how you tell which stage a failure is in. The run has failed if you do not see
 `Pipeline execution completed successfully` - see
 [Troubleshooting](troubleshooting.md) for the common causes. Run duration scales
-with the number of companies and the forecast horizon; a first full-universe run
-is measured in tens of minutes, not seconds.
+with the number of companies and the forecast horizon: with the shipped
+30-company example filter a run takes minutes; a full-universe run
+(`company_ids: []`, or `--env full`) is measured in tens of minutes, not
+seconds.
 
 ## 7. Collect the outputs
 

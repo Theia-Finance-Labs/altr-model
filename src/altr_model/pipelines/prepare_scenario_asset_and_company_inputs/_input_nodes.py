@@ -14,7 +14,7 @@ def check_input_parameters(
     alignment_year: int,
 ) -> None:
     if alignment_year < shock_year:
-        raise ValueError("Alignment year must be greater than shock year")
+        raise ValueError("Alignment year cannot be earlier than shock year")
 
 
 def filter_scenarios(

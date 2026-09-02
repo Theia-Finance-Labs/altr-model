@@ -44,6 +44,16 @@ rather than picking one arbitrarily
 (`ValueError: Ambiguous scenario geography assignment detected` - see
 [Troubleshooting](troubleshooting.md#valueerror-ambiguous-scenario-geography-assignment-detected)).
 
+!!! warning "22 countries never reach the matching at all"
+    Before any geography is assigned, `filter_assets` silently drops every
+    asset whose `country_iso2` is missing - and every asset in a hardcoded
+    list of 22 jurisdictions: AS, BM, AW, SZ, FO, CW, DM, GF, PS, KN, MK, IM,
+    PM, XK, SC, SS, AX, KY, BQ, GG, MS, JE. This is a legacy NGFS-scenario
+    workaround (the code marks it `TODO REMOVE HARDFIX FOR NGFS`), kept for
+    output comparability until it is removed deliberately. If an asset count
+    does not reconcile against your source extract, check these countries
+    before anything else - no warning is logged when they are dropped.
+
 ## Granularity changes the shape of every output
 
 The `reduce_granularity_from_asset_to_company_level` parameter changes what an

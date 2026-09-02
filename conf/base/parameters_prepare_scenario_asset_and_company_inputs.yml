@@ -23,15 +23,20 @@
 # (current-policy) pathway; `target_scenario` is the climate-policy pathway whose
 # "late & sudden" alignment drives the shock.
 # Values: full scenario names as they appear in the `scenario` column of the
-# scenarios input (`data/05_model_input/scenarios.csv`). Both must come from the
-# same IAM provider and start in the same year (asserted in `filter_assets`).
+# scenarios input (`data/05_model_input/scenarios.csv`). Both must start in the
+# same year (asserted in `filter_assets`) and SHOULD come from the same IAM
+# provider - the provider is NOT checked: a cross-provider pair that shares a
+# start year runs to completion, silently intersecting the two providers'
+# geographies/technologies with only a logged warning. Enforce same-provider
+# yourself.
 # NOTE (corrected 2026-09-02): `filter_scenarios` does NOT prepend
 # "AR6_<provider>_" -- it asserts the name below appears VERBATIM in the
 # `scenario` column and prefixes nothing (`_input_nodes.py::filter_scenarios`;
 # `grep -rn 'AR6_' src/` is empty). The committed fixture stores full names
 # ("AR6_WITCH 5.0_EN_NoPolicy") for exactly this reason. If your scenarios
-# extract carries bare names, the prefix must be restored during staging --
-# `scripts/stage_marts_inputs.py` does it.
+# extract carries bare names, the prefix must be restored upstream -- the
+# internal staging script (`scripts/stage_marts_inputs.py`) does it, and is
+# not part of a delivered copy.
 # The pair below is NOT present in the 2026-09-01 extract; the full-universe
 # run overrides it in `conf/full/` with the WITCH pair that is.
 # Known pairs per IAM: see docs/handover/scenario_catalog.md
@@ -89,8 +94,11 @@ reduce_granularity_from_asset_to_company_level: False
 
 
 # ── Scope filters ─────────────────────────────────────────────────────────────────
-# Number of forecast years kept per asset, counted from the scenario start year:
-# assets are filtered to production years in [start_year, start_year + N] (years).
+# Observed forecast years kept per asset, counted from the scenario start year:
+# assets are filtered to production years in [start_year, start_year + N], a
+# closed interval - N=5 keeps six calendar years. Not the valuation window: the
+# kept panel is then flat-extended to the scenario's last year, so the shock is
+# always inside the valued period.
 max_forecast_horizon: 5
 
 # Technology scenario mapping control
@@ -99,7 +107,11 @@ max_forecast_horizon: 5
 ccs_on: False
 
 
-# Empty list = all companies (no filter).
+# Empty list = all companies (no filter). NOTE: in the internal repository the
+# list below is POPULATED with 30 example companies, so an out-of-the-box run
+# covers those 30, not the universe (a sanitized delivered copy ships it
+# empty - the export strips the ids). Empty it (company_ids: []) for a full
+# run, or use `--env full` (internal repository only), which does.
 # Values: list of company_id strings present in the companies input. Read the ids
 # you can choose from off the `company_id` column of your own companies input
 # (`data/05_model_input/companies_ownerships.csv`); the list below is an example
