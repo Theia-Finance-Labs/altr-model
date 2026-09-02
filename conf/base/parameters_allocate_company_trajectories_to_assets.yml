@@ -8,6 +8,9 @@ apply_retirement_baseline: True  # Apply retirement to baseline trajectories
 apply_retirement_shock: True     # Apply retirement to shock (late sudden) trajectories
 apply_decreasing_staggered_shock: False
 
+# Read only when apply_decreasing_staggered_shock is True (it ships False).
 staggered_shock:
-  g_k: 6.0
-  n_quantiles: 3
+  g_k: 6.0        # Steepness of the logistic age curve that orders which assets
+                  # absorb the cut first; higher = the oldest quantile takes
+                  # nearly everything before younger ones are touched.
+  n_quantiles: 3  # Number of age buckets the fleet is split into for staggering.

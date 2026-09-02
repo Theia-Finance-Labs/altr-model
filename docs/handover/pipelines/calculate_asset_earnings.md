@@ -22,9 +22,15 @@ and EBITDA less CapEx gives free cash flow to the firm.
 
 ### What `validate_asset_trajectories` repairs
 
-It is not only a contract check - it also fixes three things in place before
-the earnings maths runs, and each one changes numbers:
+It is not only a contract check - it also normalises and repairs the table in
+place before the earnings maths runs, and every step changes numbers:
 
+* **Every numeric column is coerced first.** The eleven price, cost and factor
+  columns go through `pd.to_numeric(errors="coerce")`, so an unparseable value
+  - a stray text artefact in a price column - becomes `NaN` with no log line,
+  and then flows into the repairs below (a coerced emission factor is
+  forward-filled or zero-filled; a coerced price simply stays `NaN`). If a
+  number looks impossibly clean, check the raw input for text.
 * **NaN years are dropped.** A row with no year cannot be discounted or
   ordered, and downstream integer casts would turn it into an astronomical
   outlier rather than an error.
@@ -54,13 +60,29 @@ The arithmetic, in order:
 
 ```
 Q_t          = K_t × capacity_factor × 8760
+fuel_cost_per_mwh = fuel_price_usd_per_mwh_fuel ÷ efficiency_decimal
 var_cost_t   = Q_t × fuel_cost_per_mwh
 fixed_cost_t = fom_usd_per_mw_yr × K_for_fixed_cost_t
 carbon_t     = Q_t × carbon_price_usd_per_tco2 × emission_factor × (1 − market_passthrough)
 revenue_t    = Q_t × power_price_excarbon_usd_per_mwh
 EBITDA_t     = revenue_t − var_cost_t − fixed_cost_t − carbon_t
+
+capex_total_t = growth_t + replacement_t + decom_t, where
+  growth_t      = capex_usd_per_mw × new_buildout_cap_t    (if include_growth_capex)
+  replacement_t = capex_usd_per_mw × roll_over_cap_t       (if include_replacement_capex)
+  decom_t       = |scrap_usd_per_mw| × retired_max_cap_t   (if include_decom_costs)
+
 FCFF_t       = EBITDA_t − capex_total_t
 ```
+
+The three capacity flows come from the year-on-year capacity decomposition:
+`new_buildout_cap` is net new capacity on synthetic assets, `roll_over_cap` is
+`replacement_capex_rate` times the year's rolled-over real capacity, and
+`retired_max_cap` is the capacity a retirement removes. `scrap_usd_per_mw`
+arrives negative in the extracts; the `abs()` makes decommissioning a positive
+outflow either way, so retiring an asset always costs money and never pays its
+owner. The symbol names left of the `=` map back to input columns via the
+[rename table](../input_data.md#how-the-scenario-columns-appear-inside-the-model).
 
 `K_for_fixed_cost` is where continued O&M enters: for a decreasing-technology
 asset on a trajectory the switch covers, it is the trajectory's **first-year**

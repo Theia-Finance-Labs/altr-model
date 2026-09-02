@@ -95,10 +95,16 @@ fails here.
 
 ### `companies: N% of asset-years sum to >105%` (warning, not an error)
 
-`prepare_inputs.py` totals `ownership_percentage` per `(asset_id, year)` and
-warns when the delivered rows over-allocate the asset. Capacity is allocated as
-`capacity × ownership_percentage / 100` (the column is on the 0-100 scale), so
-rows that sum above 100% inflate every downstream number silently.
+`prepare_inputs.py` totals `ownership_percentage` per `(asset_id, year)` on the
+**delivered rows, across every rung, before any tier is selected** - and the
+warning fires only when more than 1% of asset-years exceed 105%. Below that
+share it stays silent, so a quiet run is not proof of a clean ownership
+universe. Capacity is allocated as `capacity × ownership_percentage / 100` (the
+column is on the 0-100 scale), so rows that sum above 100% within one rung
+inflate every downstream number silently. A correct multi-tier file totals
+above 100% raw by design - each rung is an alternative view of the same
+capacity - which is why the threshold is a share of asset-years, not any single
+breach.
 
 The usual cause is an extract that flattens every rung of an ownership chain, so
 different companies on different rungs each claim the same capacity. Note that
@@ -128,11 +134,17 @@ print(sorted(pd.read_csv('data/05_model_input/scenarios.csv', \
 usecols=['scenario'])['scenario'].unique()))"
 ```
 
-The trap: nothing in the model prepends `AR6_<provider>_` — names are matched
-verbatim, so the value you set must be the full prefixed name as it appears in
-the file. A marts extract that ships bare names has the prefix restored during
-staging by `scripts/stage_marts_inputs.py`. The
-[scenario catalog](scenario_catalog.md) lists known-good pairs.
+Two traps. First, nothing in the model prepends `AR6_<provider>_` — names are
+matched verbatim, so the value you set must be the full prefixed name as it
+appears in the file. A marts extract that ships bare names is fixed upstream:
+the internal staging script that restores the prefix
+(`scripts/stage_marts_inputs.py`) is not part of a delivered copy, so ask the
+data provider rather than hunting for it. Second, scenario names change between
+extract vintages — the AIM/CGE pair shipped in `conf/base` is not in the
+2026-09-01 extract at all, so a not-found error on an untouched configuration
+is the *shipped default* being stale, not your typo. The
+[scenario catalog](scenario_catalog.md) lists the pair verified against the
+2026-09-01 extract.
 
 ### `AssertionError: Baseline and target scenarios start at different years`
 
@@ -140,10 +152,12 @@ The two scenarios come from different providers, or from different vintages of
 one provider. Pick both members of a pair from the same provider block in the
 [scenario catalog](scenario_catalog.md).
 
-### `ValueError: Alignment year must be greater than shock year`
+### `ValueError: Alignment year cannot be earlier than shock year`
 
 `alignment_year` is earlier than `shock_year` in
-`conf/base/parameters_calculate_company_trajectories.yml`.
+`conf/base/parameters_calculate_company_trajectories.yml`. Equal years are
+accepted - they leave an empty transition window (see the
+[user guide on discount rates](user_guide.md#discount-rates)).
 
 ### `ValueError: With CCS technologies are not present in the scenarios pathways`
 
@@ -171,10 +185,15 @@ against the scenario data before blaming the model, both described in
 ### `ValueError: No assets remaining after filtering`
 
 The filters removed everything. In descending order of likelihood: `company_ids`
-lists ids that are not in `companies_ownerships.csv`; the scenario pair's start
-year lies outside the asset forecast years; `max_forecast_horizon` is too small
-for the data; the `ccs_on` setting sent every asset to a technology variant the
-scenario file does not carry.
+lists ids that are not in `companies_ownerships.csv` (in this repository the
+file carries a populated 30-id example list; a delivered copy ships it
+empty); the scenario pair's start year lies
+outside the asset forecast years; `max_forecast_horizon` is too small for the
+data; the `ccs_on` setting sent every asset to a technology variant the
+scenario file does not carry; or the universe was concentrated in the countries
+`filter_assets` silently drops - the
+[22-country NGFS hardfix](methodology_notes.md#how-assets-are-matched-to-a-scenario-geography)
+plus every asset with a missing `country_iso2`.
 
 Start by emptying the filter (`company_ids: []`) and re-running - if that works,
 the ids were the problem. Check `ownership_type` next: under the default
@@ -232,8 +251,16 @@ Outputs are plain CSVs written in place - a re-run overwrites
   `data/07_model_output/` and `data/08_reporting/` before a clean re-run rather
   than reasoning about which files are fresh.
 
-To re-run only part of the pipeline after a late-stage failure, keep the
-intermediate files and restart from the failing node:
+Partial re-runs exist, but read the constraint before copy-pasting a command:
+a partial run works only when every input the starting node needs is a
+*persisted* dataset, and the hand-offs between stages 1, 2 and 3 are not - so
+**a resume can only start at stage 4 or later** (its inputs,
+`asset_trajectories` onward, are on disk). For a failure in stages 1-3, run the
+full `--tags altrisk` again; `architecture.md` puts it bluntly: restarting
+mid-pipeline with `--from-nodes` usually fails.
+
+For a late-stage failure, keep the intermediate files and restart from the
+failing node:
 
 ```bash
 uv run kedro run --tags altrisk --from-nodes <node-name>   # resume from a node onward
@@ -248,12 +275,11 @@ belongs after `--tags`, never after `--pipeline`; the seven pipeline names
 `kedro registry list` prints - the six stages plus `__default__`, which is all
 six summed - are what `--pipeline` accepts.
 
-Partial runs only work when every input a node needs is a *persisted* dataset.
-The hand-offs between stages 1, 2 and 3 (`asset_forecast_panel`,
-`company_projection_inputs`, `company_pathways_pre_allocation`) are
-`MemoryDataset`s declared nowhere in `conf/base/catalog.yml`, so they live for
-the length of one run only and cannot be picked up by a later one. If a partial
-run complains about a missing dataset, run the full `--tags altrisk` instead.
+(The stage 1-3 hand-offs that block early resumes are `asset_forecast_panel`,
+`company_projection_inputs` and `company_pathways_pre_allocation` -
+`MemoryDataset`s declared nowhere in `conf/base/catalog.yml`, alive for one run
+only. If a partial run complains about a missing dataset, that is what it hit -
+run the full `--tags altrisk` instead.)
 
 ### The reporting stage fails or produces nothing
 

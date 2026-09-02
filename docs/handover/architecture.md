@@ -156,6 +156,7 @@ flowchart LR
     subgraph ENV["exactly one environment, layered on top"]
         LOCAL["conf/local - the default env<br>your machine only, never committed"]
         FIX["conf/fixture - kedro run --env fixture<br>committed test slice in, data/fixture_run/ out"]
+        FULL["conf/full - kedro run --env full<br>verified scenario pair, no company filter"]
     end
 
     MERGED["one merged configuration for the run"]
@@ -166,6 +167,7 @@ flowchart LR
     CAT --> MERGED
     LOCAL -.-> MERGED
     FIX -.-> MERGED
+    FULL -.-> MERGED
     MERGED --> USE
 ```
 
@@ -175,7 +177,17 @@ Three rules follow from that shape:
    top of it - `local` unless you pass `--env`. Environments override; they do
    not replace. `conf/fixture` overrides the three input datasets, every
    persisted output path and the scenario pair, and inherits the rest from
-   `base`.
+   `base`. `conf/full` overrides exactly two things - the scenario pair (to
+   the WITCH pair verified against the 2026-09-01 extract) and `company_ids`
+   (emptied) - so `uv run kedro run --env full --tags altrisk` is the
+   full-universe run on real data, reading and writing the same paths as
+   `base`. It exists as an environment rather than a `conf/base` edit because
+   the internal repository's 30-id `company_ids` list is load-bearing for the
+   export gate. The golden regression baseline in `tests/golden/snapshots/` is
+   pinned from a `conf/full` run. Both are **internal-repository pieces**: a
+   sanitized delivered copy carries neither `conf/full/` nor the golden
+   snapshots - there, a full-universe run is `conf/base` with the pair set and
+   the (already empty) company filter left alone.
 2. **All parameter files merge into one flat namespace.** A node asking for
    `params:shock_year` does not care which file defined it, which is why the
    namespace can be split six ways with each key living next to the pipeline

@@ -33,10 +33,12 @@ dynamic_marginal_ef: True
 # Which cost elements the earnings model charges to free cash flow (True/False).
 include_growth_capex: False        # OFF: IAM O&M already bundles annualized capital costs (REMIND/WITCH/POLES)
 include_replacement_capex: True    # Include CapEx for routine capital maintenance
-# Fraction (0.0–1.0) of a real asset's INSTALLED capacity capitalized each year as
-# roll-over / replacement CapEx — routine capital maintenance and refurbishment,
-# for which 1–3% of replacement cost per year is the standard utility benchmark
-# (EPRI; Lazard LCOE methodology). Read only when include_replacement_capex is
+# Fraction (0.0–1.0) of a real asset's INSTALLED capacity (MW) treated as rolled
+# over each year; the resulting MW are priced at `capex_usd_per_mw`, which is
+# what makes the charge equivalent to spending that fraction of replacement cost
+# per year — the 1–3%/yr standard utility benchmark for routine capital
+# maintenance (EPRI; Lazard LCOE methodology). One rate, two readings, same
+# number. Read only when include_replacement_capex is
 # True; charged on `asset_trajectory`, so a flat asset still pays it, and skipped
 # for assets retiring that year (already charged decommissioning) and for
 # synthetic assets (accounting constructs, not plant).
@@ -51,6 +53,11 @@ include_decom_costs: True          # Include decommissioning costs for retired a
 # FIRST-YEAR capacity for every year rather than on the year's actual capacity — so
 # a retiring asset keeps paying fixed costs it can no longer earn against. Enabling
 # it on the shock side only (the default) is what makes stranding bite in the shock
-# pathway without also penalising the baseline.
+# pathway without also penalising the baseline. Applies ONLY to
+# decreasing-technology (high-carbon alignment) assets on the covered
+# trajectory; every other row is charged on actual capacity regardless.
 apply_continued_om_baseline: False
+# The single biggest stranding lever: on the fixture slice, turning this off
+# moves the median npv_change from -0.42 to -0.16. Same first-year-capacity
+# mechanics as the baseline switch above, applied to the shock pathway.
 apply_continued_om_shock: True
