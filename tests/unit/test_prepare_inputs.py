@@ -7,8 +7,9 @@ Pinned behaviours:
   scenario frame is reshaped (``scenario_name`` -> ``scenario``); the assets
   and companies deliverables already carry the pipeline's contract, and
   ``year`` is left alone in all three;
-* ``sector`` / ``technology`` / ``asset_name`` SURVIVE on companies -- they are
-  in ``_consolidate_ownership_stakes``'s group_cols;
+* ``sector`` / ``technology`` / ``asset_name`` SURVIVE on companies --
+  ``_consolidate_ownership_stakes`` groups on the first two and carries the
+  third, so dropping any of them breaks the roll-up;
 * a missing required column raises ``ValueError`` naming the column;
 * a companies input with no ownership TIER column (``ownership_type`` or
   ``ownership_level``) is refused outright -- owner ruling of 2026-09-01 that a
@@ -135,7 +136,8 @@ def test_transforms_emit_the_pipeline_contract_columns(source: Path):
     assert set(COMPANIES_REQUIRED) <= set(companies.columns)
     assert list(companies["year"]) == YEARS
     # sector/technology/asset_name must SURVIVE: _consolidate_ownership_stakes
-    # groups on them, so dropping them breaks the roll-up.
+    # groups on sector/technology and carries asset_name through the roll-up,
+    # so dropping any of them breaks it.
     assert {"sector", "technology", "asset_name"} <= set(companies.columns)
 
     scenarios = build_scenarios(source)
@@ -191,6 +193,26 @@ def test_companies_with_a_tier_column_pass_through(tmp_path: Path):
     out = build_companies(source)
 
     assert list(out["ownership_type"]) == ["direct"] * 5
+    assert len(out) == 5
+
+
+def test_companies_with_the_numbered_tier_column_pass_through(tmp_path: Path):
+    """`ownership_level` is the OTHER schema the guard accepts (1 = direct,
+    2+ = indirect), and the newer of the two. It has only ever been tested on
+    the refusal path — that a frame carrying it is not refused — which does not
+    pin that the build hands the column on for `_select_ownership_tier` to read.
+    A build that quietly dropped it would take the tier-less branch downstream
+    and over-allocate, with nothing here to notice."""
+    companies = deliverables_companies().rename(
+        columns={"ownership_type": "ownership_level"}
+    )
+    companies["ownership_level"] = 1
+    source = stage(tmp_path / "01_raw", companies_ownerships=companies)
+
+    out = build_companies(source)
+
+    assert list(out["ownership_level"]) == [1] * 5
+    assert "ownership_type" not in out.columns, "the named schema is not invented"
     assert len(out) == 5
 
 
