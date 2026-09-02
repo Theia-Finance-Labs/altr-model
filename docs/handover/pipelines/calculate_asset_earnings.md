@@ -35,6 +35,14 @@ the earnings maths runs, and each one changes numbers:
   zero-carbon technologies a missing EF genuinely is zero, so they are filled
   rather than dropped - a forward-fill alone cannot help an asset whose EF is
   missing from its very first year.
+* **Synthetic top-ups arrive with an inherited emission factor.** A synthetic
+  asset has no plant record and so no measured EF. Rather than reaching this
+  stage empty and being zero-filled - which priced 181 biomass and oil top-ups
+  as emitting nothing - allocation gives each one the capacity-weighted EF of
+  the real assets it was built out from, in
+  [Stage 3](allocate_company_trajectories_to_assets.md). Nothing here treats
+  those rows specially; by the time they arrive their EF is populated like any
+  other asset's.
 
 This is the stage where the modelling choices bite hardest: how carbon costs are
 shared (`market_passthrough`), which cost elements are charged at all (the three

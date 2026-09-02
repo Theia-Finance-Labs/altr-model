@@ -133,6 +133,19 @@ The model only produces a company trajectory for a
 has at least one real asset, so a company can never be handed synthetic
 build-out in a country or technology it has no presence in at all.
 
+A synthetic asset burns like the fleet it was built out from. It has no plant
+record of its own, so it has no measured emission factor; it takes the
+capacity-weighted mean emission factor of the company's real assets in the same
+(sector, technology, scenario_geography) group, year by year. Where the company
+holds no real asset in that group the model widens the group - first to every
+real asset in that technology and geography, then to the technology as a whole -
+and only falls back to zero when the technology carries no emission factor
+anywhere, which it logs as a warning. The weighting capacity is the BAU
+trajectory rather than the post-shock one, so a synthetic's emission factor is a
+property of the fleet and not of the shock. Renewable technologies are the
+exception: a missing emission factor there genuinely is zero, so they are
+zero-filled before the inheritance rule sees them.
+
 Synthetic rows are flagged `is_synthetic = True` in the asset-level outputs -
 one of the [sanity checks](user_guide.md#5-sanity-checks-before-you-trust-a-run)
 is watching for companies whose NPV a synthetic asset dominates. The allocation
