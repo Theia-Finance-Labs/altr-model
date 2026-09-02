@@ -41,6 +41,19 @@ TWO THINGS THIS PINS THAT ARE WORTH THE OWNERS' ATTENTION
       `final_fcff > 0` (Bertrand). 2,699 groups, 5.18% of the golden run, take
       one today. The behaviour is CHARACTERIZED here, not endorsed - see
       `test_negative_terminal_fcff_without_stranding_takes_a_negative_perpetuity`.
+
+AND ONE THAT SURFACED WHILE WRITING THESE (reported, not fixed)
+    A missing FCFF year is read two different ways in the same function. The
+    stranding test excludes it, correctly - that is what
+    `test_stranding_min_history.py` pins. The normalised terminal FCFF does
+    NOT: the flow-row collapse sums an all-missing cell to 0.0 before the
+    window mean, so a gap enters the terminal anchor as a zero-cash-flow year
+    and pulls it toward zero. With `normalization_window: 3`, one gap moves
+    the anchor by a third. This is the documented intent at `nodes.py:179-184`
+    rather than an oversight, and the `# NaN-skipping` comment on the window
+    mean describes a NaN that has already been replaced by then - but the
+    asymmetry is worth an owner decision, so it is pinned in
+    `test_loss_gap_loss_is_not_a_run_of_consecutive_losses`.
 """
 
 import pandas as pd
@@ -89,6 +102,9 @@ R_GREEN = 0.065
 
 #: Last forecast year of every frame below; the terminal row lands at +1.
 FINAL_YEAR = 2050
+
+#: What the STRANDED tier pays, and what a group with no terminal anchor gets.
+NO_TERMINAL_VALUE = 0.0
 
 
 def _frame(fcff: list[float], alignment_type: str) -> pd.DataFrame:
@@ -145,7 +161,7 @@ def test_three_consecutive_final_losses_are_stranded_with_no_terminal_value():
     """
     out = _run(_frame([100.0, 100.0, 100.0, -10.0, -10.0, -10.0], CARBONTECH))
 
-    assert _terminal_value(out) == 0.0
+    assert _terminal_value(out) == NO_TERMINAL_VALUE
     assert _terminal_rows(out).empty, (
         "a stranded group must emit no terminal row at all - a zero-valued one "
         "would still be a phantom year in the yearly trajectories"
@@ -168,7 +184,7 @@ def test_stranding_is_what_zeroes_it_not_the_missing_terminal_fcff_gate():
     # window = 3 -> normalised terminal FCFF is the mean of the three -10s.
     # carbontech g = 0, so terminal_cf = -10; base 2045 -> terminal 2051.
     assert without_tiers == pytest.approx(_gordon(-10.0, R_BROWN, 0.0, 6))
-    assert _terminal_value(_run(frame)) == 0.0
+    assert _terminal_value(_run(frame)) == NO_TERMINAL_VALUE
 
 
 # ---------------------------------------------------------------------------
@@ -212,7 +228,7 @@ def test_the_annuity_is_strictly_smaller_than_the_perpetuity_it_replaces():
     annuity = _terminal_value(_run(frame))
     perpetuity = _terminal_value(_run(frame, stranding_aware_tv=False))
 
-    assert 0.0 < annuity < perpetuity
+    assert NO_TERMINAL_VALUE < annuity < perpetuity
 
 
 # ---------------------------------------------------------------------------
@@ -227,9 +243,7 @@ def test_healthy_greentech_takes_the_perpetuity_at_the_green_growth_rate():
     normalised_fcff = (100.0 + 110.0 + 120.0) / 3.0
     green_growth = SHIPPED["terminal_growth_rate_green"]
     # base 2048 -> terminal 2051 is 3 periods.
-    expected = _gordon(
-        normalised_fcff * (1.0 + green_growth), R_GREEN, green_growth, 3
-    )
+    expected = _gordon(normalised_fcff * (1.0 + green_growth), R_GREEN, green_growth, 3)
 
     assert _terminal_value(out) == pytest.approx(expected)
     assert _terminal_rows(out)["terminal_growth_rate"].eq(green_growth).all()
@@ -327,7 +341,7 @@ def test_two_losses_on_a_short_history_fall_through_to_the_perpetuity():
     expected = _gordon(-10.0, R_BROWN, 0.0, 2)
 
     assert _terminal_value(out) == pytest.approx(expected)
-    assert expected < 0.0
+    assert expected < NO_TERMINAL_VALUE
 
 
 def test_loss_gap_loss_is_not_a_run_of_consecutive_losses():
@@ -336,15 +350,30 @@ def test_loss_gap_loss_is_not_a_run_of_consecutive_losses():
     Five observed years clear the minimum-history guard, so the only thing
     standing between this group and the stranded tier is the completeness of
     the trailing window - and a gap inside it is not a loss year. It falls
-    through to the perpetuity, priced off a terminal FCFF that skips the gap.
+    through to the perpetuity.
+
+    NOTE the asymmetry in how the same gap is read, pinned by the expected
+    value below. The stranding test excludes it (`_fcff_observed`), but the
+    NORMALISED TERMINAL FCFF counts it as a zero-cash-flow year: the flow-row
+    collapse sums an all-missing cell to 0.0 before the window mean runs, so
+    the mean here is (-10 + 0 + -10) / 3 = -6.67, not the -10 that the two
+    measured years say. This is the documented intent at
+    `nodes.py:179-184` ("every present-value number keeps the summed 0.0 it
+    has always had"), and the `# NaN-skipping` comment on the window mean is
+    therefore about a NaN that can no longer be present. It is recorded, not
+    changed: a gap pulls the terminal anchor toward zero, flattering a
+    loss-making asset and penalising a profitable one, in proportion to how
+    much of the window is missing.
     """
     out = _run(_frame([-5.0, -5.0, -5.0, -10.0, float("nan"), -10.0], CARBONTECH))
 
-    # Terminal FCFF is the NaN-skipping mean of the window: (-10 + -10) / 2.
     # base 2045 -> terminal 2051 is 6 periods.
-    expected = _gordon(-10.0, R_BROWN, 0.0, 6)
+    gap_counted_as_zero = (-10.0 + 0.0 + -10.0) / 3.0
+    expected = _gordon(gap_counted_as_zero, R_BROWN, 0.0, 6)
 
     assert _terminal_value(out) == pytest.approx(expected)
+    # The measured-years-only reading would be a third larger in magnitude.
+    assert expected == pytest.approx(_gordon(-10.0, R_BROWN, 0.0, 6) * 2 / 3)
 
 
 def test_a_terminal_fcff_of_exactly_zero_gets_no_terminal_value():
@@ -357,7 +386,7 @@ def test_a_terminal_fcff_of_exactly_zero_gets_no_terminal_value():
     """
     out = _run(_frame([50.0, 50.0, 10.0, 0.0, -10.0], GREENTECH))
 
-    assert _terminal_value(out) == 0.0
+    assert _terminal_value(out) == NO_TERMINAL_VALUE
     assert _terminal_rows(out).empty
 
 
@@ -377,12 +406,10 @@ def test_negative_terminal_fcff_without_stranding_takes_a_negative_perpetuity():
 
     normalised_fcff = (-30.0 + 5.0 + 5.0) / 3.0
     green_growth = SHIPPED["terminal_growth_rate_green"]
-    expected = _gordon(
-        normalised_fcff * (1.0 + green_growth), R_GREEN, green_growth, 3
-    )
+    expected = _gordon(normalised_fcff * (1.0 + green_growth), R_GREEN, green_growth, 3)
 
     assert _terminal_value(out) == pytest.approx(expected)
-    assert expected < 0.0, (
+    assert expected < NO_TERMINAL_VALUE, (
         "D3 characterization: an asset losing money at the horizon is being "
         "valued below zero in perpetuity, with no floor"
     )
