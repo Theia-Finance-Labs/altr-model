@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import logging
+
+import numpy as np
 import pandas as pd
 
 from altr_model.pipelines.allocate_company_trajectories_to_assets._allocation_nodes import (
@@ -19,6 +22,8 @@ from altr_model.pipelines.prepare_scenario_asset_and_company_inputs._asset_prepa
 from altr_model.pipelines.prepare_scenario_asset_and_company_inputs.nodes import (
     FINANCIAL_SURFACE_COLUMNS,
 )
+
+logger = logging.getLogger(__name__)
 
 ASSET_KEYS = [
     "asset_id",
@@ -175,6 +180,101 @@ def allocate_increasing_company_trajectories_to_assets(
     return increasing_assets
 
 
+# A synthetic top-up is capacity the company builds out from the plants it
+# already runs, so it burns like them. The owner rule (2026-09-02) reads that
+# literally: take the company's own real assets in the same group first, widen
+# the group only when the company has none there, and reach zero only when the
+# technology carries no emission factor anywhere.
+SYNTHETIC_EF_GROUP_LEVELS = (
+    ["company_id", "sector", "technology", "scenario_geography"],
+    ["technology", "scenario_geography"],
+    ["technology"],
+)
+
+
+def _capacity_weighted_emission_factors(
+    real_assets: pd.DataFrame, group_keys: list[str], years: np.ndarray
+) -> pd.Series:
+    """Capacity-weighted mean emission factor per group and year.
+
+    A year in which the group carries no weighting capacity — every real asset
+    retired, or standing at zero — has no weighted mean to give. Rather than
+    letting that year collapse, it takes the group's nearest available year
+    (forward first, then backward), so the EF series spans the whole horizon.
+    """
+    weighted = real_assets.groupby(group_keys + ["year"], as_index=False).agg(
+        _weight=("_ef_weight", "sum"), _weighted_ef=("_weighted_ef", "sum")
+    )
+    weighted["emission_factor"] = weighted["_weighted_ef"] / weighted["_weight"]
+    weighted.loc[~np.isfinite(weighted["emission_factor"]), "emission_factor"] = np.nan
+
+    grid = (
+        weighted[group_keys]
+        .drop_duplicates()
+        .merge(pd.DataFrame({"year": years}), how="cross")
+    )
+    filled = grid.merge(
+        weighted[group_keys + ["year", "emission_factor"]],
+        on=group_keys + ["year"],
+        how="left",
+    ).sort_values(group_keys + ["year"])
+    filled["emission_factor"] = filled.groupby(group_keys, sort=False)[
+        "emission_factor"
+    ].transform(lambda series: series.ffill().bfill())
+    return filled.set_index(group_keys + ["year"])["emission_factor"].dropna()
+
+
+def _inherit_synthetic_emission_factors(allocation: pd.DataFrame) -> pd.DataFrame:
+    """Give every synthetic top-up the EF of the assets it was built out from.
+
+    Per synthetic asset and year, the emission factor is the capacity-weighted
+    mean EF of the company's real assets in the same
+    (sector, technology, scenario_geography) group, falling back to all real
+    assets in that technology and geography, then to the technology as a whole,
+    and only then to zero — with a warning naming the technology.
+
+    Weights are BAU capacity (``asset_baseline_trajectory``), not post-shock
+    capacity: the EF column is single-valued per asset-year and is read by both
+    the baseline and the late-and-sudden pathway, so weighting it by a shocked
+    capacity would make the baseline's carbon cost depend on the shock.
+    """
+    synthetic = allocation["is_synthetic"].fillna(False)
+    missing = synthetic & allocation["emission_factor"].isna()
+    if not missing.any():
+        return allocation
+
+    real = allocation.loc[~synthetic].dropna(subset=["emission_factor"])
+    weight = (
+        real["asset_baseline_trajectory"]
+        .fillna(real["capacity_after_shock"])
+        .fillna(0.0)
+        .clip(lower=0.0)
+    )
+    real = real.assign(_ef_weight=weight, _weighted_ef=weight * real["emission_factor"])
+    years = np.sort(allocation["year"].unique())
+
+    for group_keys in SYNTHETIC_EF_GROUP_LEVELS:
+        lookup = _capacity_weighted_emission_factors(real, group_keys, years)
+        if not lookup.empty:
+            index = pd.MultiIndex.from_frame(
+                allocation.loc[missing, group_keys + ["year"]]
+            )
+            allocation.loc[missing, "emission_factor"] = lookup.reindex(
+                index
+            ).to_numpy()
+        missing = synthetic & allocation["emission_factor"].isna()
+        if not missing.any():
+            return allocation
+
+    logger.warning(
+        "No real asset carries an emission factor for technology %s; its synthetic "
+        "top-ups fall back to an emission factor of 0 and pay no carbon cost.",
+        ", ".join(sorted(allocation.loc[missing, "technology"].unique())),
+    )
+    allocation.loc[missing, "emission_factor"] = 0.0
+    return allocation
+
+
 def combine_asset_allocation_branches(
     decreasing_asset_allocation: pd.DataFrame,
     increasing_asset_allocation: pd.DataFrame,
@@ -219,7 +319,7 @@ def combine_asset_allocation_branches(
         renewable_synthetic & allocation["emission_factor"].isna(),
         "emission_factor",
     ] = 0.0
-    return allocation
+    return _inherit_synthetic_emission_factors(allocation)
 
 
 def build_canonical_asset_trajectories(
