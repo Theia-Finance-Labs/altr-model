@@ -52,6 +52,10 @@ SKIP_DIR_NAMES = frozenset({"__pycache__", ".ipynb_checkpoints", ".pytest_cache"
 
 #: Repo-relative paths excluded even though an allowlist entry covers them.
 SKIP_RELATIVE = (
+    # Golden snapshots: full-universe identifiers (wider than the licensed
+    # universe) pinned for the INTERNAL regression gate - recipients pin their own.
+    "tests/golden/snapshots",
+    "tests/golden/manifest.json",
     # The maintainer-only BigQuery ingestion path. There is no `download_inputs`
     # pipeline here (the pre-migration exclusions named one); ingestion is this
     # single module, and externals have no warehouse access.
