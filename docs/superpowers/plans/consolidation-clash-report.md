@@ -573,3 +573,24 @@ tests, consistent with the 37 already there.
 | **Q2-7** carbon-price side-file | the one place the ruling was not applied |
 | **Q1-4** decom sign | retiring an asset used to pay its owner |
 | **Q4-4** narrowed contract test | a deliberate invariant is now weaker |
+
+## Reviewer notes for the maintainer (post-review, non-blocking)
+
+Left by the final dual review; none blocks merge, all worth knowing:
+
+1. **Names are no longer group keys.** company_name/asset_name are carried as
+   `first` aggregations over the load-bearing keys (2134579) — a blank name can
+   neither delete a stake nor split a company. If a future change re-keys on
+   names, both failure modes return.
+2. **Exported uv.lock keeps streamlit's transitive-only packages** (altair,
+   pydeck, blinker) — inert, `uv lock --check` passes, but visible to a reader.
+3. **Terminal-value normalization still averages filled zeros across data
+   gaps** in the last window years (deliberate X2 scoping: the stranding
+   CLASSIFICATION ignores gaps; the normalization mean does not).
+4. **The prepare_inputs tier guard covers the documented ingress only** — a
+   tier-less CSV dropped directly into data/05_model_input/ bypasses it and
+   over-allocates with only a log line. Deliberate (hand-made-frame
+   compatibility); noted here so nobody assumes the hole is fully closed.
+5. **ownership_level holding strings** coerces to NaN and raises with a
+   message that points at the values, not the schema mismatch — loud but
+   imprecise; not believed to be a shape in circulation.
