@@ -559,3 +559,17 @@ data-export defect — prepare_inputs now hard-fails on tier-less companies
 data; the deliverables must be RE-EXPORTED including ownership_type
 (Bertrand / BigQuery marts side). Until that re-export exists, recipients
 cannot run — deliberate, prevents 2.5x-inflated first results.
+
+## Owner rulings 2026-09-02 (adjustment suite, numbered per adjustments-vs-december-2025.md)
+
+1 Replacement CapEx: ACCEPT pending a scenario-alignment test (verify 2%/yr vs
+  the scenarios' own capital-cost data). 2 Decom: ACCEPT. 3 Price ramp: ACCEPT.
+4 Stranding TV: ACCEPT pending tests proving all three regimes fire.
+5 Perpetuity anchor: owner challenged the "bounded" claim — answer: population
+  screening, not a magnitude bound. 6 Ownership param: KEEP as choice.
+7 MCPR: DROP (re-confirmed). 8 Synthetic EF: IMPLEMENT (done; full-universe
+  number pending disk). 9 Retirement/2039: critical assessment requested and
+  delivered. 10 EF ffill: OK.
+Owner corrected the list as incomplete: TV 3-year normalization window,
+brown/green discount spreads, terminal growth spreads, carbon-cost
+method/dynamic marginal EF, continued-O&M asymmetry to be added.
