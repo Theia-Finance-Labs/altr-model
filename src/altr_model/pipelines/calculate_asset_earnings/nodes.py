@@ -623,25 +623,42 @@ def compute_ops_block(
             is_shock & apply_continued_om_shock
         )
 
-        # Final mask: decreasing technologies AND configured trajectory types
-        decreasing_mask = is_decreasing & apply_to_trajectory
+        # Continued O&M charges a RETIRING asset the fixed costs of the plant
+        # it used to be, which is the point: a plant being wound down does not
+        # shed its cost base in step with its output. A plant that is GONE does.
+        # Past zero capacity there is no site, no crew and no contract, so the
+        # first-year basis stops and the charge falls to zero with the capacity
+        # (owner ruling 15). Without this the asset paid its original fixed
+        # costs every year to 2050 — measured on the golden run at 1.27 tn
+        # charged on plant standing at zero MW, one nuclear asset alone paying
+        # 1.26 bn/yr for the twelve years after it closed.
+        is_alive = ops_data["K_avg"] > 0
+
+        # Final mask: decreasing technologies AND configured trajectory types,
+        # for as long as the asset itself is still standing.
+        decreasing_mask = is_decreasing & apply_to_trajectory & is_alive
 
         ops_data["K_for_fixed_cost"] = np.where(
             decreasing_mask, ops_data["initial_capacity"], ops_data["K_avg"]
         )
 
         baseline_count = (
-            is_decreasing & is_baseline & apply_continued_om_baseline
+            is_decreasing & is_baseline & apply_continued_om_baseline & is_alive
         ).sum()
-        shock_count = (is_decreasing & is_shock & apply_continued_om_shock).sum()
+        shock_count = (
+            is_decreasing & is_shock & apply_continued_om_shock & is_alive
+        ).sum()
+        retired_rows = (is_decreasing & apply_to_trajectory & ~is_alive).sum()
 
         logger.info(
             "Applied constant initial capacity to %s asset-year rows total: "
             "%s baseline rows, %s shock rows (decreasing techs only). "
-            "Increasing techs use actual capacity.",
+            "Increasing techs use actual capacity. "
+            "%s rows are past zero capacity and pay no fixed cost.",
             decreasing_mask.sum(),
             baseline_count,
             shock_count,
+            retired_rows,
         )
     else:
         ops_data["K_for_fixed_cost"] = ops_data["K_avg"]
