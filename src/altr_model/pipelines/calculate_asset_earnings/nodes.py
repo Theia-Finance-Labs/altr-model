@@ -802,7 +802,11 @@ def write_asset_earnings_series(asset_cashflows: pd.DataFrame) -> pd.DataFrame:
         # CapEx & decom (flow-based)
         # "growth_capex",
         # "replace_capex",
-        # "decom_cost",
+        # NPV: the terminal anchor takes operating cash flow, so it needs the
+        # one-off exit charge inside capex_total identified rather than netted.
+        # A per-asset-year FLOW, unlike the horizon scalars in
+        # asset_horizon_attributes — this is the table flows belong in.
+        "decom_cost",
         "capex_total",
         # Cash
         "FCFF",

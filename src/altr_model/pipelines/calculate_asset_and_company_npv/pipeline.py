@@ -33,6 +33,7 @@ PIPELINE_PARAMETERS = {
     "dcf.terminal_value.g_real_green",
     "dcf.terminal_value.method",
     "dcf.terminal_value.normalization_window",
+    "dcf.tv_anchor_policy",
 }
 
 
@@ -57,6 +58,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                     "stranding_consecutive_years": "params:dcf.stranding_consecutive_years",
                     "brown_remaining_life_years": "params:dcf.brown_remaining_life_years",
                     "negative_tv_method": "params:dcf.negative_tv_method",
+                    "tv_anchor_policy": "params:dcf.tv_anchor_policy",
                 },
                 outputs="yearly_npv_trajectories",
                 name="calculate_yearly_npv_trajectories",

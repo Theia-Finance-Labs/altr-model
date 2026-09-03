@@ -86,6 +86,7 @@ def compute_yearly_npv_trajectories(
     stranding_consecutive_years: int = 3,
     brown_remaining_life_years: int = 10,
     negative_tv_method: str = "perpetuity",
+    tv_anchor_policy: str = "raw",
 ) -> pd.DataFrame:
     """
     Node 1: Compute yearly NPV trajectories with all financial components.
@@ -139,6 +140,19 @@ def compute_yearly_npv_trajectories(
                 decommission now (`-decom_cost`). Both are negative, so the
                 larger is the smaller loss. A loss-maker does not run at a
                 loss forever — it exits.
+        tv_anchor_policy: What the terminal anchor is allowed to see.
+            "raw" — the anchor is the mean FCFF of the last
+                `terminal_normalization_window` years, whatever those years
+                contain, and a group standing at zero capacity is valued like
+                any other. The pre-proposal behaviour, kept for the ablation.
+            "operating" — two corrections, both about the anchor describing a
+                PERPETUITY:
+                1. A group whose capacity at the horizon is zero has no
+                   terminal value at all. There is no plant to run: whatever
+                   the anchor says, TV = 0.
+                2. The anchor excludes decommissioning charges. Decom is a
+                   one-off exit cost booked into `capex_total`; capitalising it
+                   into a perpetuity charges it every year forever.
     """
 
     logger.info("Computing yearly NPV trajectories...")
@@ -158,6 +172,13 @@ def compute_yearly_npv_trajectories(
             "Bounded negative TV ENABLED: a non-stranded group with a negative "
             "terminal FCFF takes max(run-out annuity, -decommissioning cost) "
             "instead of an unbounded negative perpetuity"
+        )
+
+    if tv_anchor_policy == "operating":
+        logger.info(
+            "Operating terminal anchor ENABLED: zero capacity at the horizon "
+            "means TV=0, and decommissioning charges are excluded from the "
+            "anchor years' FCFF"
         )
 
     g_brown = (
@@ -267,6 +288,12 @@ def compute_yearly_npv_trajectories(
     # present-value number keeps the summed 0.0 it has always had.
     npv_data = npv_data.assign(_fcff_observed=npv_data["FCFF"].notna())
     agg_map["_fcff_observed"] = "sum"
+    # The decommissioning charge booked inside capex_total. A genuine flow, so
+    # it sums across the flow-split rows exactly as its parent does. Internal to
+    # this node: it feeds the terminal anchor and never reaches the output.
+    has_decom = "decom_cost" in npv_data.columns
+    if has_decom:
+        agg_map["decom_cost"] = "sum"
     pre_rows = len(npv_data)
     npv_data = npv_data.groupby(
         group_keys + ["year"], dropna=False, as_index=False
@@ -372,8 +399,23 @@ def compute_yearly_npv_trajectories(
             terminal_normalization_window,
         )
     window_mask = pos_from_end < terminal_normalization_window
+
+    # A perpetuity capitalises whatever the anchor holds, so the anchor has to
+    # be OPERATING cash flow. Decommissioning is a one-off charge for leaving,
+    # and an asset shedding capacity every year of the transition books one
+    # every year: left in, r-g turns a single exit bill into an infinite series
+    # of them. Adding the charge back is exact — capex_total contains it as a
+    # positive outflow, so FCFF + decom_cost is the FCFF of an asset that did
+    # not retire. A missing charge is no charge, hence fillna(0.0) rather than
+    # a NaN that would silently drop the year from the window mean.
+    anchor_fcff = fcff
+    if tv_anchor_policy == "operating" and has_decom:
+        anchor_fcff = fcff + npv_data["decom_cost"].fillna(0.0).to_numpy(
+            dtype=np.float64
+        )
+
     final_fcff = (
-        pd.Series(fcff[window_mask])
+        pd.Series(anchor_fcff[window_mask])
         .groupby(gid[window_mask])
         .mean()  # NaN-skipping
         .reindex(np.arange(n_groups))
@@ -405,6 +447,13 @@ def compute_yearly_npv_trajectories(
             # have. A MISSING year is not a loss either, so both the history
             # length and the loss run count measured values, never the 0.0 the
             # collapse above puts in a gap's place.
+            # NOTE the deliberate asymmetry with the anchor above: stranding
+            # reads the AS-BOOKED FCFF, decom included. The anchor asks "what
+            # does this asset earn from here?" and a one-off exit charge is no
+            # part of the answer; stranding asks "is it burning cash?", and an
+            # asset paying a decommissioning bill it cannot cover is. Stranded
+            # pays zero, which is strictly less negative than the raw anchor's
+            # value, so the ordering is conservative either way.
             observed_per_group = np.bincount(gid[fcff_observed], minlength=n_groups)
             has_full_history = observed_per_group >= stranding_consecutive_years
             window = pos_from_end < stranding_consecutive_years
@@ -510,6 +559,38 @@ def compute_yearly_npv_trajectories(
             & (final_discount_rate > g_effective)
         )
         terminal_value = np.where(perpetuity, perpetuity_tv, terminal_value)
+
+        # RETIRED AT THE HORIZON — the hard case, and it outranks every tier
+        # above. A group standing at zero capacity has no plant: there is
+        # nothing to run out, nothing to decommission a second time, and
+        # nothing to grow into perpetuity. Whatever its final cash flows say,
+        # the terminal value is zero.
+        #
+        # The tiers cannot reach this on their own, because the anchor is a
+        # WINDOW: with `terminal_normalization_window: 3` a plant that retired
+        # two years before the horizon still has two live years inside the
+        # window, so it is handed a terminal value off cash flows it can no
+        # longer earn. Zeroing on capacity is what stops the window from
+        # resurrecting a retired asset.
+        if tv_anchor_policy == "operating":
+            capacity_at_horizon = anchor("asset_trajectory")
+            if capacity_at_horizon is None:
+                logger.warning(
+                    "tv_anchor_policy='operating' has no capacity at the "
+                    "horizon to read; a retired group keeps the terminal value "
+                    "its tier gave it"
+                )
+            else:
+                retired_at_horizon = np.isfinite(capacity_at_horizon) & (
+                    capacity_at_horizon <= 0
+                )
+                logger.info(
+                    "Retired at the horizon: %d of %d groups stand at zero "
+                    "capacity and take TV=0",
+                    int(retired_at_horizon.sum()),
+                    n_groups,
+                )
+                terminal_value = np.where(retired_at_horizon, 0.0, terminal_value)
 
     # One terminal row per group with a non-zero terminal value, built as a
     # single frame (the old per-group Series.to_frame().T forced object dtype).
