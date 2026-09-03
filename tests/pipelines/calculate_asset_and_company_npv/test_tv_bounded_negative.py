@@ -323,3 +323,90 @@ def test_without_lifetime_the_annuity_falls_back_to_the_brown_horizon():
     )
 
     assert _terminal_value(out) == pytest.approx(expected)
+
+
+def test_a_non_finite_scrap_price_is_not_an_exit_quote():
+    """NaN and inf are missing data, not a free or infinite decommissioning.
+
+    `abs(scrap) * capacity` is non-finite for either, and a non-finite exit
+    bill is no quote at all: the floor drops out and the run-out annuity
+    stands alone, exactly as it does when the column is absent.
+    """
+    frame, horizon = _frame_with_exit_data(ESCAPES_STRANDING, GREENTECH)
+    expected = _run_out_value(ESCAPES_STRANDING, R_GREEN, years_back=2)
+
+    for bad_scrap in (float("nan"), float("inf"), float("-inf")):
+        out = _run((frame, horizon.assign(scrap_usd_per_mw=bad_scrap)), **BOUNDED)
+        assert _terminal_value(out) == pytest.approx(expected), bad_scrap
+
+
+# ── the n_remaining <= 0 boundary (owner ruling C2) ─────────────────────────
+#
+# An asset PAST its lifetime but still standing has no remaining life to run
+# out, so the run-out arm does not exist and the exit arm binds. Clamping the
+# remaining life to zero and keeping the arm gives `run_out_tv == 0`, which
+# beats every negative `-decom_cost` and hands the asset a FREE EXIT.
+
+
+def test_past_its_lifetime_and_still_standing_pays_the_exit_bill():
+    """`lifetime - age == 0` with capacity standing: TV is exactly -decom.
+
+    NOT zero. A zero-year annuity factor is 0, and `max(0, -decom)` would pick
+    the 0 - valuing a plant that must still be decommissioned as though
+    walking away were free.
+    """
+    out = _run(
+        _frame_with_exit_data(
+            ESCAPES_STRANDING, GREENTECH, lifetime_years=AGE_AT_HORIZON
+        ),
+        **BOUNDED,
+    )
+
+    decom_cost = abs(SCRAP_DEARER_THAN_RUNNING_ON) * CAPACITY
+    expected = _discounted(-decom_cost, R_GREEN, years_back=2)
+
+    assert _terminal_value(out) == pytest.approx(expected)
+    assert _terminal_value(out) < NO_TERMINAL_VALUE, "a free exit is the bug"
+
+
+def test_past_its_lifetime_with_no_exit_quote_takes_no_terminal_value():
+    """Both arms unavailable: no life to run out, and no scrap price to exit at.
+
+    There is no number to put on the group, so it takes none - the same "no
+    quote, no floor" reading the missing-scrap fallback already uses, applied
+    when the annuity is the arm that is missing.
+    """
+    out = _run(
+        _frame_with_exit_data(
+            ESCAPES_STRANDING,
+            GREENTECH,
+            scrap_usd_per_mw=None,
+            lifetime_years=AGE_AT_HORIZON,
+        ),
+        **BOUNDED,
+    )
+
+    assert _terminal_value(out) == pytest.approx(NO_TERMINAL_VALUE)
+
+
+def test_one_year_of_life_left_is_a_one_year_annuity():
+    """The other side of the boundary is untouched: N=1 still runs out.
+
+    The arm only disappears at `lifetime - age <= 0`; one year of remaining
+    life is one year of annuity, and here that is the less-bad arm.
+    """
+    out = _run(
+        _frame_with_exit_data(
+            ESCAPES_STRANDING, GREENTECH, lifetime_years=AGE_AT_HORIZON + 1.0
+        ),
+        **BOUNDED,
+    )
+
+    final_fcff = sum(ESCAPES_STRANDING) / len(ESCAPES_STRANDING)
+    run_out = final_fcff * _annuity_factor(R_GREEN, 1)
+    decom_cost = abs(SCRAP_DEARER_THAN_RUNNING_ON) * CAPACITY
+
+    assert run_out > -decom_cost, "frame must make the one-year run-out least bad"
+    assert _terminal_value(out) == pytest.approx(
+        _discounted(run_out, R_GREEN, years_back=2)
+    )
