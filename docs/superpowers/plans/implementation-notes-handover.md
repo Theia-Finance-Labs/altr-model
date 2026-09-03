@@ -608,3 +608,13 @@ method/dynamic marginal EF, continued-O&M asymmetry to be added.
   asset_horizon_attributes table instead of widening asset_earnings.
 All five ordered as commits on feat/decision-proposals; measurement batch
 follows once the owner accepts the diffs.
+
+### Ruling provenance fix (2026-09-04)
+
+Ruling #13 (terminal-growth spreads per technology, same brown_technologies
+carrier as #12) WAS an explicit owner ruling — Jakub, 2026-09-04: "yeah per
+technology on 13 makes more sense" — recorded late here; the earlier
+"awaiting a matching ruling" line is superseded. Also ruled same day:
+C2 semantics — an asset past its lifetime but still standing takes the EXIT
+arm (no life left to run out) — implemented as the faithful reading of
+ruling #5, pending owner confirmation.
