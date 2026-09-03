@@ -145,7 +145,7 @@ Two functions in this pipeline are not nodes:
 | `market_passthrough` | `conf/base/parameters_calculate_asset_earnings.yml` |
 | `include_growth_capex`, `include_replacement_capex`, `replacement_capex_rate`, `include_decom_costs` | `conf/base/parameters_calculate_asset_earnings.yml` |
 | `apply_continued_om_baseline`, `apply_continued_om_shock` | `conf/base/parameters_calculate_asset_earnings.yml` |
-| `carbon_cost_method`, `dynamic_marginal_ef` | `conf/base/parameters_calculate_asset_earnings.yml` |
+| `carbon_cost_method` | `conf/base/parameters_calculate_asset_earnings.yml` |
 
 Every key this stage reads is defined in its own file. `include_replacement_capex`
 and `include_decom_costs` ship `True` and `include_growth_capex` ships `False` -
@@ -159,15 +159,22 @@ factor (`"full_ef"`, the default) and charging only the **excess** over the
 price-setting generator (`"differential_ef"`). The differential method suits IAMs
 whose electricity prices already embed the marginal generator's carbon cost;
 `"full_ef"` suits IAMs whose prices barely move with carbon stringency, where
-there is nothing to double-count. `dynamic_marginal_ef` lets that marginal
-emission factor decay with the VRE capacity share, so a technology loses its
-carbon rent as renewables push it off the margin.
+there is nothing to double-count.
 
-Both keys act on a marginal emission factor produced by the market-clearing-price
+The key acts on a marginal emission factor produced by the market-clearing-price
 adjustment, which this codebase does not carry. The marginal EF is therefore 0,
-the two methods coincide, and every technology pays its full emission factor net
-of `market_passthrough`. The keys are present so the differential path works if
-that adjustment is ever adopted.
+the two methods coincide on today's inputs, and every technology pays its full
+emission factor net of `market_passthrough`. The key is present so the
+differential path works if that adjustment is ever adopted, and
+`tests/pipelines/calculate_asset_earnings/test_carbon_cost_method.py` exercises
+it against an injected non-zero marginal EF rather than leaving a switch nothing
+can currently reach untested.
+
+A companion key, `dynamic_marginal_ef`, decayed that marginal EF with the VRE
+capacity share. **Owner ruling 14 deleted it** (proposal branch
+`feat/decision-proposals`): it scaled a value that is always zero, so it could
+not change a number, and its `(1 - vre_share)²` merit-order curve was an
+untested assumption waiting to become live. `_vre_capacity_share` went with it.
 
 The price ramp that phases the financial surfaces across the shock window is a
 **stage 2** parameter, not one of this stage's: see
