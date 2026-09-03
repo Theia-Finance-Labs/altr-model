@@ -874,4 +874,21 @@ def write_asset_horizon_attributes(asset_panel_enriched: pd.DataFrame) -> pd.Dat
 
     logger.info("Asset horizon attributes: %s asset series", len(horizon))
 
+
+    # Q2 preflight (review): the valuation stage merges this table with
+    # validate="many_to_one" and ABORTS mid-run on a duplicate series. Catch it
+    # here, at the cheap end, with a message naming the offenders — a
+    # multi-hour batch run should die in seconds, not at the NPV stage.
+    duplicated = horizon.duplicated(subset=ASSET_SERIES_KEYS)
+    if bool(duplicated.any()):
+        offenders = (
+            horizon.loc[duplicated, ASSET_SERIES_KEYS]
+            .head(5)
+            .to_dict("records")
+        )
+        raise ValueError(
+            f"asset_horizon_attributes holds {int(duplicated.sum())} duplicate "
+            f"asset series — the valuation merge would abort mid-run. First "
+            f"offenders: {offenders}"
+        )
     return horizon

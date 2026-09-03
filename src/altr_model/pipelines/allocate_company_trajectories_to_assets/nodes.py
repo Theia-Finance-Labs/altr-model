@@ -7,7 +7,9 @@ import logging
 import numpy as np
 import pandas as pd
 
+from altr_model._validation import validate_choice
 from altr_model.pipelines.allocate_company_trajectories_to_assets._allocation_nodes import (
+    RETIREMENT_TIMINGS,
     RETIREMENT_TIMING_DEFERRED,
     compute_asset_baseline_trajectories,
     effective_retirement_year,
@@ -120,6 +122,7 @@ def compute_asset_baselines(
     retirement_timing: str = RETIREMENT_TIMING_DEFERRED,
 ) -> pd.DataFrame:
     """Compute the asset baseline using retirement carried on the asset panel."""
+    validate_choice("retirement_timing", retirement_timing, RETIREMENT_TIMINGS)
     return compute_asset_baseline_trajectories(
         companies_late_sudden_trajectories=_legacy_company_pathways(
             company_pathways_pre_allocation
@@ -157,6 +160,7 @@ def allocate_decreasing_company_trajectories_to_assets(
     retirement_timing: str = RETIREMENT_TIMING_DEFERRED,
 ) -> pd.DataFrame:
     """Allocate decreasing pathways using the selected proportional/staggered mode."""
+    validate_choice("retirement_timing", retirement_timing, RETIREMENT_TIMINGS)
     decreasing_assets, _ = stagger_decreasing_technologies(
         late_sudden_trajectories=decreasing_company_pathways,
         assets_with_baseline_trajectory=assets_with_baseline,
@@ -412,6 +416,7 @@ def create_frozen_capacity_at_retirement(
     branch carries it and the 2026-09-01 owner ruling ports Q4 — it is the
     surface a stranded-capacity view would be built on.
     """
+    validate_choice("retirement_timing", retirement_timing, RETIREMENT_TIMINGS)
     if asset_allocation_wide.empty or "capacity_after_shock" not in (
         asset_allocation_wide.columns
     ):

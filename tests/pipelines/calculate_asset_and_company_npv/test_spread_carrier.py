@@ -234,3 +234,16 @@ def test_a_zero_greenium_under_the_alignment_carrier_is_just_the_base_rate():
         "SolarCap - PV", "aligned_low_carbon", spread_carrier=ALIGNMENT
     )
     assert rate == pytest.approx(BASE_RATE)
+
+
+def test_a_negative_greenium_is_rejected_not_ignored():
+    """Round-2 S1: the old `if greenium > 0` silently discarded a sign typo —
+    under the alignment carrier that would report "rulings 12+13 moved
+    nothing" as a completed, wrong result. It now raises."""
+    with pytest.raises(ValueError, match="green_discount_spread"):
+        _rate_and_growth(
+            "SolarCap - PV",
+            "aligned_low_carbon",
+            spread_carrier="alignment_type",
+            green_discount_spread=-0.005,
+        )
