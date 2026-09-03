@@ -175,14 +175,17 @@ dcf:
   #                    retired two years early still has live years inside it,
   #                    and was handed a terminal value off cash flows it can no
   #                    longer earn (measured: -615 bn fabricated on assets that
-  #                    had already retired).
+  #                    had already retired — PROVISIONAL, from the golden-run
+  #                    investigation; the full-universe measurement batch is
+  #                    pending and will supersede this figure).
   #                 2. DECOMMISSIONING IS EXCLUDED from the anchor years' FCFF.
   #                    Decom is the one-off cost of leaving, booked into
   #                    capex_total; an asset shedding capacity through the
   #                    transition books one every year, and r-g turned those
   #                    exit bills into infinite series of themselves (measured:
   #                    -1.26 tn of negative terminal value from decom at the
-  #                    horizon capitalised into perpetuities). The charge is
+  #                    horizon capitalised into perpetuities — PROVISIONAL,
+  #                    full-universe measurement batch pending). The charge is
   #                    added back exactly — capex_total carries it as a positive
   #                    outflow — so the anchor is the FCFF of an asset that did
   #                    not retire.
