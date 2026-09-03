@@ -78,3 +78,36 @@ dcf:
   # `final_fcff > 0` alternative would floor this at zero instead, which hands
   # a loss-maker a free exit; this keeps the loss but bounds it.
   negative_tv_method: "bounded_annuity"  # "perpetuity" | "bounded_annuity"
+
+  # ── The terminal anchor (owner ruling 11) ───────────────────────────────────
+  # What the terminal anchor is allowed to see. A perpetuity capitalises the
+  # anchor forever, so anything one-off inside it is charged every year for the
+  # rest of time.
+  #   "raw"       — the mean FCFF of the last `normalization_window` years,
+  #                 whatever those years contain, and a group standing at zero
+  #                 capacity valued like any other. The pre-proposal behaviour,
+  #                 kept reachable for the ablation batch.
+  #   "operating" — two corrections:
+  #                 1. ZERO CAPACITY AT THE HORIZON => TV = 0, hard, ahead of
+  #                    every tier. A retired asset has no terminal value: there
+  #                    is no plant to run out, nothing to decommission twice,
+  #                    nothing to grow. The tiers cannot see this on their own
+  #                    because the anchor is a WINDOW — at window 3 a plant that
+  #                    retired two years early still has live years inside it,
+  #                    and was handed a terminal value off cash flows it can no
+  #                    longer earn (measured: -615 bn fabricated on assets that
+  #                    had already retired).
+  #                 2. DECOMMISSIONING IS EXCLUDED from the anchor years' FCFF.
+  #                    Decom is the one-off cost of leaving, booked into
+  #                    capex_total; an asset shedding capacity through the
+  #                    transition books one every year, and r-g turned those
+  #                    exit bills into infinite series of themselves (measured:
+  #                    -1.26 tn of negative terminal value from decom at the
+  #                    horizon capitalised into perpetuities). The charge is
+  #                    added back exactly — capex_total carries it as a positive
+  #                    outflow — so the anchor is the FCFF of an asset that did
+  #                    not retire.
+  # With both fixes in, `normalization_window` above returns to being what it
+  # claims to be: a mild smoothing choice over comparable operating years, not
+  # the lever that decides whether a retired asset has a terminal value at all.
+  tv_anchor_policy: "operating"  # "raw" | "operating"

@@ -283,13 +283,15 @@ def test_valuation_output_shape_stable(fixture_run):
 @pytest.mark.xfail(
     reason=(
         "proposal branch — pins intentionally not re-derived until the owner "
-        "decides. NOT the horizon scalars the previous reason named: those "
-        "moved out of `asset_earnings` into `asset_horizon_attributes`, so the "
-        "pinned column list and the row count are green again and the schema "
-        "half of this test passes. What remains is a VALUE: natural retirement "
-        "timing (D9) moves one asset's FCFF total, "
-        "INTERNAL_A_L100000201220/CN_6166477550945836346, from "
-        "-210,086,705.59 to -370,319,739.62."
+        "decides. Two things sit between this test and green, neither of them "
+        "the horizon scalars the previous reason named (those moved out of "
+        "`asset_earnings` into `asset_horizon_attributes`, and the row count "
+        "has matched since). (1) COLUMN LIST: `decom_cost` is now carried, "
+        "because ruling 11's terminal anchor takes operating cash flow and so "
+        "needs the one-off exit charge inside `capex_total` identified rather "
+        "than netted. (2) VALUE: natural retirement timing (D9) moves one "
+        "asset's FCFF total, INTERNAL_A_L100000201220/CN_6166477550945836346, "
+        "from -210,086,705.59 to -370,319,739.62."
     ),
     strict=False,
 )
