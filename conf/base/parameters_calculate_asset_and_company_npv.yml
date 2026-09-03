@@ -21,10 +21,9 @@ dcf:
   # A carbon risk PENALTY, and nothing on the other side. Bolton & Kacperczyk
   # (2021, 2023) measure roughly 1.5-2.5% higher equity returns for high-emission
   # firms — a 60-150 bps WACC spread — and measure no corresponding discount for
-  # clean firms. There was a `green_discount_spread` of -50 bps here; it is
-  # deleted, because a greenium the literature does not find should not be
-  # subsidising every non-fossil asset's valuation. Set the penalty to 0 for a
-  # uniform rate. Added to the scenario base rate above; a negative value is
+  # clean firms, so under the shipped technology carrier no greenium is applied
+  # (the parameter below exists only for the measurement arm). Set the penalty
+  # to 0 for a uniform rate. Added to the scenario base rate above; a negative value is
   # rejected rather than applied as a discount.
   brown_discount_spread: 0.01   # +100 bps carbon risk premium
 

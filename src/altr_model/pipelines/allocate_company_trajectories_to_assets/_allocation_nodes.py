@@ -42,11 +42,10 @@ def effective_retirement_year(
 
     Accepts a scalar or a Series and returns the same shape.
 
-    Validated HERE rather than at the three node entry points because this is
-    the function whose `else` silently takes the other arm: every caller in the
-    stage routes through it, so one guard covers all of them and a misspelled
-    `retirement_timing` can never quietly defer a retirement it was asked to
-    let land naturally.
+    Validated at the three public node entry points AND here. The node-entry
+    guards catch a misspelled value even on paths that return before reaching
+    this helper (empty allocations, retirement disabled, no retiring assets);
+    this guard is defence in depth for direct callers.
     """
     validate_choice("retirement_timing", retirement_timing, RETIREMENT_TIMINGS)
     if retirement_timing == RETIREMENT_TIMING_NATURAL or alignment_year is None:

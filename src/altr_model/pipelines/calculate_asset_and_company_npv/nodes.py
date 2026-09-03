@@ -297,6 +297,15 @@ def compute_yearly_npv_trajectories(
             "else; use 0 for a uniform rate."
         )
 
+    if green_discount_spread < 0:
+        raise ValueError(
+            "dcf.green_discount_spread is a DISCOUNT expressed as a positive "
+            f"number of rate points (got {green_discount_spread}). The old "
+            "greenium was -50 bps, entered as 0.005; a negative value here "
+            "would be silently ignored by the selection below, so it is "
+            "rejected instead."
+        )
+
     brown_set = set(brown_technologies or ())
 
     # WHICH assets count as brown, for the spread here AND for the terminal
@@ -314,6 +323,13 @@ def compute_yearly_npv_trajectories(
     else:
         is_brown_row = np.zeros(len(npv_data), dtype=bool)
 
+    if spread_carrier == SPREAD_CARRIER_ALIGNMENT and brown_set:
+        logger.warning(
+            "dcf.brown_technologies has %d entries but spread_carrier is "
+            "'alignment_type', so the list is ignored — brown selection runs "
+            "on alignment_type for both the spread and terminal growth",
+            len(brown_set),
+        )
     if (
         brown_discount_spread > 0
         and spread_carrier == SPREAD_CARRIER_TECHNOLOGY
@@ -691,7 +707,9 @@ def compute_yearly_npv_trajectories(
             # reads decision #5 the other way: no life left to run out means
             # the exit arm is the one that prices the group.
             #
-            # A group with nothing standing keeps the zero-year arm: there is
+            # The capacity COLUMN is absent (not "capacity is zero"): with no
+            # quote available the exit arm is unavailable too, and both arms
+            # missing resolves to 0 below - the same answer either way. There is
             # no plant to decommission either, so both arms are 0 and the
             # `tv_anchor_policy="operating"` zeroing below agrees.
             if capacity is None:
@@ -735,20 +753,36 @@ def compute_yearly_npv_trajectories(
         terminal_value = np.where(perpetuity, perpetuity_tv, terminal_value)
 
         # WHICH TIER CLAIMED WHAT. The tiers are mutually exclusive and the
-        # counts sum to n_groups, so a census is the cheapest way for a reader
+        # counts sum to n_groups EXCEPT groups where r <= g (no perpetuity is
+        # defined; they carry no terminal value and are counted separately
+        # below). NOTE: these are tier ASSIGNMENTS logged before the
+        # operating-anchor retired-at-horizon override; a group counted here
+        # can still be zeroed by that override afterwards.
+        # A census is the cheapest way for a reader
         # to see whether the perpetuity is the common case or the exception in
         # their own run — the handover page quotes the fixture's, and this is
         # how to reproduce it on any other input.
         logger.info(
             "Terminal-value tier census of %d groups: %d stranded (TV=0), "
             "%d carbontech annuity, %d bounded negative, %d perpetuity, "
-            "%d with no terminal anchor",
+            "%d with no terminal anchor, %d with r <= g (no perpetuity "
+            "defined, no terminal value) — assignments before the "
+            "operating-anchor retirement override",
             n_groups,
             int(stranded.sum()),
             int(annuity.sum()),
             int(negative.sum()),
             int(perpetuity.sum()),
             int((~has_terminal_fcff).sum()),
+            int(
+                (
+                    has_terminal_fcff
+                    & ~stranded
+                    & ~annuity
+                    & ~negative
+                    & ~perpetuity
+                ).sum()
+            ),
         )
 
         # RETIRED AT THE HORIZON — the hard case, and it outranks every tier
