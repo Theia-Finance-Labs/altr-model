@@ -573,3 +573,21 @@ cannot run — deliberate, prevents 2.5x-inflated first results.
 Owner corrected the list as incomplete: TV 3-year normalization window,
 brown/green discount spreads, terminal growth spreads, carbon-cost
 method/dynamic marginal EF, continued-O&M asymmetry to be added.
+
+### Owner rulings 2026-09-03 + plan of record
+
+- #5 RESOLVED-DIRECTION: bounded negative TV — max(annuity-of-losses over
+  remaining life, −decom cost); code proposal ordered (branch
+  feat/decision-proposals, toggleable, default bounded on that branch).
+- #9 RESOLVED-DIRECTION: natural retirement in BOTH pathways (cancels in the
+  difference by construction); window logic only for shock-induced exits;
+  code proposal ordered on the same branch, toggleable.
+- #12 KEEP pending mechanics verification; #13 KEEP; #11/#14/#15 under
+  investigation (outlier census, differential-EF explanation, continued-O&M
+  duration).
+- MEASUREMENT PLAN (owner instruction after noting unmeasured cells shipped in
+  the December table): implement the discussed changes FIRST, then ONE batch
+  of full-universe marginal-impact runs for everything unmeasured — 11
+  (window=1), 12 (spreads=0), 13 (g uniform), 15 (continued-OM-shock off),
+  #5 variant, #9 variant, synthetic-EF impact — then decide and re-pin.
+  Batch needs ~2.5 GB free disk (owner to free).
