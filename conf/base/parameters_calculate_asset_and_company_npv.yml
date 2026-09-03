@@ -28,6 +28,35 @@ dcf:
   # rejected rather than applied as a discount.
   brown_discount_spread: 0.01   # +100 bps carbon risk premium
 
+  # The GREENIUM leg, restored as a MEASURABLE parameter rather than a deleted
+  # one. It ships at 0.0 and is IGNORED (with a warning) under the shipped
+  # `spread_carrier: "technology"`, because Bolton & Kacperczyk find no discount
+  # for clean firms. It is live only under `spread_carrier: "alignment_type"`,
+  # where -50 bps (0.005) reproduces the pre-ruling-12 behaviour exactly. Kept
+  # so the ablation batch can MEASURE what ruling 12 removed instead of quoting
+  # a number nobody can reproduce from the shipped tree.
+  green_discount_spread: 0.0    # 0 bps; 0.005 + alignment carrier = pre-ruling-12
+
+  # ── WHICH carrier decides "brown" (owner rulings 12 and 13) ────────────────
+  # ONE switch for BOTH the discount spread above and the terminal growth rate
+  # below. Ruling 13 tied them together deliberately: an asset must not be able
+  # to be brown for its discount rate and green for its growth rate.
+  #   "technology"     — membership of `brown_technologies` below. What a lender
+  #                      prices is what the plant burns. Shipped.
+  #   "alignment_type" — membership of `misaligned_high_carbon` /
+  #                      `aligned_high_carbon`, the pre-ruling behaviour, kept
+  #                      reachable for the ablation batch. Alignment describes
+  #                      an asset's TRAJECTORY against its scenario, not what it
+  #                      burns, so it misfired in both directions at once:
+  #                      offshore wind and nuclear classed `misaligned_high_
+  #                      carbon` paid the fossil penalty AND grew at the fossil
+  #                      0%, while oil classed `misaligned_low_carbon` collected
+  #                      the greenium.
+  # NOTE the tier-2 carbontech annuity is NOT governed by this switch — it
+  # still selects on `alignment_type` under either carrier, pending its own
+  # ruling.
+  spread_carrier: "technology"  # "technology" | "alignment_type"
+
   # WHICH assets pay it — by TECHNOLOGY, not by `alignment_type`. Alignment is a
   # statement about an asset's TRAJECTORY against its scenario, so it moved the
   # rate for reasons that have nothing to do with carbon: offshore wind classed

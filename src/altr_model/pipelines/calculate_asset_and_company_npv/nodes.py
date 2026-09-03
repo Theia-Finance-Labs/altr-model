@@ -12,6 +12,11 @@ logger = logging.getLogger(__name__)
 
 CARBONTECH_ALIGNMENTS = {"misaligned_high_carbon", "aligned_high_carbon"}
 
+#: What decides that an asset is "brown", for the discount spread AND the
+#: terminal growth rate alike — owner ruling 13 tied both to one carrier.
+SPREAD_CARRIER_TECHNOLOGY = "technology"
+SPREAD_CARRIER_ALIGNMENT = "alignment_type"
+
 #: The asset-series grain `asset_horizon_attributes` is keyed on — the same
 #: `ASSET_SERIES_KEYS` the earnings stage writes it at. The valuation group keys
 #: add name and classification columns, all functionally dependent on these six,
@@ -81,7 +86,9 @@ def compute_yearly_npv_trajectories(
     terminal_growth_rate_green: float | None = None,
     terminal_normalization_window: int = 1,
     brown_discount_spread: float = 0.0,
+    green_discount_spread: float = 0.0,
     brown_technologies: list[str] | None = None,
+    spread_carrier: str = "technology",
     stranding_aware_tv: bool = False,
     stranding_consecutive_years: int = 3,
     brown_remaining_life_years: int = 10,
@@ -120,12 +127,31 @@ def compute_yearly_npv_trajectories(
             corresponding discount for clean ones — so there is a penalty leg
             and no greenium leg. 0 gives a uniform rate; a negative value is
             rejected rather than silently applied as a discount.
-        brown_technologies: The technologies that pay the premium. Membership is
-            by TECHNOLOGY, not by `alignment_type`: alignment describes an
-            asset's trajectory against its scenario, so it moved the rate for
-            reasons unrelated to carbon — offshore wind classed
-            `misaligned_high_carbon` paid the fossil penalty, oil classed
-            `misaligned_low_carbon` collected the greenium.
+        green_discount_spread: The GREENIUM — a discount subtracted from every
+            asset the carrier does not call brown. Live only under
+            `spread_carrier="alignment_type"`; under the shipped "technology"
+            carrier it is retired and ignored with a warning, because Bolton &
+            Kacperczyk measure a penalty on high emitters and NO corresponding
+            discount for clean firms. Kept as a parameter so the pre-ruling-12
+            behaviour is reachable and measurable, not merely described.
+        brown_technologies: The technologies that pay the premium under the
+            "technology" carrier.
+        spread_carrier: WHAT decides that an asset is brown — and it decides it
+            for BOTH the discount spread (ruling 12) and the terminal growth
+            rate (ruling 13), which the owner tied to one carrier.
+            "technology" — membership of `brown_technologies`. What a lender
+                prices is what the plant burns. Shipped.
+            "alignment_type" — membership of `CARBONTECH_ALIGNMENTS`, the
+                pre-ruling behaviour. Alignment describes an asset's trajectory
+                against its scenario, not what it burns, so it misfired in both
+                directions: offshore wind and nuclear classed
+                `misaligned_high_carbon` paid the fossil penalty AND grew at the
+                fossil rate, while oil classed `misaligned_low_carbon` collected
+                the greenium. Kept reachable for the ablation batch so the
+                ruling's effect can be measured rather than asserted.
+            NOTE the tier-2 carbontech annuity below is NOT governed by this
+            switch — it still selects on `alignment_type` under either carrier,
+            pending its own ruling.
         stranding_aware_tv: Three-tier terminal value instead of a single
             perpetuity (Gourdel 2024):
             1. STRANDED — FCFF <= 0 for the last N years: TV = 0. A rational
@@ -243,27 +269,67 @@ def compute_yearly_npv_trajectories(
         )
 
     brown_set = set(brown_technologies or ())
-    if brown_discount_spread > 0 and not brown_set:
+
+    # WHICH assets count as brown, for the spread here AND for the terminal
+    # growth rate far below — owner ruling 13 tied the two to one carrier, so
+    # they must not be able to disagree.
+    if spread_carrier == SPREAD_CARRIER_ALIGNMENT:
+        if "alignment_type" in npv_data.columns:
+            is_brown_row = (
+                npv_data["alignment_type"].isin(CARBONTECH_ALIGNMENTS).to_numpy()
+            )
+        else:
+            is_brown_row = np.zeros(len(npv_data), dtype=bool)
+    elif "technology" in npv_data.columns:
+        is_brown_row = npv_data["technology"].isin(brown_set).to_numpy()
+    else:
+        is_brown_row = np.zeros(len(npv_data), dtype=bool)
+
+    if (
+        brown_discount_spread > 0
+        and spread_carrier == SPREAD_CARRIER_TECHNOLOGY
+        and not brown_set
+    ):
         logger.warning(
             "dcf.brown_discount_spread is %.1f bps but dcf.brown_technologies "
             "is empty, so no asset pays it and the rate is uniform",
             brown_discount_spread * 10000,
         )
-    if "technology" in npv_data.columns:
-        is_brown_row = npv_data["technology"].isin(brown_set).to_numpy()
-    else:
-        is_brown_row = np.zeros(len(npv_data), dtype=bool)
-    if brown_discount_spread > 0 and brown_set:
+
+    # The GREENIUM leg exists only under the alignment carrier. Under the
+    # shipped technology carrier it is retired: Bolton & Kacperczyk measure a
+    # penalty on high emitters and no discount for clean firms, so a non-zero
+    # value here would be subsidising every non-fossil asset's valuation off
+    # evidence that does not exist. Ignored loudly rather than quietly.
+    greenium = green_discount_spread
+    if greenium and spread_carrier != SPREAD_CARRIER_ALIGNMENT:
+        logger.warning(
+            "dcf.green_discount_spread is %.1f bps but dcf.spread_carrier is "
+            "'%s', under which the greenium is retired (Bolton & Kacperczyk "
+            "find no discount for clean firms); it is IGNORED. Set "
+            "spread_carrier: 'alignment_type' to reach the pre-ruling-12 "
+            "behaviour.",
+            green_discount_spread * 10000,
+            spread_carrier,
+        )
+        greenium = 0.0
+
+    if brown_discount_spread > 0 and is_brown_row.any():
         logger.info(
             "Carbon risk premium: +%.1f bps on %d of %d asset-year rows, by "
-            "technology (%s) — Bolton & Kacperczyk 2021/2023",
+            "%s — Bolton & Kacperczyk 2021/2023",
             brown_discount_spread * 10000,
             int(is_brown_row.sum()),
             len(npv_data),
-            ", ".join(sorted(brown_set)),
+            (
+                "technology (" + ", ".join(sorted(brown_set)) + ")"
+                if spread_carrier == SPREAD_CARRIER_TECHNOLOGY
+                else "alignment_type"
+            ),
         )
+    green_rate = base_rate - greenium if greenium > 0 else base_rate
     npv_data["discount_rate"] = np.where(
-        is_brown_row, base_rate + brown_discount_spread, base_rate
+        is_brown_row, base_rate + brown_discount_spread, green_rate
     )
 
     # Guard: need trajectory_type and FCFF
@@ -406,13 +472,19 @@ def compute_yearly_npv_trajectories(
         )
     else:
         is_carbontech = np.zeros(n_groups, dtype=bool)
-    # The terminal GROWTH rate rides the same carrier as the discount spread
-    # (owner ruling 13): the `brown_technologies` list, not `alignment_type`.
-    # `technology` is a group key, so the group's last row speaks for it.
-    if "technology" in npv_data.columns:
-        is_brown_tech = npv_data["technology"].iloc[last_idx].isin(brown_set).to_numpy()
+    # The terminal GROWTH rate rides the SAME carrier as the discount spread
+    # (owner ruling 13) — one carrier, one answer, so an asset cannot be brown
+    # for its rate and green for its growth. Recomputed here at GROUP grain
+    # rather than reused from `is_brown_row`, which was measured on the
+    # pre-collapse frame and is not row-aligned with `last_idx`. Both
+    # `technology` and `alignment_type` are group keys, so the group's last row
+    # speaks for the whole group either way.
+    if spread_carrier == SPREAD_CARRIER_ALIGNMENT:
+        is_brown_group = is_carbontech
+    elif "technology" in npv_data.columns:
+        is_brown_group = npv_data["technology"].iloc[last_idx].isin(brown_set).to_numpy()
     else:
-        is_brown_tech = np.zeros(n_groups, dtype=bool)
+        is_brown_group = np.zeros(n_groups, dtype=bool)
 
     horizon = _horizon_attributes_per_group(
         npv_data, last_idx, asset_horizon_attributes
@@ -462,7 +534,7 @@ def compute_yearly_npv_trajectories(
     # Technology-appropriate terminal growth rate, written onto every row of the
     # group whether or not a terminal row is ultimately added.
     if terminal_method == "perpetuity":
-        g_effective = np.where(is_brown_tech, g_brown, g_green).astype(np.float64)
+        g_effective = np.where(is_brown_group, g_brown, g_green).astype(np.float64)
     else:
         g_effective = np.full(n_groups, float(terminal_growth_rate))
     npv_data["terminal_growth_rate"] = g_effective[gid] if n_groups else 0.0
