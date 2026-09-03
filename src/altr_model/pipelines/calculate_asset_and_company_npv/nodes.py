@@ -151,6 +151,11 @@ def compute_yearly_npv_trajectories(
                 decommission now (`-decom_cost`). Both are negative, so the
                 larger is the smaller loss. A loss-maker does not run at a
                 loss forever — it exits.
+                Where `N_remaining <= 0` and capacity is still standing, the
+                run-out arm does NOT exist — there is no life left to run out —
+                so the exit arm binds and TV = `-decom_cost` (owner ruling C2).
+                Where neither arm is available (past its lifetime AND no scrap
+                price to quote an exit at) the group takes no terminal value.
         tv_anchor_policy: What the terminal anchor is allowed to see.
             "raw" — the anchor is the mean FCFF of the last
                 `terminal_normalization_window` years, whatever those years
@@ -539,8 +544,10 @@ def compute_yearly_npv_trajectories(
             # no lifetime, fall back to the tier-2 annuity's own horizon.
             n_remaining = np.full(n_groups, float(brown_remaining_life_years))
             lifetime, age = anchor("lifetime_years"), anchor("asset_age")
+            past_lifetime = np.zeros(n_groups, dtype=bool)
             if lifetime is not None and age is not None:
                 measured = lifetime - age
+                past_lifetime = np.isfinite(measured) & (measured <= 0)
                 n_remaining = np.where(
                     np.isfinite(measured), np.maximum(measured, 0.0), n_remaining
                 )
@@ -568,12 +575,46 @@ def compute_yearly_npv_trajectories(
                 decom_cost = np.abs(scrap) * capacity
                 exit_tv = np.where(np.isfinite(decom_cost), -decom_cost, -np.inf)
 
+            # PAST ITS LIFETIME AND STILL STANDING — the run-out arm does not
+            # exist for it. There is no remaining life to run out, so the owner
+            # is not choosing between running on and exiting: exiting is the
+            # only thing left, and the exit arm binds.
+            #
+            # Clamping `n_remaining` to zero and leaving the arm in place is
+            # what produced the degeneracy this corrects: a zero-year annuity
+            # factor makes `run_out_tv` exactly 0, 0 beats every negative
+            # `-decom_cost`, and the asset walks away from its decommissioning
+            # bill. That is a FREE EXIT, and it is not a rare corner —
+            # `lifetime - age <= 0` with capacity still standing holds for
+            # 20.5% of the fixture's asset series. Owner ruling C2 (2026-09-04)
+            # reads decision #5 the other way: no life left to run out means
+            # the exit arm is the one that prices the group.
+            #
+            # A group with nothing standing keeps the zero-year arm: there is
+            # no plant to decommission either, so both arms are 0 and the
+            # `tv_anchor_policy="operating"` zeroing below agrees.
+            if capacity is None:
+                still_standing = np.zeros(n_groups, dtype=bool)
+            else:
+                still_standing = np.isfinite(capacity) & (capacity > 0)
+            run_out_tv = np.where(
+                past_lifetime & still_standing, -np.inf, run_out_tv
+            )
+
+            # BOTH arms unavailable — past its lifetime, still standing, and no
+            # scrap price to quote the exit at. There is no number to put on
+            # the group, so it takes no terminal value rather than an infinite
+            # one: the same "no quote, no floor" reading as the branch above,
+            # applied when the annuity is the arm that is missing.
+            least_bad = np.maximum(run_out_tv, exit_tv)
+            least_bad = np.where(np.isneginf(least_bad), 0.0, least_bad)
+
             # The annuity factor already discounts t = 1..N back to final_year,
             # so discount from final_year (not final_year + 1) to base_year —
             # the same convention the tier-2 annuity uses.
-            bounded_tv = np.maximum(run_out_tv, exit_tv) * (
-                1.0 + final_discount_rate
-            ) ** (-(final_year - base_year_per_group))
+            bounded_tv = least_bad * (1.0 + final_discount_rate) ** (
+                -(final_year - base_year_per_group)
+            )
             terminal_value = np.where(negative, bounded_tv, terminal_value)
         else:
             negative = np.zeros(n_groups, dtype=bool)

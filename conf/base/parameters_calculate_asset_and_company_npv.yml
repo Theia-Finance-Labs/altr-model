@@ -113,6 +113,17 @@ dcf:
   #                       the same scrap price `include_decom_costs` charges.
   #                       Where scrap is unavailable there is no floor and the
   #                       run-out annuity stands alone.
+  #                       PAST ITS LIFETIME AND STILL STANDING (N_remaining <=
+  #                       0, capacity > 0) the run-out arm does not exist —
+  #                       there is no life left to run out — so the exit arm
+  #                       binds and TV = -decom_cost (owner ruling C2,
+  #                       2026-09-04). Clamping N_remaining to zero and keeping
+  #                       the arm gives run_out = 0, which beats every negative
+  #                       exit bill and hands the asset a FREE EXIT; that held
+  #                       for 20.5% of the fixture's asset series. Where
+  #                       NEITHER arm is available — past its lifetime and no
+  #                       scrap price to quote an exit at — the group takes no
+  #                       terminal value.
   # A loss-maker does not run at a loss forever — it exits. Bertrand's
   # `final_fcff > 0` alternative would floor this at zero instead, which hands
   # a loss-maker a free exit; this keeps the loss but bounds it.
