@@ -307,6 +307,25 @@ def test_a_horizon_row_that_does_not_match_the_group_is_not_used():
     assert _terminal_value(out) == pytest.approx(expected)
 
 
+def test_two_horizon_rows_for_one_asset_series_raise():
+    """A duplicated horizon table is a broken input, not a case to paper over.
+
+    There is no defensible way to pick between two different horizons for the
+    same asset series, so the `validate="many_to_one"` merge raises. This is
+    the ONE mechanism guarding it: a `drop_duplicates` upstream of the merge
+    used to keep whichever row came first AND make this guard unreachable, so
+    the protection that looked like it was there could never fire.
+    """
+    frame, horizon = _frame_with_exit_data(ESCAPES_STRANDING, GREENTECH)
+    duplicated = pd.concat(
+        [horizon, horizon.assign(scrap_usd_per_mw=SCRAP_CHEAPER_THAN_RUNNING_ON)],
+        ignore_index=True,
+    )
+
+    with pytest.raises(pd.errors.MergeError, match="unique"):
+        _run((frame, duplicated), **BOUNDED)
+
+
 def test_without_lifetime_the_annuity_falls_back_to_the_brown_horizon():
     """Missing lifetime data falls back to the tier-2 annuity's own horizon."""
     out = _run(
