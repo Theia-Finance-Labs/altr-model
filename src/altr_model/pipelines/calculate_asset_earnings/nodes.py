@@ -5,7 +5,14 @@ import logging
 import numpy as np
 import pandas as pd
 
+from altr_model._validation import validate_choice
+
 logger = logging.getLogger(__name__)
+
+#: How emission factors enter the carbon cost. The two branches charge
+#: different amounts, and the second is reached by an `else`, so an
+#: unrecognised value must raise rather than select it.
+CARBON_COST_METHODS = ("full_ef", "differential_ef")
 
 # Constants
 HOURS_PER_YEAR = 8760
@@ -543,6 +550,8 @@ def compute_ops_block(
     """
 
     logger.info("Computing operations block...")
+
+    validate_choice("carbon_cost_method", carbon_cost_method, CARBON_COST_METHODS)
 
     if apply_continued_om_baseline or apply_continued_om_shock:
         logger.info(
