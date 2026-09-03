@@ -33,7 +33,8 @@ sub-keys are annotated in the YAML file itself and are addressed in pipelines as
 | `apply_retirement_baseline` | `True` | — | Apply retirement to baseline trajectories |
 | `apply_retirement_shock` | `True` | — | Apply retirement to shock (late sudden) trajectories |
 | `apply_decreasing_staggered_shock` | `False` | — | — |
-| `staggered_shock` | — | — | Read only when apply_decreasing_staggered_shock is True (it ships False). |
+| `retirement_timing` | `"natural"` | Natural retirement timing (decision D9) | When a NATURAL retirement — asset age past its technology's lifetime — takes<br>effect. This is not a policy exit: the date is the same with or without the<br>shock, and it is read from `retirement_year` alone.<br>"deferred_to_window" — eff_retirement = max(retirement_year, alignment_year + 1).<br>Every natural retirement dated on or before the<br>alignment year is held back to alignment_year + 1.<br>With `alignment_year: 2038` that bunches decades of<br>retirements into 2039, and holds each of those assets<br>at full capacity until then, in BOTH pathways.<br>"natural"           — each retirement lands on its own year, in both<br>pathways identically. It then cancels out of the<br>shock-minus-baseline difference by construction,<br>which is the isolation the clamp was reaching for,<br>without inventing a cliff in either level.<br>SHOCK-INDUCED capacity reduction is unaffected either way: the staggering and<br>phase-out machinery runs off `shock_year` and the company's adjusted path,<br>never through this switch.<br>"deferred_to_window" \| "natural" |
+| `staggered_shock` | — | Natural retirement timing (decision D9) | Read only when apply_decreasing_staggered_shock is True (it ships False). |
 
 ## `conf/base/parameters_calculate_asset_and_company_npv.yml`
 

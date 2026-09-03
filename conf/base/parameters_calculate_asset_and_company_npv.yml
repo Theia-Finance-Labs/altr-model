@@ -17,14 +17,39 @@ dcf:
   # See the user guide's "Discount rates" section and the stage-5 pipeline page.
   discount_rate_shock: 0.07  # 7% real discount rate for transition shock pathways
 
-  # ── Technology-differentiated discount rates ────────────────────────────────
-  # The empirical carbon risk premium: high-emission firms face roughly 1.5-2.5%
-  # higher equity returns (Bolton & Kacperczyk 2021, 2023), which translates to a
-  # 60-150 bps WACC spread. Shell's 2024 annual report uses 7.5% for oil & gas
-  # against 6.0% for renewables — a 150 bps spread. Set both to 0 for uniform
-  # rates. Added to / subtracted from the scenario base rate above.
-  brown_discount_spread: 0.01   # +100 bps carbon risk premium on carbontech
-  green_discount_spread: 0.005  # -50 bps greenium on greentech
+  # ── Technology-differentiated discount rates (owner ruling 12) ──────────────
+  # A carbon risk PENALTY, and nothing on the other side. Bolton & Kacperczyk
+  # (2021, 2023) measure roughly 1.5-2.5% higher equity returns for high-emission
+  # firms — a 60-150 bps WACC spread — and measure no corresponding discount for
+  # clean firms. There was a `green_discount_spread` of -50 bps here; it is
+  # deleted, because a greenium the literature does not find should not be
+  # subsidising every non-fossil asset's valuation. Set the penalty to 0 for a
+  # uniform rate. Added to the scenario base rate above; a negative value is
+  # rejected rather than applied as a discount.
+  brown_discount_spread: 0.01   # +100 bps carbon risk premium
+
+  # WHICH assets pay it — by TECHNOLOGY, not by `alignment_type`. Alignment is a
+  # statement about an asset's TRAJECTORY against its scenario, so it moved the
+  # rate for reasons that have nothing to do with carbon: offshore wind classed
+  # `misaligned_high_carbon` was paying the fossil penalty, and oil classed
+  # `misaligned_low_carbon` was collecting the greenium. What a lender prices is
+  # what the plant burns, and that is the technology.
+  #
+  # The CCS variants are IN the list, which is A REVIEWABLE CHOICE: a coal plant
+  # with capture still carries fossil fuel-price, policy and stranding exposure,
+  # but a reader who holds that capture removes the carbon risk premium should
+  # take the three ` - w/ CCS` entries out. Both suffixes are listed because the
+  # suffix is applied upstream from the `ccs_on` switch, so only one set exists
+  # in any given run. Biomass is deliberately ABSENT — it is classed
+  # `misaligned_high_carbon` today and so has been paying the penalty, but it is
+  # not a fossil technology.
+  brown_technologies:
+    - "CoalCap - w/o CCS"
+    - "CoalCap - w/ CCS"
+    - "GasCap - w/o CCS"
+    - "GasCap - w/ CCS"
+    - "OilCap - w/o CCS"
+    - "OilCap - w/ CCS"
 
   # Terminal value configuration
   terminal_value:

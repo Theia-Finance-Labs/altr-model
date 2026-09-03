@@ -65,9 +65,13 @@ would flatter it.
 
 Growth rates are technology-differentiated: `g_real_brown` for high-carbon
 alignments, `g_real_green` for the rest, both falling back to `g_real_default`.
-Discount rates are too — `brown_discount_spread` is added to carbon-intensive
-assets and `green_discount_spread` subtracted from the others, on top of the
-scenario base rate.
+Discount rates are differentiated too, but on a DIFFERENT carrier:
+`brown_discount_spread` is added to the technologies named in
+`brown_technologies`, on top of the scenario base rate, and nothing is
+subtracted from anything. The split is deliberate — owner ruling 12 moved the
+discount spread to technology, ruling 13 kept the growth spreads on
+`alignment_type` — and it is flagged in the clash report (Q2-4) rather than
+resolved.
 
 One structural detail worth knowing: before any row-indexed logic runs, the
 first node collapses CapEx flow-split rows to **one row per asset-year**.
@@ -135,8 +139,8 @@ Every key sits in the `dcf` block of
 | `dcf.terminal_value.g_real_brown` | `0.0` | Terminal growth for high-carbon alignments - declining assets, no perpetual growth |
 | `dcf.terminal_value.g_real_green` | `0.02` | Terminal growth for everything else |
 | `dcf.terminal_value.normalization_window` | `3` | How many final years are averaged into the terminal FCFF |
-| `dcf.brown_discount_spread` | `0.01` | Carbon risk premium added to high-carbon assets |
-| `dcf.green_discount_spread` | `0.005` | Greenium subtracted from the rest |
+| `dcf.brown_discount_spread` | `0.01` | Carbon risk premium added to the `brown_technologies` |
+| `dcf.brown_technologies` | Coal / Gas / Oil, both CCS variants | Which technologies pay the premium; everything else takes the base rate |
 | `dcf.stranding_aware_tv` | `True` | Use the three-tier terminal value instead of a single perpetuity |
 | `dcf.stranding_consecutive_years` | `3` | Consecutive loss-making years at the horizon end that mark an asset stranded |
 | `dcf.brown_remaining_life_years` | `10` | Annuity horizon for declining but profitable carbontech |

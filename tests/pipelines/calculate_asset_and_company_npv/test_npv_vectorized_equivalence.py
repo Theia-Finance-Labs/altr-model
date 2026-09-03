@@ -75,7 +75,7 @@ def _reference_compute(
     terminal_method: str = "perpetuity",
     terminal_normalization_window: int = 1,
     brown_discount_spread: float = 0.0,
-    green_discount_spread: float = 0.0,
+    brown_technologies: list[str] | None = None,
     stranding_aware_tv: bool = False,
     stranding_consecutive_years: int = 3,
     brown_remaining_life_years: int = 10,
@@ -95,18 +95,20 @@ def _reference_compute(
     if npv_data["scenario_type"].isna().any():
         raise ValueError("asset(s) have no scenario_type resolved")
 
+    # Ruling 13 KEEPS `alignment_type` as the carrier for the terminal growth
+    # rate and the annuity tier, so this set is still needed below...
     carbontech_alignments = {"misaligned_high_carbon", "aligned_high_carbon"}
+    # ...but ruling 12 moved the discount spread off it: a PENALTY, keyed on
+    # technology, with no green leg.
+    brown_set = set(brown_technologies or ())
 
     def get_discount_rate(row):
         if row.get("scenario_type") == "baseline":
             base = discount_rate_baseline
         else:
             base = discount_rate_shock
-        alignment = row.get("alignment_type", "")
-        if alignment in carbontech_alignments:
+        if row.get("technology", "") in brown_set:
             return base + brown_discount_spread
-        elif green_discount_spread > 0:
-            return base - green_discount_spread
         return base
 
     npv_data["discount_rate"] = npv_data.apply(get_discount_rate, axis=1)
@@ -424,6 +426,9 @@ def _fixture_frame() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+#: The fossil technologies this fixture builds, matching the shipped list.
+BROWN_TECHNOLOGIES = ["CoalCap - w/o CCS", "GasCap - w/o CCS", "OilCap - w/o CCS"]
+
 PARAMS = [
     pytest.param({}, id="defaults"),
     pytest.param({"stranding_aware_tv": True}, id="stranding_on"),
@@ -445,13 +450,21 @@ PARAMS = [
     ),
     pytest.param({"terminal_method": "none"}, id="terminal_method_none"),
     pytest.param(
-        {"brown_discount_spread": 0.015, "green_discount_spread": 0.005},
-        id="both_spreads",
+        {"brown_discount_spread": 0.015, "brown_technologies": BROWN_TECHNOLOGIES},
+        id="brown_spread_by_technology",
     ),
-    pytest.param({"brown_discount_spread": 0.015}, id="brown_spread_only"),
+    # The spread with nobody to charge it to: every row keeps the base rate.
+    pytest.param({"brown_discount_spread": 0.015}, id="brown_spread_no_members"),
+    # A member list that names a technology this fixture calls green - the rate
+    # follows the technology, so this must move WindCap and leave GasCap alone.
+    pytest.param(
+        {"brown_discount_spread": 0.015, "brown_technologies": ["WindCap - Onshore"]},
+        id="brown_spread_on_wind",
+    ),
     pytest.param(
         {"stranding_aware_tv": True, "brown_discount_spread": 0.015,
-         "green_discount_spread": 0.005, "terminal_normalization_window": 3,
+         "brown_technologies": BROWN_TECHNOLOGIES,
+         "terminal_normalization_window": 3,
          "terminal_growth_rate_brown": -0.01, "terminal_growth_rate_green": 0.025},
         id="kitchen_sink",
     ),

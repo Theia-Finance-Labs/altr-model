@@ -30,8 +30,9 @@ All of them run the SHIPPED configuration from
 `conf/base/parameters_calculate_asset_and_company_npv.yml`, not the node's
 signature defaults - the two disagree (`stranding_aware_tv` is False in the
 signature and True in the shipped config), so neither is used bare. That also
-means the discount rate carries the shipped technology spreads: 8.0% on
-carbontech (7% + 100 bps) and 6.5% on greentech (7% - 50 bps).
+means the discount rate carries the shipped technology spread: 8.0% on a
+`brown_technologies` member (7% + 100 bps) and the 7.0% base rate on everything
+else (owner ruling 12 removed the greenium).
 
 TWO THINGS THIS PINS THAT ARE WORTH THE OWNERS' ATTENTION
     - `g_real_brown: 0.0` is very nearly INERT under the shipped config. A
@@ -87,6 +88,15 @@ META = dict(
 CARBONTECH = "misaligned_high_carbon"
 GREENTECH = "aligned_low_carbon"
 
+#: Owner ruling 12: the discount SPREAD is keyed on technology, while the growth
+#: rate and the annuity tier stay keyed on `alignment_type` (ruling 13). Every
+#: frame below therefore carries a technology that matches the tier it exercises,
+#: so `R_BROWN` / `R_GREEN` remain the rates these tests were written against.
+TECHNOLOGY_FOR = {
+    CARBONTECH: "GasCap - w/o CCS",
+    GREENTECH: "SolarCap - PV",
+}
+
 #: `conf/base/parameters_calculate_asset_and_company_npv.yml`, verbatim.
 SHIPPED = dict(
     discount_rate_baseline=0.07,
@@ -97,7 +107,9 @@ SHIPPED = dict(
     terminal_growth_rate_green=0.02,
     terminal_normalization_window=3,
     brown_discount_spread=0.01,
-    green_discount_spread=0.005,
+    # PROPOSAL BRANCH (ruling 12): membership is by technology, and the -50 bps
+    # `green_discount_spread` is gone — B&K measure no greenium.
+    brown_technologies=["CoalCap - w/o CCS", "GasCap - w/o CCS", "OilCap - w/o CCS"],
     stranding_aware_tv=True,
     stranding_consecutive_years=3,
     brown_remaining_life_years=10,
@@ -107,9 +119,11 @@ SHIPPED = dict(
     negative_tv_method="bounded_annuity",
 )
 
-#: The discount rates the shipped spreads produce off the 7% baseline rate.
+#: The discount rates the shipped spread produces off the 7% baseline rate.
+#: Ruling 12 removed the greenium, so everything outside `brown_technologies`
+#: sits at the base rate itself - `R_GREEN` is now a name for "no spread".
 R_BROWN = 0.08
-R_GREEN = 0.065
+R_GREEN = 0.07
 
 #: Last forecast year of every frame below; the terminal row lands at +1.
 FINAL_YEAR = 2050
@@ -123,7 +137,13 @@ def _frame(fcff: list[float], alignment_type: str) -> pd.DataFrame:
     first_year = FINAL_YEAR - len(fcff) + 1
     return pd.DataFrame(
         [
-            {**META, "alignment_type": alignment_type, "year": year, "FCFF": value}
+            {
+                **META,
+                "technology": TECHNOLOGY_FOR[alignment_type],
+                "alignment_type": alignment_type,
+                "year": year,
+                "FCFF": value,
+            }
             for year, value in zip(range(first_year, FINAL_YEAR + 1), fcff)
         ]
     )
