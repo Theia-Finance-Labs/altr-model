@@ -31,7 +31,7 @@ scenarios.csv               ``scenario_name`` -> ``scenario``. Names must
                             already carry the full ``AR6_<provider>_`` prefix:
                             ``filter_scenarios`` matches them verbatim and
                             prefixes nothing. A marts extract that ships bare
-                            names goes through ``scripts/stage_marts_inputs.py``
+                            names goes through ``workspace/stage_marts_inputs.py``
                             first, which restores the prefix. ``year`` is left
                             alone -- the pipeline indexes the scenario frame on
                             ``year``.

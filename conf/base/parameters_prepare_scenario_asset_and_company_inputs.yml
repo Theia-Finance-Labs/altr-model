@@ -35,7 +35,7 @@
 # `grep -rn 'AR6_' src/` is empty). The committed fixture stores full names
 # ("AR6_WITCH 5.0_EN_NoPolicy") for exactly this reason. If your scenarios
 # extract carries bare names, the prefix must be restored upstream -- the
-# internal staging script (`scripts/stage_marts_inputs.py`) does it, and is
+# internal staging script (`workspace/stage_marts_inputs.py`) does it, and is
 # not part of a delivered copy.
 # The pair below is NOT present in the 2026-09-01 extract; the full-universe
 # run overrides it in `conf/full/` with the WITCH pair that is.

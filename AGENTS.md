@@ -58,3 +58,11 @@ Two suites need internal data and fail rather than skip without it:
 - No company identifier reaches the export. `sanitize_check.py` gates the
   pattern and `test_fixture_ids_licensed.py` gates the licence; adding a
   `company-id` suppression for `conf/` is forbidden.
+
+## workspace/ convention (Bertrand, 2026-09-03)
+`workspace/` is untracked scratch for ad-hoc/internal scripts (file selection,
+column slicing, one-off staging). `scripts/` holds only long-run tools:
+recipient-facing ingestion (prepare_inputs.py), docs generation
+(gen_param_docs.py), and the sanitized-delivery mechanism (build_export.py,
+sanitize_check.py, export_allowlist.txt) — data itself is delivered via the
+separately-shared Dropbox locations, never via this repository.

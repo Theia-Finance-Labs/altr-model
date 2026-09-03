@@ -138,7 +138,7 @@ Two traps. First, nothing in the model prepends `AR6_<provider>_` — names are
 matched verbatim, so the value you set must be the full prefixed name as it
 appears in the file. A marts extract that ships bare names is fixed upstream:
 the internal staging script that restores the prefix
-(`scripts/stage_marts_inputs.py`) is not part of a delivered copy, so ask the
+(`workspace/stage_marts_inputs.py`) is not part of a delivered copy, so ask the
 data provider rather than hunting for it. Second, scenario names change between
 extract vintages — the AIM/CGE pair shipped in `conf/base` is not in the
 2026-09-01 extract at all, so a not-found error on an untouched configuration
