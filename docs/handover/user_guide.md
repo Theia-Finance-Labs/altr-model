@@ -283,9 +283,11 @@ base rate is `dcf.discount_rate_baseline` on the baseline surface and
 `dcf.discount_rate_shock` on the target surface, both in
 `parameters_calculate_asset_and_company_npv.yml`; they ship equal (`0.07`), so
 the whole `npv_change` comes from the cash flows rather than the rate. The
-spread is `dcf.brown_discount_spread` (+100 bps) on high-carbon alignments and
-`dcf.green_discount_spread` (-50 bps) on the rest, and it applies to both
-pathways alike.
+spread is `dcf.brown_discount_spread` (+100 bps), charged to the technologies
+named in `dcf.brown_technologies` and to nobody else; everything outside that
+list takes the base rate. It applies to both pathways alike. There is no
+greenium leg - the literature the premium rests on measures a penalty on high
+emitters and no discount for clean firms (owner ruling 12).
 
 Raising the shock rate above the baseline rate prices transition risk into the
 rate as well. It moves `npv_change` down for every company at once - a level

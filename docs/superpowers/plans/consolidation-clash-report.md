@@ -201,11 +201,28 @@ and a permanently loss-making asset gets an unbounded negative perpetuity. **If
 you disagree with the ported rule, this is the single line to discuss**
 (`has_terminal_fcff = final_fcff != 0`).
 
-### Q2-4 · Technology-differentiated discount rates · FYI
+### Q2-4 · Technology-differentiated discount rates · **RULED 2026-09-03**
 
 New: `dcf.brown_discount_spread` (+100 bps) and `dcf.green_discount_spread`
 (−50 bps), applied on top of the scenario base rate by `alignment_type`. Your
 tree had a uniform rate. Setting both to `0` restores it exactly.
+
+**Owner ruling 12 (proposal branch `feat/decision-proposals`).**
+`green_discount_spread` is deleted — Bolton & Kacperczyk measure a penalty on
+high emitters and no greenium — and the surviving penalty is charged by
+membership of an explicit `dcf.brown_technologies` list rather than by
+`alignment_type`. The carrier was producing misfires in both directions on the
+shipped fixture: `WindCap - Offshore` classed `misaligned_high_carbon` paid the
+fossil rate at 8.0%, and `OilCap` classed `misaligned_low_carbon` collected the
+greenium at 6.5%.
+
+**Flagged, not fixed: the carrier is now inconsistent between two rulings.** The
+terminal-growth spreads (`g_real_brown` / `g_real_green`) and the tier-2 annuity
+still select on `alignment_type`, because owner ruling 13 keeps them there,
+while ruling 12 moved the discount spread to technology — so the same asset can
+be "brown" for its growth rate and not for its discount rate, and vice versa.
+That is a deliberate consequence of taking the two rulings as given, recorded
+here for a future ruling rather than resolved by this branch.
 
 ### Q2-5 · Dynamic marginal EF and `carbon_cost_method` · FYI
 

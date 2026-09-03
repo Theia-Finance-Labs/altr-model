@@ -81,7 +81,7 @@ def compute_yearly_npv_trajectories(
     terminal_growth_rate_green: float | None = None,
     terminal_normalization_window: int = 1,
     brown_discount_spread: float = 0.0,
-    green_discount_spread: float = 0.0,
+    brown_technologies: list[str] | None = None,
     stranding_aware_tv: bool = False,
     stranding_consecutive_years: int = 3,
     brown_remaining_life_years: int = 10,
@@ -110,11 +110,18 @@ def compute_yearly_npv_trajectories(
             terminal FCFF. 1 is the last year alone; 3-5 is the Damodaran /
             McKinsey / CFA practice, and stops a single transition-period CapEx
             spike from erasing an asset's whole terminal value.
-        brown_discount_spread / green_discount_spread: Carbon risk premium added
-            to carbontech and greenium subtracted from greentech. Bolton &
-            Kacperczyk (2021, 2023) measure ~1.5-2.5% higher equity returns for
-            high-emission firms; Shell's 2024 report uses 7.5% for O&G against
-            6.0% for renewables. Both 0 gives a uniform rate.
+        brown_discount_spread: Carbon risk PREMIUM added to the assets named in
+            `brown_technologies`. Bolton & Kacperczyk (2021, 2023) measure
+            ~1.5-2.5% higher equity returns for high-emission firms, and no
+            corresponding discount for clean ones — so there is a penalty leg
+            and no greenium leg. 0 gives a uniform rate; a negative value is
+            rejected rather than silently applied as a discount.
+        brown_technologies: The technologies that pay the premium. Membership is
+            by TECHNOLOGY, not by `alignment_type`: alignment describes an
+            asset's trajectory against its scenario, so it moved the rate for
+            reasons unrelated to carbon — offshore wind classed
+            `misaligned_high_carbon` paid the fossil penalty, oil classed
+            `misaligned_low_carbon` collected the greenium.
         stranding_aware_tv: Three-tier terminal value instead of a single
             perpetuity (Gourdel 2024):
             1. STRANDED — FCFF <= 0 for the last N years: TV = 0. A rational
@@ -215,25 +222,39 @@ def compute_yearly_npv_trajectories(
     # of one Series construction per row.
     base_rate = npv_data["scenario_type"].map(get_discount_rate).to_numpy(dtype=float)
 
-    # Technology-differentiated discount rates on top of the scenario base rate.
-    if "alignment_type" in npv_data.columns:
-        is_carbontech_row = (
-            npv_data["alignment_type"].isin(CARBONTECH_ALIGNMENTS).to_numpy()
+    # Carbon risk premium on top of the scenario base rate, charged by
+    # TECHNOLOGY. There is no green leg: the literature the spread rests on
+    # measures a penalty on high emitters and no discount for clean firms.
+    if brown_discount_spread < 0:
+        raise ValueError(
+            "dcf.brown_discount_spread is a risk PREMIUM and cannot be "
+            f"negative (got {brown_discount_spread}). A negative value would "
+            "make carbon-intensive assets cheaper to finance than everything "
+            "else; use 0 for a uniform rate."
         )
-    else:
-        is_carbontech_row = np.zeros(len(npv_data), dtype=bool)
-    if brown_discount_spread > 0 or green_discount_spread > 0:
-        logger.info(
-            "Technology-differentiated discount rates: brown +%.1f bps, "
-            "green -%.1f bps (Bolton & Kacperczyk 2021/2023; Shell 2024)",
+
+    brown_set = set(brown_technologies or ())
+    if brown_discount_spread > 0 and not brown_set:
+        logger.warning(
+            "dcf.brown_discount_spread is %.1f bps but dcf.brown_technologies "
+            "is empty, so no asset pays it and the rate is uniform",
             brown_discount_spread * 10000,
-            green_discount_spread * 10000,
         )
-    green_rate = (
-        base_rate - green_discount_spread if green_discount_spread > 0 else base_rate
-    )
+    if "technology" in npv_data.columns:
+        is_brown_row = npv_data["technology"].isin(brown_set).to_numpy()
+    else:
+        is_brown_row = np.zeros(len(npv_data), dtype=bool)
+    if brown_discount_spread > 0 and brown_set:
+        logger.info(
+            "Carbon risk premium: +%.1f bps on %d of %d asset-year rows, by "
+            "technology (%s) — Bolton & Kacperczyk 2021/2023",
+            brown_discount_spread * 10000,
+            int(is_brown_row.sum()),
+            len(npv_data),
+            ", ".join(sorted(brown_set)),
+        )
     npv_data["discount_rate"] = np.where(
-        is_carbontech_row, base_rate + brown_discount_spread, green_rate
+        is_brown_row, base_rate + brown_discount_spread, base_rate
     )
 
     # Guard: need trajectory_type and FCFF

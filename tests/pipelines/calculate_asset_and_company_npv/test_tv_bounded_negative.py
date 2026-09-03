@@ -41,6 +41,7 @@ from .test_tv_three_regimes import (
     NO_TERMINAL_VALUE,
     R_GREEN,
     SHIPPED,
+    TECHNOLOGY_FOR,
     _annuity_factor,
     _gordon,
     _terminal_value,
@@ -88,9 +89,16 @@ def _frame_with_exit_data(
     entirely, which is how the fallbacks are exercised.
     """
     first_year = FINAL_YEAR - len(fcff) + 1
+    technology = TECHNOLOGY_FOR[alignment_type]
     frame = pd.DataFrame(
         [
-            {**META, "alignment_type": alignment_type, "year": year, "FCFF": value}
+            {
+                **META,
+                "technology": technology,
+                "alignment_type": alignment_type,
+                "year": year,
+                "FCFF": value,
+            }
             for year, value in zip(range(first_year, FINAL_YEAR + 1), fcff)
         ]
     )
@@ -101,7 +109,11 @@ def _frame_with_exit_data(
     if lifetime_years is not None:
         attributes["lifetime_years"] = lifetime_years
     horizon = pd.DataFrame(
-        [{key: META[key] for key in HORIZON_ATTRIBUTE_KEYS} | attributes]
+        [
+            {key: META[key] for key in HORIZON_ATTRIBUTE_KEYS}
+            | {"technology": technology}
+            | attributes
+        ]
     )
     return frame, horizon
 
