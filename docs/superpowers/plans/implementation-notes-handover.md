@@ -591,3 +591,20 @@ method/dynamic marginal EF, continued-O&M asymmetry to be added.
   (window=1), 12 (spreads=0), 13 (g uniform), 15 (continued-OM-shock off),
   #5 variant, #9 variant, synthetic-EF impact — then decide and re-pin.
   Batch needs ~2.5 GB free disk (owner to free).
+
+### Owner rulings 2026-09-03, round 2 (post-investigation)
+
+- #11 OK to the principled TV-anchor fixes (retired-at-horizon TV=0; decom
+  excluded from the anchor; window demoted to mild smoothing).
+- #12 Discount spread: per TECHNOLOGY, brown penalty ONLY (greenium removed —
+  not in Bolton & Kacperczyk). FLAGGED: terminal-growth spreads (#13, kept)
+  still ride alignment_type — same carrier disease, larger lever; awaiting a
+  matching ruling.
+- #14 dynamic_marginal_ef deleted from code; carbon_cost_method survives and
+  gains its first real test.
+- #15 Continued O&M stops when capacity crosses zero (was: unconditional to
+  2050; $1.27tn charged on zero-capacity plant).
+- P1 input rework: owner chose the two-input design ("option 2") — dedicated
+  asset_horizon_attributes table instead of widening asset_earnings.
+All five ordered as commits on feat/decision-proposals; measurement batch
+follows once the owner accepts the diffs.
