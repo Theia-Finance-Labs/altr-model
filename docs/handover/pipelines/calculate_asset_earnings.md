@@ -6,7 +6,7 @@
 | Tags | `altrisk` |
 | Runs after | [Stage 3 - `allocate_company_trajectories_to_assets`](allocate_company_trajectories_to_assets.md) |
 | Runs before | [Stage 5 - `calculate_asset_and_company_npv`](calculate_asset_and_company_npv.md) |
-| Nodes | 5 |
+| Nodes | 6 |
 
 ## Purpose
 
@@ -111,8 +111,28 @@ built on.
 
 | Dataset | Persisted to | What it is |
 | --- | --- | --- |
-| `asset_earnings` | `data/07_model_output/asset_earnings.csv` | One row per asset/company/year/trajectory type: `Q`, `revenue`, `var_cost`, `fixed_cost`, `carbon_cost_net`, `EBITDA`, `capex_total`, `FCFF`, plus the identifying and reporting columns (`alignment_type`, `late_sudden_phase`, `is_synthetic`, `asset_age`, `capacity_factor`, `scenario_type`) |
+| `asset_earnings` | `data/07_model_output/asset_earnings.csv` | One row per asset/company/year/trajectory type: `Q`, `revenue`, `var_cost`, `fixed_cost`, `carbon_cost_net`, `EBITDA`, `decom_cost`, `capex_total`, `FCFF`, plus the identifying and reporting columns (`alignment_type`, `late_sudden_phase`, `is_synthetic`, `asset_age`, `capacity_factor`, `scenario_type`) |
+| `asset_horizon_attributes` | `data/07_model_output/asset_horizon_attributes.csv` | One row per asset series: its `lifetime_years`, `asset_age`, `scrap_usd_per_mw` and `asset_trajectory` capacity **in the last forecast year** |
 | `_temp_asset_panel_enriched`, `_temp_asset_capex_block`, `_temp_asset_ops_block`, `_temp_asset_cashflows` | in memory | Intermediate blocks between the nodes below; the leading underscore marks them as internal, and `tests/test_run.py` asserts no `_temp` dataset escapes as a pipeline output |
+
+`decom_cost` is carried as its own column, not just folded into `capex_total`.
+Stage 5's terminal anchor takes **operating** cash flow, so it needs the one-off
+exit charge inside `capex_total` identified rather than netted — capitalising a
+decommissioning bill into a perpetuity charges it every year forever. It stays a
+per-asset-year *flow*, which is what this table is for; the valuation node sums
+it through its flow-row collapse and never emits it.
+
+`asset_horizon_attributes` is the companion table for the per-series
+*constants* stage 5 prices a terminal exit off. Those are not flows, so they do
+not belong repeated down every row of `asset_earnings` — putting them there
+forces a `"first"` aggregation in the downstream flow-row collapse, which reads
+a per-year constant as though it were a flow. It is built from the panel
+**before** the CapEx flow split, where one asset-year is still one row, so the
+horizon is simply the last row of a year-sorted group with no aggregation choice
+to make. `tail(1)` rather than `groupby.last()`: a `NaN` at the horizon stays
+`NaN` rather than silently inheriting an earlier year's number, because the
+valuation stage has a fallback for a missing scrap price and none for a wrong
+one.
 
 ## Nodes
 
@@ -123,8 +143,9 @@ built on.
 | `calculate_operating_earnings` | `compute_ops_block` | Production, fuel, fixed O&M and net carbon cost into EBITDA |
 | `calculate_free_cash_flow` | `compute_fcff` | EBITDA less CapEx - free cash flow to the firm |
 | `write_asset_earnings` | `write_asset_earnings_series` | Writes the final `asset_earnings` table with every column downstream stages expect |
+| `write_asset_horizon_attributes` | `write_asset_horizon_attributes` | Writes the per-series horizon scalars stage 5 prices a terminal exit off |
 
-This set of five node names is pinned by
+This set of six node names is pinned by
 `tests/test_run.py::test_methodology_steps_are_visible_as_individual_nodes` -
 a node added, removed or renamed here fails that test.
 

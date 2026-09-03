@@ -734,6 +734,23 @@ def compute_yearly_npv_trajectories(
         )
         terminal_value = np.where(perpetuity, perpetuity_tv, terminal_value)
 
+        # WHICH TIER CLAIMED WHAT. The tiers are mutually exclusive and the
+        # counts sum to n_groups, so a census is the cheapest way for a reader
+        # to see whether the perpetuity is the common case or the exception in
+        # their own run — the handover page quotes the fixture's, and this is
+        # how to reproduce it on any other input.
+        logger.info(
+            "Terminal-value tier census of %d groups: %d stranded (TV=0), "
+            "%d carbontech annuity, %d bounded negative, %d perpetuity, "
+            "%d with no terminal anchor",
+            n_groups,
+            int(stranded.sum()),
+            int(annuity.sum()),
+            int(negative.sum()),
+            int(perpetuity.sum()),
+            int((~has_terminal_fcff).sum()),
+        )
+
         # RETIRED AT THE HORIZON — the hard case, and it outranks every tier
         # above. A group standing at zero capacity has no plant: there is
         # nothing to run out, nothing to decommission a second time, and
