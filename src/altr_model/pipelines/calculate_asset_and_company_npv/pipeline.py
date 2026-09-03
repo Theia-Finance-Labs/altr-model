@@ -12,7 +12,7 @@ from .nodes import (
 )
 
 NAMESPACE = "calculate_asset_and_company_npv"
-PIPELINE_INPUTS = {"asset_earnings"}
+PIPELINE_INPUTS = {"asset_earnings", "asset_horizon_attributes"}
 PIPELINE_OUTPUTS = {
     "asset_npv",
     "company_npv",
@@ -43,6 +43,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                 func=compute_yearly_npv_trajectories,
                 inputs={
                     "asset_earnings": "asset_earnings",
+                    "asset_horizon_attributes": "asset_horizon_attributes",
                     "discount_rate_baseline": "params:dcf.discount_rate_baseline",
                     "discount_rate_shock": "params:dcf.discount_rate_shock",
                     "terminal_growth_rate": "params:dcf.terminal_value.g_real_default",

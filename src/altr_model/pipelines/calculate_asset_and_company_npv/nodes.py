@@ -12,20 +12,67 @@ logger = logging.getLogger(__name__)
 
 CARBONTECH_ALIGNMENTS = {"misaligned_high_carbon", "aligned_high_carbon"}
 
-#: Per-asset-year columns the bounded negative terminal value prices its exit
-#: floor and its remaining life off. Each is optional: a frame without them
-#: falls back (no floor / the tier-2 annuity horizon), so the older
-#: `asset_earnings` schema and the hand-built unit frames both still run.
-EXIT_FLOOR_COLUMNS = (
-    "scrap_usd_per_mw",
-    "asset_trajectory",
-    "lifetime_years",
-    "asset_age",
-)
+#: The asset-series grain `asset_horizon_attributes` is keyed on — the same
+#: `ASSET_SERIES_KEYS` the earnings stage writes it at. The valuation group keys
+#: add name and classification columns, all functionally dependent on these six,
+#: so one horizon row serves one valuation group.
+HORIZON_ATTRIBUTE_KEYS = [
+    "company_id",
+    "asset_id",
+    "scenario_geography",
+    "sector",
+    "technology",
+    "trajectory_type",
+]
+
+
+def _horizon_attributes_per_group(
+    npv_data: pd.DataFrame,
+    last_idx: np.ndarray,
+    asset_horizon_attributes: pd.DataFrame | None,
+) -> pd.DataFrame | None:
+    """`asset_horizon_attributes` re-indexed to one row per valuation group.
+
+    Returns None when the table is absent, empty, or does not carry the join
+    keys — every caller then falls back exactly as a frame without the table
+    always has (no exit floor, the tier-2 annuity horizon). A group with no
+    matching row gets NaN across the merge and takes the same fallbacks.
+    """
+    if asset_horizon_attributes is None or asset_horizon_attributes.empty:
+        return None
+    missing = [
+        column
+        for column in HORIZON_ATTRIBUTE_KEYS
+        if column not in asset_horizon_attributes.columns
+        or column not in npv_data.columns
+    ]
+    if missing:
+        logger.warning(
+            "asset_horizon_attributes cannot be joined — missing key column(s) "
+            "%s; the terminal-value fallbacks apply",
+            missing,
+        )
+        return None
+
+    group_keys = npv_data.iloc[last_idx][HORIZON_ATTRIBUTE_KEYS].reset_index(drop=True)
+    lookup = asset_horizon_attributes.drop_duplicates(HORIZON_ATTRIBUTE_KEYS)
+    merged = group_keys.merge(
+        lookup, on=HORIZON_ATTRIBUTE_KEYS, how="left", validate="many_to_one"
+    )
+    unmatched = int(merged.drop(columns=HORIZON_ATTRIBUTE_KEYS).isna().all(axis=1).sum())
+    if unmatched:
+        logger.warning(
+            "%d of %d valuation groups have no asset_horizon_attributes row; "
+            "they take the terminal-value fallbacks",
+            unmatched,
+            len(merged),
+        )
+    return merged
 
 
 def compute_yearly_npv_trajectories(
     asset_earnings: pd.DataFrame,
+    asset_horizon_attributes: pd.DataFrame | None = None,
     discount_rate_baseline: float = 0.07,
     discount_rate_shock: float = 0.08,
     terminal_growth_rate: float = 0.02,
@@ -49,6 +96,11 @@ def compute_yearly_npv_trajectories(
     - Terminal value calculation in final year
 
     Args:
+        asset_horizon_attributes: One row per asset series carrying its
+            lifetime, age, scrap price and capacity in the LAST forecast year —
+            what the bounded negative branch below prices its remaining life and
+            its exit off. Optional: without it every group falls back to the
+            tier-2 annuity horizon and takes no exit floor.
         terminal_growth_rate_brown / terminal_growth_rate_green: Terminal growth
             rate for carbontech / greentech. Either falling back to
             terminal_growth_rate when None. A declining fossil asset does not
@@ -207,12 +259,6 @@ def compute_yearly_npv_trajectories(
     # anchor zone, corrupting 3,414 nonzero terminal values.
     agg_map = {col: "sum" for col in available_financial_cols}
     agg_map["discount_rate"] = "first"
-    # The exit-floor inputs are per-asset-year constants replicated across the
-    # flow-split rows, not flows: "first" (which skips NaN) carries them
-    # through the collapse instead of summing one capacity three times over.
-    for col in EXIT_FLOOR_COLUMNS:
-        if col in npv_data.columns:
-            agg_map[col] = "first"
     # A cell whose FCFF rows are ALL missing sums to 0.0 -- pandas' default
     # min_count=0 -- and a 0.0 reads as a loss year in the stranding test far
     # below, so a data gap could write off an asset's whole terminal value.
@@ -303,6 +349,18 @@ def compute_yearly_npv_trajectories(
         )
     else:
         is_carbontech = np.zeros(n_groups, dtype=bool)
+
+    horizon = _horizon_attributes_per_group(
+        npv_data, last_idx, asset_horizon_attributes
+    )
+
+    def anchor(column: str) -> np.ndarray | None:
+        """A horizon attribute as one value per group, or None if unavailable."""
+        if horizon is None or column not in horizon.columns:
+            return None
+        return pd.to_numeric(horizon[column], errors="coerce").to_numpy(
+            dtype=np.float64
+        )
 
     # Normalized terminal FCFF: mean of the last min(window, group_size) rows.
     # A single transition-period CapEx spike in the final year must not decide
@@ -395,14 +453,6 @@ def compute_yearly_npv_trajectories(
         # candidates are negative, so the larger is the smaller loss.
         if negative_tv_method == "bounded_annuity":
             negative = has_terminal_fcff & ~stranded & (final_fcff < 0)
-
-            def anchor(column: str) -> np.ndarray | None:
-                """A per-asset-year column's value in the group's final year."""
-                if column not in npv_data.columns:
-                    return None
-                return pd.to_numeric(npv_data[column], errors="coerce").to_numpy(
-                    dtype=np.float64
-                )[last_idx]
 
             # Remaining economic life at the horizon. Where the asset carries
             # no lifetime, fall back to the tier-2 annuity's own horizon.
