@@ -103,9 +103,13 @@ def compute_yearly_npv_trajectories(
             its exit off. Optional: without it every group falls back to the
             tier-2 annuity horizon and takes no exit floor.
         terminal_growth_rate_brown / terminal_growth_rate_green: Terminal growth
-            rate for carbontech / greentech. Either falling back to
-            terminal_growth_rate when None. A declining fossil asset does not
-            grow into perpetuity, and a clean one may.
+            rate for a `brown_technologies` member / everything else. Either
+            falling back to terminal_growth_rate when None. A declining fossil
+            asset does not grow into perpetuity, and a clean one may. Owner
+            ruling 13 put this on the SAME carrier as the discount spread —
+            membership of the list, not `alignment_type`, which had offshore
+            wind and nuclear growing at the fossil rate whenever a scenario
+            classed them `misaligned_high_carbon`.
         terminal_normalization_window: Number of final years averaged into the
             terminal FCFF. 1 is the last year alone; 3-5 is the Damodaran /
             McKinsey / CFA practice, and stops a single transition-period CapEx
@@ -397,6 +401,13 @@ def compute_yearly_npv_trajectories(
         )
     else:
         is_carbontech = np.zeros(n_groups, dtype=bool)
+    # The terminal GROWTH rate rides the same carrier as the discount spread
+    # (owner ruling 13): the `brown_technologies` list, not `alignment_type`.
+    # `technology` is a group key, so the group's last row speaks for it.
+    if "technology" in npv_data.columns:
+        is_brown_tech = npv_data["technology"].iloc[last_idx].isin(brown_set).to_numpy()
+    else:
+        is_brown_tech = np.zeros(n_groups, dtype=bool)
 
     horizon = _horizon_attributes_per_group(
         npv_data, last_idx, asset_horizon_attributes
@@ -446,7 +457,7 @@ def compute_yearly_npv_trajectories(
     # Technology-appropriate terminal growth rate, written onto every row of the
     # group whether or not a terminal row is ultimately added.
     if terminal_method == "perpetuity":
-        g_effective = np.where(is_carbontech, g_brown, g_green).astype(np.float64)
+        g_effective = np.where(is_brown_tech, g_brown, g_green).astype(np.float64)
     else:
         g_effective = np.full(n_groups, float(terminal_growth_rate))
     npv_data["terminal_growth_rate"] = g_effective[gid] if n_groups else 0.0

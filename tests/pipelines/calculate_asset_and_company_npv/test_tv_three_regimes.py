@@ -88,10 +88,11 @@ META = dict(
 CARBONTECH = "misaligned_high_carbon"
 GREENTECH = "aligned_low_carbon"
 
-#: Owner ruling 12: the discount SPREAD is keyed on technology, while the growth
-#: rate and the annuity tier stay keyed on `alignment_type` (ruling 13). Every
-#: frame below therefore carries a technology that matches the tier it exercises,
-#: so `R_BROWN` / `R_GREEN` remain the rates these tests were written against.
+#: Rulings 12 and 13: the discount SPREAD and the terminal GROWTH rate are both
+#: keyed on `brown_technologies`, while the tier-2 annuity stays keyed on
+#: `alignment_type`. Every frame below therefore carries a technology that
+#: matches the tier it exercises, so `R_BROWN` / `R_GREEN` and the growth rates
+#: alike remain what these tests were written against.
 TECHNOLOGY_FOR = {
     CARBONTECH: "GasCap - w/o CCS",
     GREENTECH: "SolarCap - PV",

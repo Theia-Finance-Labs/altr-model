@@ -95,11 +95,11 @@ def _reference_compute(
     if npv_data["scenario_type"].isna().any():
         raise ValueError("asset(s) have no scenario_type resolved")
 
-    # Ruling 13 KEEPS `alignment_type` as the carrier for the terminal growth
-    # rate and the annuity tier, so this set is still needed below...
+    # Ruling 13 KEEPS `alignment_type` as the carrier for the tier-2 annuity, so
+    # this set is still needed below...
     carbontech_alignments = {"misaligned_high_carbon", "aligned_high_carbon"}
-    # ...but ruling 12 moved the discount spread off it: a PENALTY, keyed on
-    # technology, with no green leg.
+    # ...but rulings 12 and 13 moved the discount spread and the terminal growth
+    # rate off it, onto membership of this list. No green leg on either.
     brown_set = set(brown_technologies or ())
 
     def get_discount_rate(row):
@@ -165,7 +165,7 @@ def _reference_compute(
 
             alignment = first_row.get("alignment_type", "")
             is_carbontech = alignment in carbontech_alignments
-            if is_carbontech:
+            if first_row.get("technology", "") in brown_set:
                 g_effective = g_brown
             else:
                 g_effective = g_green

@@ -55,8 +55,18 @@ dcf:
   terminal_value:
     method: "perpetuity"  # "none" | "perpetuity"
     g_real_default: 0.02  # 2% real terminal growth rate (fallback)
-    g_real_brown: 0.0     # 0% for carbontech — declining assets, no perpetual growth
-    g_real_green: 0.02    # 2% for greentech — growing clean energy cash flows
+    # WHICH rate an asset grows at is decided by the SAME `brown_technologies`
+    # list above, not by `alignment_type` (owner ruling 13). The carrier matters
+    # more here than it does for the discount spread: the spread moves the
+    # perpetuity denominator by 100 bps, g moves it by 200, and on the shipped
+    # rates the two ends are 1/(0.08 - 0.00) = 12.5x and 1/(0.07 - 0.02) = 20x.
+    # For the assets this ruling actually moves — offshore wind and nuclear,
+    # which are not on the list but were classed `misaligned_high_carbon` and so
+    # grew at the fossil 0% — the rate stays at 7% and the multiple goes
+    # 14.3x -> 20x. Alignment is a statement about an asset's trajectory against
+    # its scenario, not about whether its cash flows can grow.
+    g_real_brown: 0.0     # 0% for the brown technologies — declining assets, no perpetual growth
+    g_real_green: 0.02    # 2% for everything else — growing clean energy cash flows
 
     # How many final years are averaged into the terminal FCFF. Terminal value
     # should rest on normalized, sustainable cash flow, not on whatever the last
@@ -74,6 +84,10 @@ dcf:
   #   2. DECLINING BUT PROFITABLE CARBONTECH — TV = a finite annuity over
   #      brown_remaining_life_years, reflecting a fossil asset's finite remaining
   #      economic life in a transition, rather than a growing perpetuity.
+  #      NOTE: this tier is the ONE place in the valuation stage still selecting
+  #      on `alignment_type`, after rulings 12 and 13 moved the discount spread
+  #      and the terminal growth rate onto `brown_technologies`. Left as-is
+  #      pending its own ruling.
   #   3. EVERYTHING ELSE — standard Gordon Growth perpetuity, unchanged.
   stranding_aware_tv: True
   stranding_consecutive_years: 3   # a company weathers 1-2 bad years, not N in a row
