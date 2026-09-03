@@ -875,10 +875,12 @@ def write_asset_horizon_attributes(asset_panel_enriched: pd.DataFrame) -> pd.Dat
     logger.info("Asset horizon attributes: %s asset series", len(horizon))
 
 
-    # Q2 preflight (review): the valuation stage merges this table with
-    # validate="many_to_one" and ABORTS mid-run on a duplicate series. Catch it
-    # here, at the cheap end, with a message naming the offenders — a
-    # multi-hour batch run should die in seconds, not at the NPV stage.
+    # POSTCONDITION, not input validation: the groupby(...).tail(1) above
+    # already guarantees one row per key group, so this can only fire if a
+    # future refactor replaces that collapse with something weaker. Input
+    # duplicates are caught upstream (validate_asset_trajectories) and a
+    # stale/malformed table loaded from disk is caught at the valuation
+    # boundary, where the named-offenders check actually protects the run.
     duplicated = horizon.duplicated(subset=ASSET_SERIES_KEYS)
     if bool(duplicated.any()):
         offenders = (

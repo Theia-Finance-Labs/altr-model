@@ -73,12 +73,33 @@ def _horizon_attributes_per_group(
         return None
 
     group_keys = npv_data.iloc[last_idx][HORIZON_ATTRIBUTE_KEYS].reset_index(drop=True)
+    # THE input check for this table lives here, at the boundary where a stale
+    # or hand-edited catalog file actually arrives — the writer cannot emit
+    # duplicates (its tail(1) collapse guarantees one row per series; its own
+    # check is a postcondition). Name the offenders instead of letting the
+    # merge below die with a bare MergeError mid-run.
+    duplicated = asset_horizon_attributes.duplicated(
+        subset=HORIZON_ATTRIBUTE_KEYS, keep=False
+    )
+    if bool(duplicated.any()):
+        offenders = (
+            asset_horizon_attributes.loc[duplicated, HORIZON_ATTRIBUTE_KEYS]
+            .drop_duplicates()
+            .head(5)
+            .to_dict("records")
+        )
+        raise ValueError(
+            f"asset_horizon_attributes holds duplicate rows for "
+            f"{int(duplicated.sum())} asset-series keys — there is no "
+            f"defensible way to choose between two horizons for one asset. "
+            f"Regenerate the table (a stale or hand-edited file is the usual "
+            f"cause). First offending keys: {offenders}"
+        )
     # ONE mechanism, and it is the one that raises. A `drop_duplicates` here
     # would silently keep whichever duplicate came first — and it also made
     # `validate="many_to_one"` unreachable, so the guard that looked like the
-    # protection could never fire. The earnings stage emits exactly one row per
-    # asset series (`tail(1)` over `ASSET_SERIES_KEYS`), so a duplicate key is a
-    # broken input, not a case to paper over: the merge raises and names it.
+    # protection could never fire; `validate` stays as defence in depth behind
+    # the named-offenders check above.
     merged = group_keys.merge(
         asset_horizon_attributes,
         on=HORIZON_ATTRIBUTE_KEYS,
@@ -765,8 +786,8 @@ def compute_yearly_npv_trajectories(
         logger.info(
             "Terminal-value tier census of %d groups: %d stranded (TV=0), "
             "%d carbontech annuity, %d bounded negative, %d perpetuity, "
-            "%d with no terminal anchor, %d with r <= g (no perpetuity "
-            "defined, no terminal value) — assignments before the "
+            "%d with no terminal anchor, %d perpetuity-clause rejects (r <= g, "
+            "or rate/growth undefined; no terminal value) — assignments before the "
             "operating-anchor retirement override",
             n_groups,
             int(stranded.sum()),

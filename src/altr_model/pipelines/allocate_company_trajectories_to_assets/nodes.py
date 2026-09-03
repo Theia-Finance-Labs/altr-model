@@ -9,8 +9,8 @@ import pandas as pd
 
 from altr_model._validation import validate_choice
 from altr_model.pipelines.allocate_company_trajectories_to_assets._allocation_nodes import (
-    RETIREMENT_TIMINGS,
     RETIREMENT_TIMING_DEFERRED,
+    RETIREMENT_TIMINGS,
     compute_asset_baseline_trajectories,
     effective_retirement_year,
     flag_phased_out_assets_as_retired,
