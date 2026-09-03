@@ -49,7 +49,7 @@ Older candidates, from earlier extract vintages:
 # `scenario` column and prefixes nothing. Copy the full prefixed names exactly
 # as listed above. If your scenarios extract ships bare names, the prefix must
 # be restored upstream — the internal staging script that does it
-# (scripts/stage_marts_inputs.py) is not part of a delivered copy.
+# (workspace/stage_marts_inputs.py) is not part of a delivered copy.
 ```
 
 Scenario names change between extract vintages: the AIM/CGE pair at the bottom
