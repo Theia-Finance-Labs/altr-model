@@ -322,7 +322,7 @@ def test_two_horizon_rows_for_one_asset_series_raise():
         ignore_index=True,
     )
 
-    with pytest.raises(pd.errors.MergeError, match="unique"):
+    with pytest.raises(ValueError, match="duplicate rows"):
         _run((frame, duplicated), **BOUNDED)
 
 
@@ -429,3 +429,4 @@ def test_one_year_of_life_left_is_a_one_year_annuity():
     assert _terminal_value(out) == pytest.approx(
         _discounted(run_out, R_GREEN, years_back=2)
     )
+

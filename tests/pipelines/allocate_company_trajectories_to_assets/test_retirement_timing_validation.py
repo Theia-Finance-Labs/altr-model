@@ -7,13 +7,11 @@ loudly on every run shape.
 """
 import pandas as pd
 import pytest
-
 from altr_model.pipelines.allocate_company_trajectories_to_assets.nodes import (
+    allocate_decreasing_company_trajectories_to_assets,
     compute_asset_baselines,
     create_frozen_capacity_at_retirement,
-    allocate_decreasing_company_trajectories_to_assets,
 )
-
 
 _EMPTY = pd.DataFrame()
 
