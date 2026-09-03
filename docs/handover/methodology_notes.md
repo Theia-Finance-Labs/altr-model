@@ -161,3 +161,64 @@ one of the [sanity checks](user_guide.md#5-sanity-checks-before-you-trust-a-run)
 is watching for companies whose NPV a synthetic asset dominates. The allocation
 mechanics are in
 [Stage 3](pipelines/allocate_company_trajectories_to_assets.md).
+
+## Ownership attribution and aggregation
+
+A physical asset can appear in the ownership data under more than one
+relationship type - a **direct** stake (the operating owner's share) and an
+**equity** stake (a look-through share held via intermediaries) - and can be
+claimed by several companies at once (a parent through equity, its subsidiary
+through direct, JV partners each through theirs). Any attribution rule answers
+two different questions, and no single rule answers both:
+
+1. **Economic exposure** - what fraction of this asset's cash flows does
+   *this company* have a claim on?
+2. **Physical accounting** - do the attributed shares, summed over all
+   companies in the universe, add up to the real fleet?
+
+`ownership_aggregation` selects the rule. **`tier_filter`** (shipped default)
+selects one relationship type (`ownership_type`, default `direct`) and
+consolidates within it: each megawatt is counted once, under its operating
+owner; the company universe is operating owners; this is the basis of the
+validated baseline and previously published results. **`sum`** totals every
+stake a company holds in an asset-year across relationship types
+(50.00% direct + 0.45% equity = 50.45%): each company carries its full
+economic claim; equity-only holders enter the universe. On the current data,
+`sum` attributes 2.68x the fleet's ownership-weighted capacity across 7,752
+claimants; `tier_filter` covers the same assets once through 4,899 operating
+owners.
+
+**Precedent.** PACTA-family attribution uses proportional equity look-through
+including minority stakes, level by level up the ownership tree ("if Company A
+owns x% of Asset 1, it gets attributed x% of its production" - PACTA for
+Banks Methodology §1.7.2; PACTA for Investors Methodology v1.0 §1.2.3, the
+"Equity Ownership" consolidation). Shares sum to 100% only at the
+direct-asset level; the same megawatt then appears in the subsidiary and,
+stake-weighted, in every parent - PACTA accepts this in the company universe
+and avoids double counting only at the financial layer, where each security
+maps to exactly one company node. PACTA also defines a second rule per asset
+class (Credit Ownership, one node per debt instrument): attribution follows
+analytical purpose even within one methodology, which is why ALTR exposes the
+choice as a parameter rather than fixing one mode.
+
+**Consequences to hold explicitly:**
+
+- Under `sum`, every cross-company aggregate (company-technology tables,
+  totals) is claim-weighted, not physical - the same plant is counted once
+  per claimant. Label aggregates accordingly or de-duplicate first.
+- Ownership enters the model as a linear scalar on capacity and every major
+  cost line is linear in it, while stranding classification is sign-based -
+  so a company's `npv_change` ratio is invariant to stake *size* and moves
+  only through *composition* (which assets and companies enter). Absolute
+  levels scale with the full attribution factor: risk signals may be compared
+  across modes with care; absolute levels may never be.
+- Allocation runs per company independently: under `sum` a company's claim
+  list is larger and each claim smaller, giving the staggering finer
+  granularity, but physical coherence across companies is not enforced - two
+  claimants may retire their shares of one plant in different years.
+- `sum` trusts the ownership tree's within-company non-overlap (a stake
+  reported both directly and via look-through for the same company would
+  double count inside that company - not observed in the current data, not
+  guarded against). `tier_filter` conversely discards real economic exposure
+  by construction. Both are conventions; every published number should name
+  the one it used.
