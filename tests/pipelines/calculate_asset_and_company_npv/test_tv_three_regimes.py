@@ -175,6 +175,19 @@ def _annuity_factor(rate: float, years: int) -> float:
     return (1.0 - (1.0 + rate) ** -years) / rate
 
 
+@pytest.mark.parametrize(("rate", "years"), [(0.07, 10), (0.08, 15), (0.065, 1)])
+def test_the_annuity_factor_helper_is_independent_of_the_implementation(rate, years):
+    """The closed form above IS the explicit sum the implementation accumulates.
+
+    Without this, `_annuity_factor` is only ASSERTED to be an independent
+    check; every expected value in this directory rests on it, so the claim is
+    pinned rather than believed.
+    """
+    assert _annuity_factor(rate, years) == pytest.approx(
+        sum(1.0 / (1.0 + rate) ** t for t in range(1, years + 1))
+    )
+
+
 def _gordon(terminal_cf: float, rate: float, growth: float, years: int) -> float:
     """Gordon Growth value discounted `years` back to the group's base year."""
     return terminal_cf / (rate - growth) * (1.0 + rate) ** -years

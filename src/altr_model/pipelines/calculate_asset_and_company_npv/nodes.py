@@ -51,6 +51,10 @@ def _horizon_attributes_per_group(
     keys — every caller then falls back exactly as a frame without the table
     always has (no exit floor, the tier-2 annuity horizon). A group with no
     matching row gets NaN across the merge and takes the same fallbacks.
+
+    A table carrying MORE than one row per asset series raises instead: there
+    is no defensible way to choose between two different horizons for the same
+    asset, and picking one quietly would mis-price the exit.
     """
     if asset_horizon_attributes is None or asset_horizon_attributes.empty:
         return None
@@ -69,9 +73,17 @@ def _horizon_attributes_per_group(
         return None
 
     group_keys = npv_data.iloc[last_idx][HORIZON_ATTRIBUTE_KEYS].reset_index(drop=True)
-    lookup = asset_horizon_attributes.drop_duplicates(HORIZON_ATTRIBUTE_KEYS)
+    # ONE mechanism, and it is the one that raises. A `drop_duplicates` here
+    # would silently keep whichever duplicate came first — and it also made
+    # `validate="many_to_one"` unreachable, so the guard that looked like the
+    # protection could never fire. The earnings stage emits exactly one row per
+    # asset series (`tail(1)` over `ASSET_SERIES_KEYS`), so a duplicate key is a
+    # broken input, not a case to paper over: the merge raises and names it.
     merged = group_keys.merge(
-        lookup, on=HORIZON_ATTRIBUTE_KEYS, how="left", validate="many_to_one"
+        asset_horizon_attributes,
+        on=HORIZON_ATTRIBUTE_KEYS,
+        how="left",
+        validate="many_to_one",
     )
     unmatched = int(merged.drop(columns=HORIZON_ATTRIBUTE_KEYS).isna().all(axis=1).sum())
     if unmatched:
