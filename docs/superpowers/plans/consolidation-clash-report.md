@@ -216,13 +216,22 @@ shipped fixture: `WindCap - Offshore` classed `misaligned_high_carbon` paid the
 fossil rate at 8.0%, and `OilCap` classed `misaligned_low_carbon` collected the
 greenium at 6.5%.
 
-**Flagged, not fixed: the carrier is now inconsistent between two rulings.** The
-terminal-growth spreads (`g_real_brown` / `g_real_green`) and the tier-2 annuity
-still select on `alignment_type`, because owner ruling 13 keeps them there,
-while ruling 12 moved the discount spread to technology — so the same asset can
-be "brown" for its growth rate and not for its discount rate, and vice versa.
-That is a deliberate consequence of taking the two rulings as given, recorded
-here for a future ruling rather than resolved by this branch.
+**RESOLVED by owner ruling 13 (2026-09-04): the 12/13 carrier inconsistency is
+gone.** The terminal-growth spreads (`g_real_brown` / `g_real_green`) now select
+on the same `dcf.brown_technologies` list as the discount spread, so an asset
+that is "brown" for its rate is "brown" for its growth and vice versa — no asset
+can be one and not the other any more. On the fixture slice 61 of 721 valuation
+groups changed growth rate, in both directions: offshore wind (30), nuclear (21)
+and biomass (7) classed `misaligned_high_carbon` stopped growing at the fossil
+0%, and `OilCap` classed `misaligned_low_carbon` (3) stopped growing at 2%.
+
+**The one remaining `alignment_type` consumer in the valuation stage is the
+tier-2 annuity** — the "declining but profitable carbontech" selection in
+`compute_yearly_npv_trajectories`, which decides whether a group takes a finite
+10-year annuity instead of a perpetuity. Ruling 13 deliberately left it there;
+it awaits its own ruling if the owner wants it moved onto the technology list
+too. Everything else keyed on `alignment_type` in the stage is a grouping or
+passthrough column, not a selector.
 
 ### Q2-5 · Dynamic marginal EF and `carbon_cost_method` · FYI
 

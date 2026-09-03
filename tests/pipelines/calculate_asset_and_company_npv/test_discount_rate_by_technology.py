@@ -15,8 +15,9 @@ Two changes, one ruling:
     `misaligned_high_carbon` paid the fossil penalty at 8.0%, and oil classed
     `misaligned_low_carbon` collected the greenium at 6.5%.
 
-The growth-rate spreads still ride `alignment_type` - owner ruling 13 keeps
-them there. That carrier inconsistency is deliberate and flagged, not fixed;
+Owner ruling 13 put the terminal growth rate on this same carrier - see
+`test_terminal_growth_by_technology.py`. The tier-2 annuity still selects on
+`alignment_type`, and is the last consumer in the valuation stage that does;
 see `docs/superpowers/plans/consolidation-clash-report.md`, Q2-4.
 """
 
