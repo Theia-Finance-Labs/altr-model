@@ -29,6 +29,7 @@ closed forms written independently of the implementation.
 import pandas as pd
 import pytest
 from altr_model.pipelines.calculate_asset_and_company_npv.nodes import (
+    HORIZON_ATTRIBUTE_KEYS,
     compute_yearly_npv_trajectories,
 )
 
@@ -77,35 +78,39 @@ def _frame_with_exit_data(
     alignment_type: str,
     scrap_usd_per_mw: float | None = SCRAP_DEARER_THAN_RUNNING_ON,
     lifetime_years: float | None = LIFETIME,
-) -> pd.DataFrame:
-    """One asset-trajectory carrying the columns the exit floor is priced off.
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """An earnings frame, and the horizon table the exit floor is priced off.
 
-    `asset_age` rises by one per year and lands on AGE_AT_HORIZON in the final
-    year, so the remaining life at the horizon is `LIFETIME - AGE_AT_HORIZON`.
+    The horizon table is what the earnings stage now emits: ONE row per asset
+    series, carrying the state of its last forecast year. `asset_age` there is
+    AGE_AT_HORIZON, so the remaining life at the horizon is
+    `LIFETIME - AGE_AT_HORIZON`. A `None` drops that column from the table
+    entirely, which is how the fallbacks are exercised.
     """
     first_year = FINAL_YEAR - len(fcff) + 1
-    rows = []
-    for offset, (year, value) in enumerate(
-        zip(range(first_year, FINAL_YEAR + 1), fcff)
-    ):
-        row = {
-            **META,
-            "alignment_type": alignment_type,
-            "year": year,
-            "FCFF": value,
-            "asset_trajectory": CAPACITY,
-            "asset_age": AGE_AT_HORIZON - (len(fcff) - 1 - offset),
-        }
-        if scrap_usd_per_mw is not None:
-            row["scrap_usd_per_mw"] = scrap_usd_per_mw
-        if lifetime_years is not None:
-            row["lifetime_years"] = lifetime_years
-        rows.append(row)
-    return pd.DataFrame(rows)
+    frame = pd.DataFrame(
+        [
+            {**META, "alignment_type": alignment_type, "year": year, "FCFF": value}
+            for year, value in zip(range(first_year, FINAL_YEAR + 1), fcff)
+        ]
+    )
+
+    attributes = {"asset_trajectory": CAPACITY, "asset_age": AGE_AT_HORIZON}
+    if scrap_usd_per_mw is not None:
+        attributes["scrap_usd_per_mw"] = scrap_usd_per_mw
+    if lifetime_years is not None:
+        attributes["lifetime_years"] = lifetime_years
+    horizon = pd.DataFrame(
+        [{key: META[key] for key in HORIZON_ATTRIBUTE_KEYS} | attributes]
+    )
+    return frame, horizon
 
 
-def _run(frame: pd.DataFrame, **overrides) -> pd.DataFrame:
-    return compute_yearly_npv_trajectories(frame, **{**SHIPPED, **overrides})
+def _run(frames: tuple[pd.DataFrame, pd.DataFrame], **overrides) -> pd.DataFrame:
+    frame, horizon = frames
+    return compute_yearly_npv_trajectories(
+        frame, horizon, **{**SHIPPED, **overrides}
+    )
 
 
 def _run_out_value(fcff_window: list[float], rate: float, years_back: int) -> float:
@@ -253,6 +258,39 @@ def test_without_scrap_the_annuity_stands_alone():
     )
 
     expected = _run_out_value(ESCAPES_STRANDING, R_GREEN, years_back=2)
+
+    assert _terminal_value(out) == pytest.approx(expected)
+
+
+def test_without_the_horizon_table_at_all_the_annuity_stands_alone():
+    """No `asset_horizon_attributes` input: every fallback at once.
+
+    A direct caller that passes only an earnings frame - and any older run whose
+    catalog has no such dataset - must still value, with no exit floor and the
+    tier-2 annuity horizon.
+    """
+    frame, _ = _frame_with_exit_data(ESCAPES_STRANDING, GREENTECH)
+    out = compute_yearly_npv_trajectories(frame, None, **{**SHIPPED, **BOUNDED})
+
+    final_fcff = sum(ESCAPES_STRANDING) / len(ESCAPES_STRANDING)
+    fallback_years = SHIPPED["brown_remaining_life_years"]
+    expected = (
+        final_fcff * _annuity_factor(R_GREEN, fallback_years) * (1.0 + R_GREEN) ** -2
+    )
+
+    assert _terminal_value(out) == pytest.approx(expected)
+
+
+def test_a_horizon_row_that_does_not_match_the_group_is_not_used():
+    """A table that misses this asset falls back rather than mis-pricing it."""
+    frame, horizon = _frame_with_exit_data(ESCAPES_STRANDING, GREENTECH)
+    out = _run((frame, horizon.assign(asset_id="SOMEONE_ELSE")), **BOUNDED)
+
+    final_fcff = sum(ESCAPES_STRANDING) / len(ESCAPES_STRANDING)
+    fallback_years = SHIPPED["brown_remaining_life_years"]
+    expected = (
+        final_fcff * _annuity_factor(R_GREEN, fallback_years) * (1.0 + R_GREEN) ** -2
+    )
 
     assert _terminal_value(out) == pytest.approx(expected)
 

@@ -283,11 +283,13 @@ def test_valuation_output_shape_stable(fixture_run):
 @pytest.mark.xfail(
     reason=(
         "proposal branch — pins intentionally not re-derived until the owner "
-        "decides. `asset_earnings` gains `lifetime_years` and "
-        "`scrap_usd_per_mw`, the two columns the bounded negative terminal "
-        "value prices its remaining life and exit floor off, so the pinned "
-        "column list is one column-order edit away from green once the owner "
-        "accepts the proposal."
+        "decides. NOT the horizon scalars the previous reason named: those "
+        "moved out of `asset_earnings` into `asset_horizon_attributes`, so the "
+        "pinned column list and the row count are green again and the schema "
+        "half of this test passes. What remains is a VALUE: natural retirement "
+        "timing (D9) moves one asset's FCFF total, "
+        "INTERNAL_A_L100000201220/CN_6166477550945836346, from "
+        "-210,086,705.59 to -370,319,739.62."
     ),
     strict=False,
 )

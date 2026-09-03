@@ -50,6 +50,10 @@ asset_earnings:
   type: pandas.CSVDataset
   filepath: data/fixture_run/07_model_output/asset_earnings.csv
 
+asset_horizon_attributes:
+  type: pandas.CSVDataset
+  filepath: data/fixture_run/07_model_output/asset_horizon_attributes.csv
+
 # ================================================
 # ================== VALUATION MODEL OUTPUTS ===
 # ================================================

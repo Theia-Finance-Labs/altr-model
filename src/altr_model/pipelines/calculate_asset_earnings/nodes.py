@@ -28,6 +28,18 @@ ASSET_SERIES_KEYS = [
     "trajectory_type",
 ]
 
+# State of the asset at the last forecast year, which the valuation stage prices
+# an exit off. These are per-series CONSTANTS, not flows, so they travel in their
+# own one-row-per-series table rather than repeated down every row of
+# ``asset_earnings`` — that table is one row per asset-year-flow, and widening it
+# with horizon scalars invites a "first"-aggregation hack downstream.
+HORIZON_ATTRIBUTE_COLUMNS = [
+    "lifetime_years",
+    "asset_age",
+    "scrap_usd_per_mw",
+    "asset_trajectory",
+]
+
 
 def validate_asset_trajectories(
     asset_trajectories: pd.DataFrame,
@@ -764,7 +776,7 @@ def write_asset_earnings_series(asset_cashflows: pd.DataFrame) -> pd.DataFrame:
         "asset_age",  # used in reporting
         "capacity_factor",  # used in reporting
         # "efficiency_decimal",
-        "lifetime_years",  # NPV: remaining life for the bounded negative TV
+        # "lifetime_years",  # NPV reads it from asset_horizon_attributes
         # "aligned",
         # "increasing",
         "alignment_type",
@@ -779,7 +791,7 @@ def write_asset_earnings_series(asset_cashflows: pd.DataFrame) -> pd.DataFrame:
         # "carbon_price_usd_per_tco2",
         # "fom_usd_per_mw_yr",
         # "capex_usd_per_mw",
-        "scrap_usd_per_mw",  # NPV: exit floor for the bounded negative TV
+        # "scrap_usd_per_mw",  # NPV reads it from asset_horizon_attributes
         # Earnings series
         "Q",  # used in reporting
         "revenue",
@@ -811,3 +823,51 @@ def write_asset_earnings_series(asset_cashflows: pd.DataFrame) -> pd.DataFrame:
     )
 
     return final_output
+
+
+def write_asset_horizon_attributes(asset_panel_enriched: pd.DataFrame) -> pd.DataFrame:
+    """Node 11: each asset series' state in its LAST forecast year.
+
+    One row per asset series — ``ASSET_SERIES_KEYS``, i.e. one physical asset per
+    owner per trajectory — carrying the four scalars the valuation stage needs to
+    price a terminal exit: the asset's ``lifetime_years`` and ``asset_age`` (their
+    difference is the remaining economic life at the horizon), its
+    ``scrap_usd_per_mw`` (the same rate ``include_decom_costs`` books its charge
+    at), and the ``asset_trajectory`` capacity still standing.
+
+    Built from the panel BEFORE the CapEx flow split, where one asset-year is
+    still one row: ``validate_asset_trajectories`` raises on a duplicate
+    ``ASSET_SERIES_KEYS + year``, so the last row of a year-sorted group IS the
+    horizon, with no aggregation choice to make. Taking the same values off
+    ``asset_earnings`` would mean collapsing its flow rows with a "first"
+    aggregation, which reads a per-year constant as though it were a flow.
+    """
+
+    logger.info("Writing asset horizon attributes...")
+
+    present = [c for c in HORIZON_ATTRIBUTE_COLUMNS if c in asset_panel_enriched.columns]
+    absent = [c for c in HORIZON_ATTRIBUTE_COLUMNS if c not in present]
+    if absent:
+        logger.warning(
+            "Asset panel carries no %s; the valuation stage falls back where a "
+            "horizon attribute is missing",
+            ", ".join(absent),
+        )
+
+    horizon = (
+        asset_panel_enriched.sort_values(ASSET_SERIES_KEYS + ["year"])
+        .groupby(ASSET_SERIES_KEYS, dropna=False)
+        # tail(1) is the group's LAST ROW, not its last non-null value per
+        # column: a NaN at the horizon must stay NaN rather than silently
+        # inherit an earlier year's number.
+        .tail(1)[ASSET_SERIES_KEYS + present]
+        .copy()
+    )
+    for column in present:
+        horizon[column] = pd.to_numeric(horizon[column], errors="coerce")
+
+    horizon = horizon.sort_values(ASSET_SERIES_KEYS).reset_index(drop=True)
+
+    logger.info("Asset horizon attributes: %s asset series", len(horizon))
+
+    return horizon

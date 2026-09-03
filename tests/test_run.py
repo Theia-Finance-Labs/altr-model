@@ -143,6 +143,7 @@ def test_methodology_steps_are_visible_as_individual_nodes():
         "calculate_operating_earnings",
         "calculate_free_cash_flow",
         "write_asset_earnings",
+        "write_asset_horizon_attributes",
     }
 
     valuation_node_names = {
