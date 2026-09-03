@@ -17,17 +17,18 @@ market_passthrough: 0  # 0 => firm absorbs all differential carbon cost (conserv
 #                       over the price-setting generator. Right for IAMs whose
 #                       prices already embed the marginal generator's carbon cost
 #                       (AIM/CGE: a $64/MWh spread).
-carbon_cost_method: "full_ef"
-
-# Let the marginal emission factor decay with the VRE capacity share,
-# marginal_ef(t) = marginal_EF × (1 − vre_share(t))², so a technology loses its
-# carbon rent as renewables push it off the margin.
 #
-# Both keys act on marginal_EF, which the market-clearing-price adjustment
+# The key reads marginal_EF, which the market-clearing-price adjustment
 # produced. That adjustment is retired here (2026-09-01 owner ruling), so
-# marginal_EF is 0, the two methods coincide, and this key is inert. Kept so the
-# differential path works if the adjustment ever returns.
-dynamic_marginal_ef: True
+# marginal_EF is 0 on today's inputs and the two methods coincide. Kept so the
+# differential path works if the adjustment ever returns, and tested against an
+# injected non-zero marginal EF so the switch is not carried untested.
+#
+# A companion key, `dynamic_marginal_ef`, decayed marginal_EF with the VRE
+# capacity share. It was deleted by owner ruling 14: it scaled a value that is
+# always zero, so it could not change a number, and its (1 - vre_share)² curve
+# was an untested assumption sitting in the tree waiting to become live.
+carbon_cost_method: "full_ef"
 
 # ── Cost switches ─────────────────────────────────────────────────────────────────
 # Which cost elements the earnings model charges to free cash flow (True/False).
