@@ -7,6 +7,8 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
+from altr_model._validation import validate_choice
+
 logger = logging.getLogger(__name__)
 
 
@@ -15,6 +17,7 @@ logger = logging.getLogger(__name__)
 #: cancelling out of the shock-minus-baseline difference.
 RETIREMENT_TIMING_DEFERRED = "deferred_to_window"
 RETIREMENT_TIMING_NATURAL = "natural"
+RETIREMENT_TIMINGS = (RETIREMENT_TIMING_DEFERRED, RETIREMENT_TIMING_NATURAL)
 
 
 def effective_retirement_year(
@@ -38,7 +41,14 @@ def effective_retirement_year(
     off `shock_year` and the company's adjusted path.
 
     Accepts a scalar or a Series and returns the same shape.
+
+    Validated HERE rather than at the three node entry points because this is
+    the function whose `else` silently takes the other arm: every caller in the
+    stage routes through it, so one guard covers all of them and a misspelled
+    `retirement_timing` can never quietly defer a retirement it was asked to
+    let land naturally.
     """
+    validate_choice("retirement_timing", retirement_timing, RETIREMENT_TIMINGS)
     if retirement_timing == RETIREMENT_TIMING_NATURAL or alignment_year is None:
         return retirement_year
     return np.maximum(retirement_year, int(alignment_year) + 1)
