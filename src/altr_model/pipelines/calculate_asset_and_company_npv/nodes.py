@@ -12,6 +12,17 @@ logger = logging.getLogger(__name__)
 
 CARBONTECH_ALIGNMENTS = {"misaligned_high_carbon", "aligned_high_carbon"}
 
+#: Per-asset-year columns the bounded negative terminal value prices its exit
+#: floor and its remaining life off. Each is optional: a frame without them
+#: falls back (no floor / the tier-2 annuity horizon), so the older
+#: `asset_earnings` schema and the hand-built unit frames both still run.
+EXIT_FLOOR_COLUMNS = (
+    "scrap_usd_per_mw",
+    "asset_trajectory",
+    "lifetime_years",
+    "asset_age",
+)
+
 
 def compute_yearly_npv_trajectories(
     asset_earnings: pd.DataFrame,
@@ -27,6 +38,7 @@ def compute_yearly_npv_trajectories(
     stranding_aware_tv: bool = False,
     stranding_consecutive_years: int = 3,
     brown_remaining_life_years: int = 10,
+    negative_tv_method: str = "perpetuity",
 ) -> pd.DataFrame:
     """
     Node 1: Compute yearly NPV trajectories with all financial components.
@@ -62,7 +74,19 @@ def compute_yearly_npv_trajectories(
         stranding_consecutive_years: How many consecutive loss-making years at
             the end of the horizon count as stranded. A company can weather one
             or two bad years; N in a row is a closure.
-        brown_remaining_life_years: Annuity horizon for tier 2.
+        brown_remaining_life_years: Annuity horizon for tier 2, and the
+            fallback horizon for the bounded negative branch below.
+        negative_tv_method: What a NON-stranded group with a negative terminal
+            FCFF is worth.
+            "perpetuity" — Gordon Growth on the negative cash flow, which is
+                unbounded below: the asset is valued at less than nothing,
+                forever.
+            "bounded_annuity" — the least bad of the two choices an owner
+                actually has: run the remaining life out at a loss
+                (`final_fcff * annuity_factor(r, N_remaining)`) or pay to
+                decommission now (`-decom_cost`). Both are negative, so the
+                larger is the smaller loss. A loss-maker does not run at a
+                loss forever — it exits.
     """
 
     logger.info("Computing yearly NPV trajectories...")
@@ -75,6 +99,13 @@ def compute_yearly_npv_trajectories(
             "greentech -> standard Gordon Growth perpetuity",
             stranding_consecutive_years,
             brown_remaining_life_years,
+        )
+
+    if negative_tv_method == "bounded_annuity":
+        logger.info(
+            "Bounded negative TV ENABLED: a non-stranded group with a negative "
+            "terminal FCFF takes max(run-out annuity, -decommissioning cost) "
+            "instead of an unbounded negative perpetuity"
         )
 
     g_brown = (
@@ -176,6 +207,12 @@ def compute_yearly_npv_trajectories(
     # anchor zone, corrupting 3,414 nonzero terminal values.
     agg_map = {col: "sum" for col in available_financial_cols}
     agg_map["discount_rate"] = "first"
+    # The exit-floor inputs are per-asset-year constants replicated across the
+    # flow-split rows, not flows: "first" (which skips NaN) carries them
+    # through the collapse instead of summing one capacity three times over.
+    for col in EXIT_FLOOR_COLUMNS:
+        if col in npv_data.columns:
+            agg_map[col] = "first"
     # A cell whose FCFF rows are ALL missing sums to 0.0 -- pandas' default
     # min_count=0 -- and a 0.0 reads as a loss year in the stranding test far
     # below, so a data gap could write off an asset's whole terminal value.
@@ -350,6 +387,66 @@ def compute_yearly_npv_trajectories(
             stranded = np.zeros(n_groups, dtype=bool)
             annuity = np.zeros(n_groups, dtype=bool)
 
+        # BOUNDED NEGATIVE — a non-stranded group losing money at the horizon.
+        # Gordon Growth on a negative terminal FCFF is unbounded below: the
+        # asset is valued at less than nothing, forever. No owner makes that
+        # choice. Bound it by the least bad of the two they actually have —
+        # run the remaining life out at a loss, or pay to exit now. Both
+        # candidates are negative, so the larger is the smaller loss.
+        if negative_tv_method == "bounded_annuity":
+            negative = has_terminal_fcff & ~stranded & (final_fcff < 0)
+
+            def anchor(column: str) -> np.ndarray | None:
+                """A per-asset-year column's value in the group's final year."""
+                if column not in npv_data.columns:
+                    return None
+                return pd.to_numeric(npv_data[column], errors="coerce").to_numpy(
+                    dtype=np.float64
+                )[last_idx]
+
+            # Remaining economic life at the horizon. Where the asset carries
+            # no lifetime, fall back to the tier-2 annuity's own horizon.
+            n_remaining = np.full(n_groups, float(brown_remaining_life_years))
+            lifetime, age = anchor("lifetime_years"), anchor("asset_age")
+            if lifetime is not None and age is not None:
+                measured = lifetime - age
+                n_remaining = np.where(
+                    np.isfinite(measured), np.maximum(measured, 0.0), n_remaining
+                )
+
+            # The tier-2 annuity factor as a closed form, at the group's OWN
+            # rate (technology spreads included) over its own remaining life.
+            with np.errstate(divide="ignore", invalid="ignore"):
+                negative_annuity_factor = np.where(
+                    final_discount_rate != 0,
+                    (1.0 - (1.0 + final_discount_rate) ** (-n_remaining))
+                    / final_discount_rate,
+                    n_remaining,
+                )
+            run_out_tv = final_fcff * negative_annuity_factor
+
+            # The exit quote: decommissioning whatever capacity is still
+            # standing at the horizon, priced off the same scrap rate the
+            # include_decom_costs charge uses. Where scrap or capacity is
+            # unavailable there is no quote, so there is no floor and the
+            # annuity stands alone.
+            scrap, capacity = anchor("scrap_usd_per_mw"), anchor("asset_trajectory")
+            if scrap is None or capacity is None:
+                exit_tv = np.full(n_groups, -np.inf)
+            else:
+                decom_cost = np.abs(scrap) * capacity
+                exit_tv = np.where(np.isfinite(decom_cost), -decom_cost, -np.inf)
+
+            # The annuity factor already discounts t = 1..N back to final_year,
+            # so discount from final_year (not final_year + 1) to base_year —
+            # the same convention the tier-2 annuity uses.
+            bounded_tv = np.maximum(run_out_tv, exit_tv) * (
+                1.0 + final_discount_rate
+            ) ** (-(final_year - base_year_per_group))
+            terminal_value = np.where(negative, bounded_tv, terminal_value)
+        else:
+            negative = np.zeros(n_groups, dtype=bool)
+
         # Gordon Growth perpetuity for everything else, only where r > g.
         with np.errstate(divide="ignore", invalid="ignore"):
             perpetuity_tv = (terminal_cf / (final_discount_rate - g_effective)) * (
@@ -359,6 +456,7 @@ def compute_yearly_npv_trajectories(
             has_terminal_fcff
             & ~stranded
             & ~annuity
+            & ~negative
             & (final_discount_rate > g_effective)
         )
         terminal_value = np.where(perpetuity, perpetuity_tv, terminal_value)
