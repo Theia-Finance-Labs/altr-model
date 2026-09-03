@@ -10,6 +10,40 @@ from tqdm import tqdm
 logger = logging.getLogger(__name__)
 
 
+#: How a NATURAL retirement — age past the technology's lifetime — is dated.
+#: The two pathways must use the SAME rule, or natural retirement stops
+#: cancelling out of the shock-minus-baseline difference.
+RETIREMENT_TIMING_DEFERRED = "deferred_to_window"
+RETIREMENT_TIMING_NATURAL = "natural"
+
+
+def effective_retirement_year(
+    retirement_year,
+    alignment_year: int | None,
+    retirement_timing: str = RETIREMENT_TIMING_DEFERRED,
+):
+    """The year a natural retirement actually takes effect.
+
+    "deferred_to_window" holds every retirement dated on or before the
+    alignment year back to `alignment_year + 1`. With the shipped
+    `alignment_year: 2038` that bunches decades of natural retirements into
+    2039, and holds each of those assets at full capacity until then.
+
+    "natural" lets each retirement land on its own date. Applied identically
+    in both pathways it cancels out of the shock-minus-baseline difference by
+    construction — which is the isolation the clamp was reaching for — without
+    inventing a cliff in either level.
+
+    Shock-INDUCED capacity reduction is not routed through here at all: it runs
+    off `shock_year` and the company's adjusted path.
+
+    Accepts a scalar or a Series and returns the same shape.
+    """
+    if retirement_timing == RETIREMENT_TIMING_NATURAL or alignment_year is None:
+        return retirement_year
+    return np.maximum(retirement_year, int(alignment_year) + 1)
+
+
 def split_late_sudden_trajectories_by_alignment_type(
     companies_late_sudden_trajectories: pd.DataFrame,
 ):
@@ -302,6 +336,7 @@ def compute_asset_baseline_trajectories(
     assets_retirement_dates: pd.DataFrame = None,
     apply_retirement_baseline: bool = False,
     alignment_year: int = None,
+    retirement_timing: str = RETIREMENT_TIMING_DEFERRED,
 ) -> pd.DataFrame:
     """
     Compute asset-level baseline trajectories over the full time horizon (melted input).
@@ -333,7 +368,10 @@ def compute_asset_baseline_trajectories(
     apply_retirement_baseline : bool, optional
         Whether to apply retirement zeroing to baseline trajectories
     alignment_year : int, optional
-        Alignment year for retirement (retirement cannot occur before alignment_year + 1)
+        Alignment year for retirement, read only under the deferred rule below
+    retirement_timing : str, optional
+        "deferred_to_window" holds retirement back to alignment_year + 1;
+        "natural" applies it at its own year (see effective_retirement_year)
 
     Returns
     -------
@@ -489,14 +527,11 @@ def compute_asset_baseline_trajectories(
         # Use a normalized helper key without changing the public asset_id dtype.
         retirement_df["_asset_id_merge"] = retirement_df["asset_id"].astype(str)
 
-        # Calculate effective retirement year (cannot be before alignment_year + 1)
-        retirement_df["eff_retirement_year"] = retirement_df["retirement_year"].astype(
-            int
+        retirement_df["eff_retirement_year"] = effective_retirement_year(
+            retirement_df["retirement_year"].astype(int),
+            alignment_year,
+            retirement_timing,
         )
-        if alignment_year is not None:
-            retirement_df["eff_retirement_year"] = retirement_df[
-                "eff_retirement_year"
-            ].clip(lower=int(alignment_year) + 1)
 
         # Apply the mask to the merged frame itself. ``out`` retains source index
         # labels after groupby/apply, whereas merge creates a RangeIndex. Applying
@@ -628,6 +663,7 @@ def _stagger_decreasing_fast(
     g_k: float,
     n_quantiles: int,
     logger=None,
+    retirement_timing: str = RETIREMENT_TIMING_DEFERRED,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Vectorized staggered allocation for decreasing technologies, with retirement-compensation:
@@ -740,7 +776,9 @@ def _stagger_decreasing_fast(
             for j, aid in enumerate(asset_ids):
                 y_r = raw_ret.get(str(aid))
                 if y_r is not None and pd.notna(y_r):
-                    eff_ret_year[j] = max(int(y_r), int(alignment_year) + 1)
+                    eff_ret_year[j] = effective_retirement_year(
+                        int(y_r), alignment_year, retirement_timing
+                    )
 
         T = years.shape[0]
         before_mat = np.zeros((T, A), dtype=np.float64)
@@ -768,8 +806,15 @@ def _stagger_decreasing_fast(
             phase_t = np.full(A, comp_phase_by_year[t], dtype=object)
 
             # Forced retirements + **NEW uplift to C_adj for future years**
+            #
+            # The year gate that used to sit here (`y > alignment_year`) was
+            # exactly redundant under the deferred rule — retire_mask could
+            # only fire at y >= eff_ret_year >= alignment_year + 1 — but it
+            # would have silently suppressed every natural retirement dated
+            # inside the window. The effective retirement year is the only
+            # gate now, so both timing rules run through the same path.
             forced = np.zeros(A, dtype=np.float64)
-            if apply_retirement and y > int(alignment_year):
+            if apply_retirement:
                 retire_mask = y >= eff_ret_year
                 if retire_mask.any():
                     # Force to zero now
@@ -900,6 +945,7 @@ def _prop_scale_decreasing_fast(
     alignment_year: int = None,
     apply_retirement: bool = False,
     logger=None,
+    retirement_timing: str = RETIREMENT_TIMING_DEFERRED,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Proportional-scaling for decreasing techs (fast), with retirement applied once:
@@ -1066,11 +1112,9 @@ def _prop_scale_decreasing_fast(
                 for j, aid in enumerate(asset_ids):
                     yr = raw_ret.get(str(aid))
                     if yr is not None and pd.notna(yr):
-                        eff_ret_year[j] = int(yr)
-                        if alignment_year is not None:
-                            eff_ret_year[j] = max(
-                                eff_ret_year[j], int(alignment_year) + 1
-                            )
+                        eff_ret_year[j] = effective_retirement_year(
+                            int(yr), alignment_year, retirement_timing
+                        )
 
                 for j in range(A):
                     eff = eff_ret_year[j]
@@ -1176,6 +1220,7 @@ def stagger_decreasing_technologies(
     apply_decreasing_staggered_shock: bool,
     g_k: float = 6.0,
     n_quantiles: int = 3,
+    retirement_timing: str = RETIREMENT_TIMING_DEFERRED,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Decreasing techs.
@@ -1228,6 +1273,7 @@ def stagger_decreasing_technologies(
             alignment_year=int(alignment_year),
             apply_retirement=bool(apply_retirement_shock),
             logger=logger,
+            retirement_timing=retirement_timing,
         )
         return assets_df, corrections_df
 
@@ -1248,6 +1294,7 @@ def stagger_decreasing_technologies(
         g_k=float(g_k),
         n_quantiles=int(n_quantiles),
         logger=logger,
+        retirement_timing=retirement_timing,
     )
     return assets_df, corrections_df
 

@@ -303,6 +303,54 @@ def test_earnings_output_shape_stable(fixture_run):
         assert fcff[key] == pytest.approx(expected, rel=1e-9)
 
 
+def test_natural_retirement_is_not_bunched_into_the_window_year(fixture_run):
+    """PROPOSAL (D9): the 2039 cliff is gone at fixture scale.
+
+    Under `retirement_timing: deferred_to_window` every natural retirement
+    dated on or before `alignment_year` (2038) was held back to 2039: 112 of
+    the fixture's assets retired in that one year and NONE retired in the
+    thirteen years before it. Under "natural" the same 112 land on their own
+    dates across 2026-2039, and the years after the window are untouched.
+
+    Both pathways must also agree year for year - that is the isolation
+    property the clamp was reaching for, now holding by construction.
+    """
+    trajectories = _read("asset_trajectories")
+
+    def first_zero_year_counts(trajectory_type):
+        rows = trajectories[trajectories["trajectory_type"] == trajectory_type]
+        counts = {}
+        for _, group in rows.sort_values("year").groupby(["asset_id", "company_id"]):
+            capacity = group["asset_trajectory"]
+            if capacity.iloc[0] <= 0.0:
+                continue
+            retired = group.loc[capacity.eq(0.0), "year"]
+            if not retired.empty:
+                year = int(retired.min())
+                counts[year] = counts.get(year, 0) + 1
+        return counts
+
+    baseline = first_zero_year_counts("baseline")
+    latesudden = first_zero_year_counts("latesudden")
+
+    assert baseline == latesudden, (
+        "a natural retirement must land on the same year in both pathways, "
+        "or it does not cancel out of the shock-minus-baseline difference"
+    )
+
+    window_year = 2039
+    inside_window = sum(
+        count for year, count in baseline.items() if year < window_year
+    )
+    assert inside_window > 0, (
+        "no asset retires before the window year - the clamp is still bunching"
+    )
+    assert baseline.get(window_year, 0) < inside_window, (
+        f"{baseline.get(window_year, 0)} assets still pile into {window_year}, "
+        f"against {inside_window} spread across every earlier year"
+    )
+
+
 def test_asset_allocation_output_shape_stable(fixture_run):
     trajectories = _read("asset_trajectories")
     assert list(trajectories.columns) == ASSET_TRAJECTORIES_COLUMNS
