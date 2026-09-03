@@ -764,7 +764,7 @@ def write_asset_earnings_series(asset_cashflows: pd.DataFrame) -> pd.DataFrame:
         "asset_age",  # used in reporting
         "capacity_factor",  # used in reporting
         # "efficiency_decimal",
-        # "lifetime_years",
+        "lifetime_years",  # NPV: remaining life for the bounded negative TV
         # "aligned",
         # "increasing",
         "alignment_type",
@@ -779,7 +779,7 @@ def write_asset_earnings_series(asset_cashflows: pd.DataFrame) -> pd.DataFrame:
         # "carbon_price_usd_per_tco2",
         # "fom_usd_per_mw_yr",
         # "capex_usd_per_mw",
-        # "scrap_usd_per_mw",
+        "scrap_usd_per_mw",  # NPV: exit floor for the bounded negative TV
         # Earnings series
         "Q",  # used in reporting
         "revenue",

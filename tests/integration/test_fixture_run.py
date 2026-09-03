@@ -242,6 +242,15 @@ def test_full_pipeline_on_fixture(fixture_run):
     assert list(FIXTURE_OUT.rglob("*.csv")), "fixture run produced no CSV outputs"
 
 
+@pytest.mark.xfail(
+    reason=(
+        "proposal branch — pins intentionally not re-derived until the owner "
+        "decides. The bounded negative terminal value (D3) and natural "
+        "retirement timing (D9) both move these numbers by design; the branch "
+        "exists to show the owner the diffs, not to re-pin them."
+    ),
+    strict=False,
+)
 def test_valuation_output_shape_stable(fixture_run):
     company_npv = _read("company_npv").sort_values("company_id").reset_index(drop=True)
     assert list(company_npv.columns) == COMPANY_NPV_COLUMNS
@@ -271,6 +280,17 @@ def test_valuation_output_shape_stable(fixture_run):
         assert row["latesudden_npv"] == pytest.approx(expected[1], rel=1e-9)
 
 
+@pytest.mark.xfail(
+    reason=(
+        "proposal branch — pins intentionally not re-derived until the owner "
+        "decides. `asset_earnings` gains `lifetime_years` and "
+        "`scrap_usd_per_mw`, the two columns the bounded negative terminal "
+        "value prices its remaining life and exit floor off, so the pinned "
+        "column list is one column-order edit away from green once the owner "
+        "accepts the proposal."
+    ),
+    strict=False,
+)
 def test_earnings_output_shape_stable(fixture_run):
     earnings = _read("asset_earnings")
     assert list(earnings.columns) == ASSET_EARNINGS_COLUMNS

@@ -53,3 +53,28 @@ dcf:
   stranding_aware_tv: True
   stranding_consecutive_years: 3   # a company weathers 1-2 bad years, not N in a row
   brown_remaining_life_years: 10   # annuity horizon for tier 2
+
+  # ── Bounded negative terminal value (decision D3) ───────────────────────────
+  # What a NON-stranded group losing money at the horizon is worth. Tier 3 above
+  # hands it a Gordon Growth perpetuity, and on a negative cash flow that is
+  # UNBOUNDED BELOW: the asset is valued at less than nothing, forever. 2,699
+  # groups — 5.18% of the golden run — took one.
+  #   "perpetuity"      — the unbounded negative above. The pre-proposal
+  #                       behaviour, kept reachable for the ablation batch.
+  #   "bounded_annuity" — the least bad of the two choices an owner actually
+  #                       has, both of them negative:
+  #                           run it out = final_fcff * annuity(r, N_remaining)
+  #                           exit now   = -decom_cost
+  #                           TV         = max(run_out, exit_now)
+  #                       `r` is the group's own rate, spreads included;
+  #                       `N_remaining` is `lifetime_years - asset_age` at the
+  #                       horizon, falling back to brown_remaining_life_years
+  #                       where the asset carries no lifetime; `decom_cost` is
+  #                       `abs(scrap_usd_per_mw) * capacity` at the horizon,
+  #                       the same scrap price `include_decom_costs` charges.
+  #                       Where scrap is unavailable there is no floor and the
+  #                       run-out annuity stands alone.
+  # A loss-maker does not run at a loss forever — it exits. Bertrand's
+  # `final_fcff > 0` alternative would floor this at zero instead, which hands
+  # a loss-maker a free exit; this keeps the loss but bounds it.
+  negative_tv_method: "bounded_annuity"  # "perpetuity" | "bounded_annuity"
