@@ -66,6 +66,7 @@ at two commits.
 | **R12** | `include_replacement_capex = false` (decom at the delivered 50%) | toggle ablation | 266 s | 30/30 | -3,616.60 | **-207.27 (-6.08%)** vs R1 |
 | **R13** | `include_replacement_capex = false` + `decom_cost_fraction_of_capex = 0.15` | toggle ablation (two switches) | 288 s | 30/30 | -3,327.32 | **+82.02 (+2.41%)** vs R1; -205.26 (-6.57%) vs R11; +289.29 (+8.00%) vs R12 |
 | R14 | replacement CapEx **deleted from the code** (`afa1bd6`) + `decom_cost_fraction_of_capex = 0.15` | equivalence proof | 260 s | 30/30 | -3,327.32 | max abs diff vs R13: company NPV 0, company×technology 0 |
+| **R15** | `capture_price.method = hirth2013` (`f412c61`) on the ruled configuration | toggle ablation | 304 s | 30/30 | −4,396.99 | **−1,069.67 (−32.2%)** vs R14 |
 
 **Ranked by absolute impact on the risk signal** (all vs R1 except where noted):
 
@@ -79,6 +80,7 @@ at two commits.
 | 6 | **R12** replacement CapEx off | -207.27 bn | **-6.08%** | signal *grows* |
 | 7 | **R9** continued O&M off | −165.09 bn | −4.84% | signal *grows* |
 | 8 | **R13** replacement off + decom 15% (the ruled configuration) | +82.02 bn | +2.41% | signal shrinks |
+| — | **R15** Hirth capture factors (vs R14) | −1,069.67 bn | **−32.2%** | signal *grows* (measured against the ruled configuration, not R1) |
 | 9 | R8 stranding tiers off | −16.42 bn | −0.482% | signal grows |
 | 10 | R4 raw TV anchor | +4.29 bn | +0.126% | signal shrinks |
 | 11 | R2 unbounded negative TV | −2.40 bn | −0.070% | signal grows |
@@ -1096,6 +1098,96 @@ MESSAGE is a strict like-for-like on scenario design.
    (recommended) or a cost-recovery floor.
 
 Not recommended: a flat price uplift to calibrate margins.
+
+---
+## S — capture-price factors (Hirth 2013) on samples of negative-baseline firms (2026-09-04)
+
+**Question (owner):** would a capture-price factor taken from Hirth fix the
+negative-baseline majority? **Method:** `capture_price.method: hirth2013`
+(`f412c61`; wind 1.1 − 1.5 × share, PV 1.1 − 3.5 × share, floor 0.4,
+dispatchable residual by revenue conservation, cap 2.0; shares from each
+scenario-region-year's own leaf pathways). From each provider's full run, up to
+30 negative-baseline companies per dominant technology were sampled (869 firms
+in all) and re-run as a company subset with the factor off and on. The subset
+runs reproduce the full-run baselines exactly (median relative difference 0).
+
+| Provider | WITCH | MESSAGE | REMIND | IMAGE | POLES | GEME3 |
+| --- | --- | --- | --- | --- | --- | --- |
+| Sampled negative-baseline firms | 165 | 191 | 159 | 92 | 132 | 130 |
+| Turned positive under hirth2013 | **39%** | **15%** | **27%** | **4%** | **42%** | **0%** |
+
+Overall **22% of the 869 sampled firms turn positive.**
+
+| Dominant technology | WITCH | MESSAGE | REMIND | IMAGE | POLES | GEME3 | Pooled turned positive | Median Δ baseline NPV (% of |base|) |
+| --- || --- || --- || --- || --- || --- || --- || --- || --- |
+| BiomassCap - w/o CCS | 40% (30) | 0% (30) | 93% (30) | 3% (30) | 3% (30) | 0% (30) | 23% (180) | +21% |
+| CoalCap - w/o CCS | 97% (30) | 27% (30) | 10% (30) | 0% (1) | 53% (30) | 0% (30) | 37% (151) | +50% |
+| GasCap - w/o CCS | 33% (30) | 0% (30) | 27% (30) | 10% (30) | 97% (30) | 0% (30) | 28% (180) | +27% |
+| GeothermalCap | — | 40% (5) | — | — | — | — | 40% (5) | +45% |
+| HydroCap | 67% (3) | 43% (30) | 50% (6) | — | — | 0% (3) | 43% (42) | +64% |
+| NuclearCap | 60% (10) | 38% (13) | 0% (1) | — | — | 0% (7) | 35% (31) | +42% |
+| OilCap - w/o CCS | 7% (30) | 0% (30) | 3% (30) | 0% (30) | 27% (30) | 0% (30) | 6% (180) | +3% |
+| SolarCap - CSP | 50% (2) | — | 0% (2) | — | — | — | 25% (4) | -107% |
+| SolarCap - PV | 4% (26) | 0% (3) | 0% (30) | — | — | — | 2% (59) | -450% |
+| WindCap - Offshore | 0% (1) | 0% (2) | — | 0% (1) | 17% (12) | — | 12% (16) | -15% |
+| WindCap - Onshore | 33% (3) | 0% (18) | — | — | — | — | 5% (21) | -3% |
+
+### Reading
+
+- **It works exactly where the shortfall is small.** WITCH coal companies sit
+  just under break-even and 97% of them clear it; POLES gas likewise (97%).
+  Where the operating loss is structural — oil everywhere (6%), gas under
+  MESSAGE (0%) and IMAGE (10%), biomass under most providers — no plausible
+  factor closes a gap of –100/MWh.
+- **It is not free for the profitable side.** The same factor cuts PV firms'
+  value (median −450% of their baseline among the sampled negatives) and
+  wind's, because WITCH's NoPolicy already reaches 29% solar and 38% wind
+  shares by 2050, where Hirth's value factors sit near the floor. The
+  dispatchable residual then approaches the cap in high-VRE regions (China
+  2050: 75% VRE). The net effect on the whole universe is measured in R15
+  below.
+- **GEM-E3 shows 0% because its coverage carries no wind or PV leaf
+  technologies**, so every share is zero and every factor 1.0 — the method
+  is inert on a provider without VRE pathways.
+### R15 — the factors on the whole WITCH universe (vs R14)
+
+| | R14 (factor 1.0) | R15 (hirth2013) |
+| --- | --- | --- |
+| Σ baseline NPV | 3,667 bn | **6,379 bn** |
+| Σ late&sudden NPV | 340 bn | 1,982 bn |
+| Headline signal | −3,327 bn | **−4,397 bn (−1,070, −32.2%)** |
+| Baseline-negative companies | 57.8% | **29.2%** |
+| Median company baseline NPV | −12 mn | +173 mn |
+| Coal / gas / oil companies negative | 74% / 70% / 98% | **2% / 46% / 99%** |
+| PV / offshore / biomass companies negative | 9% / 2% / 88% | **83% / 33% / 64%** |
+| Technologies below cost coverage | 4 (oil, biomass, gas, CSP) | 3 (**oil, PV, offshore**) |
+| Risk-signal sign flips | — | 393 (68 neg→pos, **325 pos→neg**) |
+
+The majority test passes (71% of companies positive at baseline) — but by
+moving the loss from fossil owners to PV owners. WITCH's NoPolicy pathway
+reaches 29% solar and 38% wind shares by 2050, where Hirth's value factors
+sit at the 0.4 floor, so PV revenue falls to 0.77× its cost (from 1.56×) and
+83% of PV-dominant companies go negative; the dispatchable residual reaches the
+2.0 cap in China by 2050 and coal's baseline value rises from 500 to 2,325 bn,
+which then makes the transition loss on coal larger (signal −30% on coal,
+−32% overall). Directionally this *is* the market-value problem of renewables
+that Hirth describes; whether its 2050 magnitude belongs in a baseline
+valuation is a methodology call. Oil stays at 99% negative either way.
+
+**Verdict, both halves:** the factor is the right instrument for the layer it
+addresses (gas/coal near break-even, VRE capture prices) and delivers a
+profitable majority under WITCH; it does not touch oil/biomass, it is inert on
+providers without VRE pathways, and its cost is a third larger signal and a
+PV-owner loss population. Owner rulings needed on: adopting it at all; the
+floor and cap (0.4 / 2.0 are the load-bearing numbers at 2050 shares); and
+whether the shares should be frozen at their start-year values (a static
+capture-price correction) rather than following the pathway to 2050.
+
+- Verdict on the sample question: **no, not on its own.** It is the right fix for the
+  gas/coal-near-break-even layer and the right correction for VRE capture
+  prices, but the fossil majority under low-price providers is set by the
+  price level (Layer 1) and oil/biomass by merit order (Layer 3), which a
+  factor cannot reach.
 
 ---
 ## December table completion
