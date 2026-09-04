@@ -1023,6 +1023,81 @@ off. The former `test_replacement_rate_scenario_alignment.py` lives on as
 data-side reasoning for the ruling under test.
 
 ---
+## P — provider sensitivity under the ruled configuration (2026-09-04)
+
+**Question (owner):** the baseline-profitability finding was established on
+WITCH — is it provider-specific, and what happens on the other providers? Seven
+runs of the identical tree (`d75bd8b`: replacement removed, decom 15%) on each
+provider's own valid pair from the 2026-09-01 extract. Coverage differs by
+provider (12–28 geographies, 12–19 technologies), so the company universe is
+not identical run to run — companies and asset rows are reported per run. Only
+MESSAGE is a strict like-for-like on scenario design.
+
+| Provider | Pair (baseline → target) | Companies | Asset rows | Σ base (bn) | Σ ls (bn) | Signal (bn) | Signal / |base| | Baseline-negative cos | Median co. base (mn) | Techs < 1 | Note |
+| --- || --- || --- || --- || --- || --- || --- || --- || --- || --- || --- || --- |
+| WITCH | EN_NoPolicy → EN_NPi2020_500 | 4,878 | 26,033 | 3,667 | 340 | **-3,327** | -91% | **57.8%** | -12.0 | 4 | R14 — the reference |
+| MESSAGE | EN_NoPolicy → EN_NPi2020_500 | 4,830 | 23,128 | -2,432 | -20,065 | **-17,632** | -725% | **50.2%** | -0.8 | 4 | like-for-like ENGAGE pair |
+| AIM | EN_INDCi2100 → EN_NPi2020_500f | 4,660 | 19,473 | 46,192 | 43,479 | **-2,713** | -6% | **0.1%** | 3,393.6 | 0 | documented AIM equivalent; INDC baseline; **target carbon price is 0 in the extract** |
+| REMIND | EN_NoPolicy → SusDev_SSP2-PkBudg900 | 4,696 | 19,284 | 3,329 | 296 | **-3,033** | -91% | **56.6%** | -24.0 | 4 | 900 Gt budget, different project family |
+| IMAGE | EN_NoPolicy → CO_2Deg2020 | 4,690 | 19,342 | 20,917 | 4,823 | **-16,095** | -77% | **19.6%** | 476.4 | 2 | 2 °C, different family |
+| POLES | EN_INDCi2100 → EN_NPi2020_500 | 4,705 | 18,271 | 18,045 | -60,151 | **-78,196** | -433% | **13.8%** | 592.8 | 1 | **carbon column 5,503–10,698 USD/t — units or extrapolation defect** |
+| GEME3 | EN_INDCi2100 → EN_NPi2020_500 | 4,340 | 12,730 | 7,047 | 8,234 | **1,187** | +17% | **49.8%** | 0.0 | 3 | baseline carries a non-zero carbon price (13–19 USD/t) |
+
+### Q2 coverage ratio per technology (baseline)
+
+| Technology | WITCH | MESSAGE | AIM | REMIND | IMAGE | POLES | GEME3 |
+| --- || --- || --- || --- || --- || --- || --- || --- |
+| BiomassCap - w/o CCS | 0.77 | 0.43 | 3.10 | 0.96 | 1.12 | 1.25 | 0.95 |
+| CoalCap - w/o CCS | 1.11 | 1.04 | 3.54 | 1.12 | 2.93 | 1.27 | 1.44 |
+| GasCap - w/o CCS | 0.89 | 0.40 | 3.03 | 0.69 | 0.98 | 1.22 | 0.80 |
+| GeothermalCap | — | 0.83 | 25.00 | 3.90 | — | 2.56 | 2.60 |
+| HydroCap | 1.82 | 1.74 | 24.21 | 3.35 | 14.39 | 7.42 | 4.46 |
+| NuclearCap | 1.16 | 1.53 | 4.64 | 2.24 | 3.92 | 8.44 | 2.52 |
+| OilCap - w/o CCS | 0.32 | 0.18 | 1.71 | 0.37 | 0.58 | 0.71 | 0.33 |
+| SolarCap - CSP | 0.94 | — | — | 4.28 | — | — | — |
+| SolarCap - PV | 1.56 | 6.13 | — | 0.80 | — | 2.65 | — |
+| WindCap - Offshore | 1.60 | 1.42 | — | — | 2.25 | 2.93 | — |
+| WindCap - Onshore | 3.36 | 2.56 | 7.41 | — | 3.69 | 8.13 | — |
+
+### Reading
+
+- **The data level decides baseline profitability, not the model.** 2030
+  median regional power price: WITCH $41, MESSAGE $31, REMIND $73, IMAGE $80,
+  AIM/CGE $134/MWh. Coal-dominant companies are 74% negative under WITCH, 7%
+  under REMIND, 0% under IMAGE and AIM. The universe goes from 58% negative
+  (WITCH) to 0.1% (AIM) on the same assets and code.
+- **Gas is out of merit under every low-price provider** (WITCH 70%, REMIND 97%
+  of gas-dominant companies negative) because the model pays every technology
+  the regional annual-average price; gas earns above-average capture prices in
+  reality. **Oil and biomass are negative under every provider** — structurally
+  out of merit on energy-only economics.
+- **The signal is dominated by the carbon-price path × how much unabated coal the
+  pathway keeps running.** MESSAGE (carbon to $1,070/t, Chinese unabated coal
+  flat to 2050) gives −17.6 tn, −18.1 tn of it in China; the model has no
+  in-window shutdown, so plants run and pay. IMAGE (to $882/t, coal to zero)
+  gives −16.1 tn. GEM-E3's signal is **positive** (+1.2 tn): its target's power
+  price doubles in 2030 while the coal pathway is the same in both scenarios.
+  POLES's −78 tn is the carbon-column defect, not a result.
+- **Extract-quality flags for the marts:** AIM/CGE target carbon price 0
+  everywhere; POLES carbon 5,503–10,698 USD/t; GEM-E3 non-zero baseline carbon;
+  MESSAGE `CoalCap - w/o CCS` pathway flat under a 500 Gt budget.
+
+### The fix, by layer (assessment put to the owner)
+
+1. **Coal-dominant companies (32% of the universe): provider price level.**
+   Choose the pair deliberately (IMAGE: 20% negative, carbon-driven shock;
+   REMIND: WITCH-sized signal with coal healthy). No code.
+2. **Gas-dominant (35%): price structure.** A per-technology capture-price
+   factor on the revenue line (`Q × price × factor[technology]`), literature-
+   sourced (gas ~1.1–1.3, PV/wind ~0.7–0.9), held constant across pathways and
+   said so. One parameter table, one multiplication, measurable in one arm.
+3. **Oil- and biomass-dominant (10%): out of merit everywhere.** Decide
+   explicitly: exclude from the valued universe with a documented reason
+   (recommended) or a cost-recovery floor.
+
+Not recommended: a flat price uplift to calibrate margins.
+
+---
 ## December table completion
 
 > **Scope note on the row numbering.** The brief asked for rows **1–15**. The
