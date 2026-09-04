@@ -64,7 +64,7 @@ fuel_cost_per_mwh = fuel_price_usd_per_mwh_fuel ÷ efficiency_decimal
 var_cost_t   = Q_t × fuel_cost_per_mwh
 fixed_cost_t = fom_usd_per_mw_yr × K_for_fixed_cost_t
 carbon_t     = Q_t × carbon_price_usd_per_tco2 × emission_factor × (1 − market_passthrough)
-revenue_t    = Q_t × power_price_excarbon_usd_per_mwh
+revenue_t    = Q_t × power_price_excarbon_usd_per_mwh × capture_price_factor
 EBITDA_t     = revenue_t − var_cost_t − fixed_cost_t − carbon_t
 
 capex_total_t = growth_t + decom_t, where
@@ -85,6 +85,11 @@ arrives negative in the extracts (at half the build cost by the marts convention
 a positive outflow either way, so retiring an asset always costs money and never
 pays its owner. The symbol names left of the `=` map back to input columns via the
 [rename table](../input_data.md#how-the-scenario-columns-appear-inside-the-model).
+
+`capture_price_factor` is 1.0 unless `capture_price.method` is set in the
+input-preparation parameters; under `hirth2013` wind and PV capture less than the
+regional average price and dispatchable plant more, by the value factors of
+Hirth (2013) applied to each scenario-region-year's generation shares.
 
 `K_for_fixed_cost` is where continued O&M enters: for a decreasing-technology
 asset on a trajectory the switch covers, it is the trajectory's **first-year**

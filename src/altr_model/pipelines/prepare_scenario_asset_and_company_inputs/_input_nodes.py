@@ -778,3 +778,80 @@ def apply_decom_cost_fraction(
     return scenarios.assign(
         scrap_usd_per_mw=-float(fraction) * scenarios["capex_usd_per_mw"]
     )
+
+
+# Capture-price factors after Hirth (2013), "The market value of variable
+# renewables", Energy Economics 38. Hirth measures the VALUE FACTOR of wind and
+# solar (generation-weighted capture price / average system price) and finds
+# it falling with market share: wind from ~1.1 at zero share to 0.5-0.8 at 30%,
+# solar reaching the same by ~15%. The model otherwise pays every technology the
+# regional annual-average price. Dispatchable plant takes the residual so that
+# generation-weighted capture prices still average to the system price.
+CAPTURE_PRICE_METHODS = ("none", "hirth2013")
+CAPTURE_WIND_TECHNOLOGIES = ("WindCap - Onshore", "WindCap - Offshore")
+CAPTURE_SOLAR_TECHNOLOGIES = ("SolarCap - PV",)
+_CAPTURE_KEYS = ["scenario", "scenario_geography", "year"]
+# Below this residual generation share the dispatchable factor is undefined (all-VRE).
+_CAPTURE_MIN_RESIDUAL_SHARE = 1e-9
+
+
+def compute_capture_price_factor(
+    scenarios: pd.DataFrame, params: dict | None
+) -> pd.DataFrame:
+    """Add ``capture_price_factor`` per scenario row (1.0 under ``method: none``).
+
+    Shares are computed on LEAF technologies only: the extract also carries
+    aggregate parents (``CoalCap`` = ``CoalCap - w/o CCS`` + ``CoalCap - w/ CCS``),
+    which would double-count generation. Wind and PV take Hirth's linear
+    value-factor-in-share form (floored); every other technology, CSP and the
+    parents included, takes the dispatchable residual (capped).
+    """
+    params = params or {}
+    method = params.get("method", "none")
+    if method not in CAPTURE_PRICE_METHODS:
+        raise ValueError(
+            f"capture_price.method must be one of {CAPTURE_PRICE_METHODS}; got {method!r}"
+        )
+    if method == "none":
+        return scenarios.assign(capture_price_factor=1.0)
+
+    techs = set(scenarios["technology"].unique())
+    parents = {t for t in techs if any(o.startswith(t + " - ") for o in techs)}
+    leaf = scenarios[~scenarios["technology"].isin(parents)]
+    total = leaf.groupby(_CAPTURE_KEYS)["scenario_pathway"].sum().rename("total")
+    wind = (
+        leaf[leaf["technology"].isin(CAPTURE_WIND_TECHNOLOGIES)]
+        .groupby(_CAPTURE_KEYS)["scenario_pathway"]
+        .sum()
+        .rename("wind")
+    )
+    solar = (
+        leaf[leaf["technology"].isin(CAPTURE_SOLAR_TECHNOLOGIES)]
+        .groupby(_CAPTURE_KEYS)["scenario_pathway"]
+        .sum()
+        .rename("solar")
+    )
+    sh = pd.concat([total, wind, solar], axis=1).fillna(0.0)
+    positive = sh["total"] > 0
+    s_w = (sh["wind"] / sh["total"]).where(positive, 0.0)
+    s_s = (sh["solar"] / sh["total"]).where(positive, 0.0)
+    floor, cap = float(params["vre_floor"]), float(params["dispatchable_cap"])
+    vf_w = (params["wind_intercept"] + params["wind_slope"] * s_w).clip(lower=floor)
+    vf_s = (params["solar_intercept"] + params["solar_slope"] * s_s).clip(lower=floor)
+    residual_share = 1.0 - s_w - s_s
+    vf_d = (
+        (
+            (1.0 - s_w * vf_w - s_s * vf_s)
+            / residual_share.where(residual_share > _CAPTURE_MIN_RESIDUAL_SHARE)
+        )
+        .fillna(1.0)
+        .clip(upper=cap)
+    )
+    factors = pd.DataFrame({"_vf_w": vf_w, "_vf_s": vf_s, "_vf_d": vf_d})
+    out = scenarios.merge(factors, left_on=_CAPTURE_KEYS, right_index=True, how="left")
+    is_wind = out["technology"].isin(CAPTURE_WIND_TECHNOLOGIES)
+    is_solar = out["technology"].isin(CAPTURE_SOLAR_TECHNOLOGIES)
+    out["capture_price_factor"] = np.where(
+        is_wind, out["_vf_w"], np.where(is_solar, out["_vf_s"], out["_vf_d"])
+    )
+    return out.drop(columns=["_vf_w", "_vf_s", "_vf_d"])

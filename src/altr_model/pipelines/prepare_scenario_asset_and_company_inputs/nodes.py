@@ -20,6 +20,7 @@ from altr_model.pipelines.prepare_scenario_asset_and_company_inputs._input_nodes
     allocate_assets_to_companies,
     apply_ccs_suffix,
     apply_decom_cost_fraction,
+    compute_capture_price_factor,
     assign_scenario_geographies_to_assets,
     determine_increasing_or_decreasing_techs,
     determine_lifetime_per_technology,
@@ -39,6 +40,7 @@ FINANCIAL_SURFACE_COLUMNS = [
     "efficiency_decimal",
     "lifetime_years",
     "scrap_usd_per_mw",
+    "capture_price_factor",
 ]
 
 
@@ -47,6 +49,7 @@ def prepare_scenario_pathways(
     target_scenario: str,
     baseline_scenario: str,
     decom_cost_fraction_of_capex: float | None = None,
+    capture_price: dict | None = None,
 ) -> pd.DataFrame:
     """Filter scenarios once and add all downstream trajectory/model fields."""
     # Some scenarios.csv deliveries use "scenario_name" instead of "scenario"
@@ -78,7 +81,8 @@ def prepare_scenario_pathways(
     scenarios["capacity_factor"] = scenarios["scenario_capacity_factor"]
     scenarios["capex_usd_per_mw"] = scenarios["capital_cost_usd_per_mw"]
     scenarios["fom_usd_per_mw_yr"] = scenarios["om_cost_usd_per_mw_per_yr"]
-    return apply_decom_cost_fraction(scenarios, decom_cost_fraction_of_capex)
+    scenarios = apply_decom_cost_fraction(scenarios, decom_cost_fraction_of_capex)
+    return compute_capture_price_factor(scenarios, capture_price)
 
 
 def prepare_asset_forecast_panel(
