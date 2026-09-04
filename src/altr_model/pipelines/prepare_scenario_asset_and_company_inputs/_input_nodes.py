@@ -886,21 +886,26 @@ def apply_lrmc_price_floor(
     """Lift ``power_price_excarbon_usd_per_mwh`` to the price-setter's LRMC.
 
     Per scenario x region x year, the price-setting technology is the LEAF
-    thermal technology with the largest positive ``scenario_pathway``. The bare
-    family names (``CoalCap``, ``GasCap``, ``OilCap``, ``BiomassCap``) are
-    aggregate parents in the extract and are never candidates, nor is any name
-    that another name extends with `` - ``. Its levelised cost per MWh is
+    thermal technology with the largest finite positive ``scenario_pathway``
+    among those whose cost inputs are USABLE. The bare family names
+    (``CoalCap``, ``GasCap``, ``OilCap``, ``BiomassCap``) are aggregate parents
+    in the extract and are never candidates, nor is any name that another
+    name extends with `` - ``. A candidate is usable only when fuel price,
+    efficiency, O&M, capital cost, capacity factor and lifetime are all finite
+    and strictly positive; an unusable candidate is skipped and the next
+    largest usable one sets the price, so one broken row does not remove a
+    region-year's floor. The levelised cost per MWh is
     ``fuel_price / efficiency + om / hours + capex x CRF(rate, lifetime) / hours``
-    with ``hours = capacity_factor x 8760``, all from that technology's own row.
+    with ``hours = capacity_factor x 8760``, all from the setter's own row.
     The floor is ONE market price: every technology in the region-year receives
     ``max(price, floor)`` (a missing price takes the floor). ``scenario_price``
     keeps the raw IAM value for audit; ``price_floor_lrmc`` reports the floor
     and ``price_setter_technology`` the setter. Both are empty (0.0 / None) --
-    and the price is left exactly as delivered -- wherever no valid floor
-    exists: method ``none``, no thermal generation, or a setter whose cost
-    inputs are missing, non-positive or non-finite. Ties on generation resolve
-    by technology name, so the setter does not depend on row order. The
-    setter's name is not part of the financial surface carried downstream.
+    and the price is left exactly as delivered, negative or zero included --
+    wherever no usable candidate exists or the method is ``none``. Ties on
+    generation resolve by technology name, independent of row order. The
+    setter's name is not part of the financial surface carried downstream. The
+    returned frame carries a fresh RangeIndex.
     """
     params = params or {}
     method = params.get("method", "none")
@@ -927,44 +932,46 @@ def apply_lrmc_price_floor(
     parents = set(PRICE_SETTING_TECHNOLOGY_PREFIXES) | {
         t for t in names if any(o.startswith(t + " - ") for o in names)
     }
-    generation = pd.to_numeric(scenarios["scenario_pathway"], errors="coerce")
-    candidates = scenarios[
+
+    def usable(column: str) -> pd.Series:
+        values = pd.to_numeric(scenarios[column], errors="coerce")
+        return values.where(np.isfinite(values) & (values > 0))
+
+    generation = usable("scenario_pathway")
+    hours = usable("scenario_capacity_factor") * HOURS_PER_YEAR
+    lrmc = (
+        usable("fuel_price") / usable("efficiency_decimal")
+        + usable("om_cost_usd_per_mw_per_yr") / hours
+        + usable("capital_cost_usd_per_mw")
+        * capital_recovery_factor(rate, usable("lifetime_years"))
+        / hours
+    )
+    candidate = (
         named
         & ~tech.isin(parents)
         & tech.str.startswith(PRICE_SETTING_TECHNOLOGY_PREFIXES)
-        & np.isfinite(generation)
-        & (generation > 0)
-    ]
+        & generation.notna()
+        & np.isfinite(lrmc)
+        & (lrmc > 0)
+    )
     setter = (
-        candidates.sort_values(
-            ["scenario_pathway", "technology"],
+        scenarios.loc[candidate, _REGION_YEAR_KEYS]
+        .assign(
+            _generation=generation[candidate],
+            price_floor_lrmc=lrmc[candidate],
+            price_setter_technology=tech[candidate],
+        )
+        .sort_values(
+            ["_generation", "price_setter_technology"],
             ascending=[False, True],
             kind="mergesort",
         )
         .drop_duplicates(_REGION_YEAR_KEYS)
+        .drop(columns="_generation")
         .reset_index(drop=True)
     )
-
-    def positive(column: str) -> pd.Series:
-        values = pd.to_numeric(setter[column], errors="coerce")
-        return values.where(values > 0)
-
-    hours = positive("scenario_capacity_factor") * HOURS_PER_YEAR
-    lrmc = (
-        pd.to_numeric(setter["fuel_price"], errors="coerce")
-        / positive("efficiency_decimal")
-        + pd.to_numeric(setter["om_cost_usd_per_mw_per_yr"], errors="coerce") / hours
-        + pd.to_numeric(setter["capital_cost_usd_per_mw"], errors="coerce")
-        * capital_recovery_factor(rate, positive("lifetime_years"))
-        / hours
-    )
-    valid = np.isfinite(lrmc) & (lrmc > 0)
-    floors = setter[_REGION_YEAR_KEYS].assign(
-        price_floor_lrmc=lrmc.where(valid, 0.0),
-        price_setter_technology=setter["technology"].where(valid, None),
-    )
     out = scenarios.merge(
-        floors, on=_REGION_YEAR_KEYS, how="left", validate="many_to_one"
+        setter, on=_REGION_YEAR_KEYS, how="left", validate="many_to_one"
     )
     out["price_floor_lrmc"] = out["price_floor_lrmc"].fillna(0.0)
     out["price_setter_technology"] = out["price_setter_technology"].where(

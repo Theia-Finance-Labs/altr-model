@@ -142,10 +142,11 @@ company-technology, and the plots lose their per-asset detail when it is on.
 | `decom_cost_fraction_of_capex`, `price_floor`, `capture_price` | `conf/base/parameters_prepare_scenario_asset_and_company_inputs.yml` |
 
 Three keys adjust the scenario surface before anything downstream reads it, in
-this order: `price_floor` (method `lrmc` lifts the regional power price to the
-levelised cost of the region-year's price-setting thermal technology, one
-market price for every technology; the raw IAM value stays in `scenario_price`
-and the floor is reported in `price_floor_lrmc`), `decom_cost_fraction_of_capex`
+this order: `price_floor` (method `lrmc` lifts the regional power price to at
+least the levelised cost of the region-year's price-setting thermal technology —
+the largest thermal generator whose cost inputs are usable — one market price for
+every technology; the raw IAM value stays in `scenario_price` and the floor is
+reported in `price_floor_lrmc`, 0.0 where none applies), `decom_cost_fraction_of_capex`
 (rewrites `scrap_usd_per_mw` as a share of build cost) and `capture_price`
 (method `hirth2013` adds a per-technology `capture_price_factor` the earnings
 stage multiplies into revenue). `price_floor` and `capture_price` ship at
