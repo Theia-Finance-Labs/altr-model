@@ -94,11 +94,9 @@ def _reference_compute(
     if npv_data["scenario_type"].isna().any():
         raise ValueError("asset(s) have no scenario_type resolved")
 
-    # Ruling 13 KEEPS `alignment_type` as the carrier for the tier-2 annuity, so
-    # this set is still needed below...
-    carbontech_alignments = {"misaligned_high_carbon", "aligned_high_carbon"}
-    # ...but rulings 12 and 13 moved the discount spread and the terminal growth
-    # rate off it, onto membership of this list. No green leg on either.
+    # Rulings 12 and 13 moved the discount spread and the terminal growth rate
+    # onto membership of this list, and the 2026-09-05 ruling moved the tier-2
+    # annuity onto it too. No green leg on either.
     brown_set = set(brown_technologies or ())
 
     def get_discount_rate(row):
@@ -159,8 +157,7 @@ def _reference_compute(
             final_year = int(g["year"].iloc[-1])
             final_discount_rate = g.iloc[-1]["discount_rate"]
 
-            alignment = first_row.get("alignment_type", "")
-            is_carbontech = alignment in carbontech_alignments
+            is_carbontech = first_row.get("technology", "") in brown_set
             if first_row.get("technology", "") in brown_set:
                 g_effective = g_brown
             else:
@@ -430,13 +427,20 @@ PARAMS = [
     pytest.param({"stranding_aware_tv": True}, id="stranding_on"),
     pytest.param({"terminal_normalization_window": 3}, id="window3"),
     pytest.param(
-        {"stranding_aware_tv": True, "terminal_normalization_window": 3,
-         "terminal_growth_rate_brown": 0.0, "terminal_growth_rate_green": 0.03},
+        {
+            "stranding_aware_tv": True,
+            "terminal_normalization_window": 3,
+            "terminal_growth_rate_brown": 0.0,
+            "terminal_growth_rate_green": 0.03,
+        },
         id="stranding_window3_split_g",
     ),
     pytest.param(
-        {"stranding_aware_tv": True, "stranding_consecutive_years": 2,
-         "brown_remaining_life_years": 15},
+        {
+            "stranding_aware_tv": True,
+            "stranding_consecutive_years": 2,
+            "brown_remaining_life_years": 15,
+        },
         id="stranding_2yr_life15",
     ),
     pytest.param({"terminal_growth_rate_green": 0.10}, id="r_le_g_green"),
@@ -458,10 +462,14 @@ PARAMS = [
         id="brown_spread_on_wind",
     ),
     pytest.param(
-        {"stranding_aware_tv": True, "brown_discount_spread": 0.015,
-         "brown_technologies": BROWN_TECHNOLOGIES,
-         "terminal_normalization_window": 3,
-         "terminal_growth_rate_brown": -0.01, "terminal_growth_rate_green": 0.025},
+        {
+            "stranding_aware_tv": True,
+            "brown_discount_spread": 0.015,
+            "brown_technologies": BROWN_TECHNOLOGIES,
+            "terminal_normalization_window": 3,
+            "terminal_growth_rate_brown": -0.01,
+            "terminal_growth_rate_green": 0.025,
+        },
         id="kitchen_sink",
     ),
 ]
@@ -485,7 +493,9 @@ def test_terminal_rows_are_added_for_the_expected_groups():
     # A7's final FCFF is exactly zero -> no terminal row, either way.
     assert "A7" not in set(tv["asset_id"])
 
-    stranded = compute_yearly_npv_trajectories(_fixture_frame(), stranding_aware_tv=True)
+    stranded = compute_yearly_npv_trajectories(
+        _fixture_frame(), stranding_aware_tv=True
+    )
     stranded_tv = stranded.loc[
         pd.to_numeric(stranded["terminal_value"], errors="coerce") != 0
     ]
@@ -498,7 +508,9 @@ def test_terminal_rows_are_added_for_the_expected_groups():
 # Real-data equivalence + timing
 # --------------------------------------------------------------------------
 _REAL = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+    os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    ),
     "data",
     "07_model_output",
     "asset_earnings.csv",

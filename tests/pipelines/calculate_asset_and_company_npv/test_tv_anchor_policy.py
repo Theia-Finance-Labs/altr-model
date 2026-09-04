@@ -191,9 +191,7 @@ def test_capacity_still_standing_keeps_its_terminal_value():
     )
 
     green_growth = SHIPPED["terminal_growth_rate_green"]
-    expected = _gordon(
-        OPERATING_FCFF * (1.0 + green_growth), R_GREEN, green_growth, 3
-    )
+    expected = _gordon(OPERATING_FCFF * (1.0 + green_growth), R_GREEN, green_growth, 3)
 
     assert _terminal_value(_run(frames, **OPERATING)) == pytest.approx(expected)
 
@@ -226,9 +224,7 @@ def test_the_anchor_excludes_decommissioning_from_a_still_standing_asset():
     )
 
     green_growth = SHIPPED["terminal_growth_rate_green"]
-    expected = _gordon(
-        OPERATING_FCFF * (1.0 + green_growth), R_GREEN, green_growth, 3
-    )
+    expected = _gordon(OPERATING_FCFF * (1.0 + green_growth), R_GREEN, green_growth, 3)
 
     assert _terminal_value(_run(frames, **OPERATING)) == pytest.approx(expected)
 

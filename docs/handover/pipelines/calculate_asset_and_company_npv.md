@@ -36,7 +36,7 @@ order and the first match wins:
 | Tier | Condition | Terminal value |
 | --- | --- | --- |
 | Stranded | FCFF <= 0 for the last `stranding_consecutive_years` years | **Zero.** A rational owner exercises the abandonment option rather than funding perpetual losses |
-| Declining carbontech | Still profitable, `alignment_type` is high-carbon | A **finite annuity** over `brown_remaining_life_years`, reflecting a fossil asset's finite remaining economic life in a transition |
+| Declining carbontech | Still profitable, technology in `dcf.brown_technologies` (alignment only under the legacy carrier); `dcf.carbontech_annuity: False` drops the tier | A **finite annuity** over `brown_remaining_life_years`, reflecting a fossil asset's finite remaining economic life in a transition |
 | Bounded negative | Terminal FCFF negative, not stranded | Under `negative_tv_method: "bounded_annuity"` (shipped), the **least bad of two exits**; see below |
 | Everything else | — | The standard Gordon-growth **perpetuity** |
 
@@ -111,8 +111,7 @@ fossil penalty and grew at the fossil rate, while 3 oil assets collected the
 greenium.
 
 The **tier-2 carbontech annuity is not governed by this switch**. It still
-selects on `alignment_type` under either carrier, and is the last consumer in
-this stage that does; see the clash report (Q2-4).
+the tier-2 annuity rides the same carrier since the 2026-09-05 ruling.
 
 !!! note "Tier census — check it on your own run"
 
@@ -209,7 +208,7 @@ Every key sits in the `dcf` block of
 | `dcf.terminal_value.g_real_brown` | `0.0` | Terminal growth for whatever `spread_carrier` calls brown - declining assets, no perpetual growth |
 | `dcf.terminal_value.g_real_green` | `0.02` | Terminal growth for everything else |
 | `dcf.terminal_value.normalization_window` | `3` | How many final years are averaged into the terminal FCFF |
-| `dcf.brown_discount_spread` | `0.01` | Carbon risk premium added to whatever `spread_carrier` calls brown |
+| `dcf.brown_discount_spread` | `0.0` | Carbon risk premium added to whatever `spread_carrier` calls brown |
 | `dcf.green_discount_spread` | `0.0` | The greenium. Ignored with a warning under `spread_carrier: "technology"`; live under `"alignment_type"` |
 | `dcf.brown_technologies` | Coal / Gas / Oil, both CCS variants | Which technologies pay the premium under the technology carrier; everything else takes the base rate |
 | `dcf.spread_carrier` | `"technology"` | `"technology"` or `"alignment_type"` - what decides "brown" for **both** the spread and the growth rate |

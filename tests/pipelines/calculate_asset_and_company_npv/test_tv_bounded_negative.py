@@ -120,17 +120,13 @@ def _frame_with_exit_data(
 
 def _run(frames: tuple[pd.DataFrame, pd.DataFrame], **overrides) -> pd.DataFrame:
     frame, horizon = frames
-    return compute_yearly_npv_trajectories(
-        frame, horizon, **{**SHIPPED, **overrides}
-    )
+    return compute_yearly_npv_trajectories(frame, horizon, **{**SHIPPED, **overrides})
 
 
 def _run_out_value(fcff_window: list[float], rate: float, years_back: int) -> float:
     """`final_fcff * annuity_factor`, discounted back to the group's base year."""
     final_fcff = sum(fcff_window) / len(fcff_window)
-    return (
-        final_fcff * _annuity_factor(rate, N_REMAINING) * (1.0 + rate) ** -years_back
-    )
+    return final_fcff * _annuity_factor(rate, N_REMAINING) * (1.0 + rate) ** -years_back
 
 
 def _discounted(value: float, rate: float, years_back: int) -> float:
@@ -180,9 +176,9 @@ def test_negative_fcff_is_floored_at_the_decommissioning_cost():
     decom_cost = abs(SCRAP_CHEAPER_THAN_RUNNING_ON) * CAPACITY
     expected = _discounted(-decom_cost, R_GREEN, years_back=2)
 
-    assert -decom_cost > _run_out_value(ESCAPES_STRANDING, R_GREEN, years_back=0), (
-        "frame must make exiting the least-bad option"
-    )
+    assert -decom_cost > _run_out_value(
+        ESCAPES_STRANDING, R_GREEN, years_back=0
+    ), "frame must make exiting the least-bad option"
     assert _terminal_value(out) == pytest.approx(expected)
 
 
@@ -250,9 +246,7 @@ def test_the_switch_still_reaches_todays_unbounded_perpetuity():
 
     final_fcff = sum(ESCAPES_STRANDING) / len(ESCAPES_STRANDING)
     green_growth = SHIPPED["terminal_growth_rate_green"]
-    expected = _gordon(
-        final_fcff * (1.0 + green_growth), R_GREEN, green_growth, 3
-    )
+    expected = _gordon(final_fcff * (1.0 + green_growth), R_GREEN, green_growth, 3)
 
     assert _terminal_value(out) == pytest.approx(expected)
     assert _terminal_value(out) < _run_out_value(
@@ -263,9 +257,7 @@ def test_the_switch_still_reaches_todays_unbounded_perpetuity():
 def test_without_scrap_the_annuity_stands_alone():
     """No scrap price means no exit quote, so there is no floor to apply."""
     out = _run(
-        _frame_with_exit_data(
-            ESCAPES_STRANDING, GREENTECH, scrap_usd_per_mw=None
-        ),
+        _frame_with_exit_data(ESCAPES_STRANDING, GREENTECH, scrap_usd_per_mw=None),
         **BOUNDED,
     )
 
@@ -336,9 +328,7 @@ def test_without_lifetime_the_annuity_falls_back_to_the_brown_horizon():
     final_fcff = sum(ESCAPES_STRANDING) / len(ESCAPES_STRANDING)
     fallback_years = SHIPPED["brown_remaining_life_years"]
     expected = (
-        final_fcff
-        * _annuity_factor(R_GREEN, fallback_years)
-        * (1.0 + R_GREEN) ** -2
+        final_fcff * _annuity_factor(R_GREEN, fallback_years) * (1.0 + R_GREEN) ** -2
     )
 
     assert _terminal_value(out) == pytest.approx(expected)
@@ -429,4 +419,3 @@ def test_one_year_of_life_left_is_a_one_year_annuity():
     assert _terminal_value(out) == pytest.approx(
         _discounted(run_out, R_GREEN, years_back=2)
     )
-

@@ -51,7 +51,5 @@ def test_flow_split_rows_match_aggregated_rows():
             (2050, -30.0),
         ]
     )
-    agg = _frame(
-        [(2046, 50.0), (2047, 60.0), (2048, 65.0), (2049, 68.0), (2050, 70.0)]
-    )
+    agg = _frame([(2046, 50.0), (2047, 60.0), (2048, 65.0), (2049, 68.0), (2050, 70.0)])
     assert _totals(dup) == _totals(agg)
