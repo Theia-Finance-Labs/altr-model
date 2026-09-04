@@ -1293,6 +1293,52 @@ and ~0 to 0.42); by 2045 CHN coal carries 645 GW, 4e-8 TWh and zero carbon.
 
 
 ---
+## F — target-scenario fuel prices embed the carbon tax (found 2026-09-05 via R17)
+
+**R17** (`dispatch_floor: own_variable_cost`, full WITCH, vs R14): baseline-negative
+companies 57.8 → 56.6% (gas coverage 0.925 → 1.002, oil 0.33 → 0.86 — as sized
+offline), but the **signal** moved −3,327 → −1,324 bn (+60%), coal +1,288 bn and
+gas +804 bn in the shock pathway. A fuel-cost floor can only do that if the
+shock pathway's fuel cost is far above the baseline's — and it is.
+
+**Finding.** In the extract's target scenarios `fuel_price` for gas (and coal in
+some years) equals roughly the baseline fuel price **plus carbon price × fuel
+emission factor**: WITCH China gas 2030/2040/2050 = $100/151/186 per MWh of
+fuel against $24–26 in the baseline (carbon $339/569/722 per t); WITCH coal
+2030 = $126 vs $6.76 (2040+ back to ~$6 — inconsistent within the provider);
+IMAGE coal 51/113/165 vs ~10. The IAM's policy-scenario fuel price already
+contains the carbon tax. The model then charges `carbon_cost_net = Q × carbon
+price × EF` on top.
+
+**Size, golden run, late&sudden pathway (undiscounted, bn USD):**
+
+| Technology | Shock fuel cost | of which above baseline unit fuel cost | Carbon charged explicitly | Ratio |
+| --- | --- | --- | --- | --- |
+| Gas | 9,206 | **3,854** | 4,874 | 0.8 |
+| Coal | 6,140 | **3,412** | 4,087 | 0.8 |
+| Oil | 563 | 0 | 875 | 0 |
+
+Gas unit fuel cost, median across assets: baseline $38–42/MWh throughout; shock
+$38 (2033) → 156 (2036) → 273 (2040) → 335 (2050). Fossil plants in the shock
+pathway carry **7.3 tn of fuel cost above their baseline unit cost plus 9.8 tn
+of explicit carbon** against a golden signal of −3,980 bn. Roughly, carbon is
+counted ~1.8×, and the headline is dominated by the double count.
+
+**Consequences.** (1) Every signal number in this document is measured on the
+double-counted stack; relative comparisons between arms stand, absolute
+magnitudes do not. (2) R17 is not interpretable: the dispatch floor lifts shock
+revenue to a carbon-inclusive fuel cost, so it mostly undoes the double count.
+(3) `market_passthrough` (item 5 above) interacts: if the fuel price carries
+carbon, the plant's "cost" side already passes nothing through.
+
+**Fix belongs in the data contract, not the code:** `fuel_price` must be
+ex-carbon in every scenario (baseline fuel price path, or the target's producer
+price with the carbon component removed), as `scenario_price` is declared
+ex-carbon; the model then charges carbon once, explicitly. Until the marts
+confirm which AR6 variable feeds `fuel_price` per provider and re-export, no
+golden re-pin. Recorded for Bertrand with the capacity-factor defect.
+
+---
 ## December table completion
 
 > **Scope note on the row numbering.** The brief asked for rows **1–15**. The
