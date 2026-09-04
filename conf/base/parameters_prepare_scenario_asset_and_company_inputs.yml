@@ -155,9 +155,10 @@ company_ids:
 # terminal value's decommissioning floor prices standing capacity with the same
 # number). Real-world decommissioning for thermal and renewable plant runs closer
 # to 5–15% of build cost; nuclear is the exception.
-# Values: null (DEFAULT) keeps the delivered column, i.e. the 50% convention the
-# pinned fixture and golden runs were produced under. A number in [0, 1] rewrites
-# scrap as -(fraction × capex_usd_per_mw) for every scenario row, so BOTH
-# consumers move together. Measured on the full universe as calibration arm R11
-# (docs/superpowers/plans/measurement-batch-results.md).
-decom_cost_fraction_of_capex: null
+# Values: a number in [0, 1] rewrites scrap as -(fraction × capex_usd_per_mw)
+# for every scenario row, so BOTH consumers move together; null keeps the
+# delivered column (the 50% convention the golden was pinned under, kept
+# reachable for comparison). DEFAULT 0.15 by owner ruling (Jakub, 2026-09-04),
+# measured on the full universe as arms R11/R13 in
+# docs/superpowers/plans/measurement-batch-results.md.
+decom_cost_fraction_of_capex: 0.15

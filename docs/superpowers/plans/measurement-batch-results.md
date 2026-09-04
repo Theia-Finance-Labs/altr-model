@@ -958,6 +958,50 @@ majority reasonably profitable in baseline" is therefore now a **revenue-side**
 question — provider price level, spark spread, peak/capacity revenue — not a
 cost-side one. Nothing below measures that.
 
+### R1 → R13 by technology and by region (bn USD, discounted)
+
+The signal barely moves anywhere; the levels move everywhere. Under R13 the
+only baseline-negative blocks left are China ( −64,  −105,
+ −7) and, by technology, gas, oil and biomass — which is the same
+finding as the company-majority table read geographically: WITCH prices China's
+electricity at coal's marginal cost, and China is where the fossil fleet is.
+
+| technology | Σ base R1 | Σ base R13 | Δ base | signal R1 | signal R13 | Δ signal | Δ signal % |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| CoalCap - w/o CCS | -49.0 | 499.7 | +548.7 | -3,813.5 | -3,749.8 | +63.6 | +1.7% |
+| GasCap - w/o CCS | -985.8 | -413.8 | +572.0 | -2,622.0 | -2,591.1 | +30.9 | +1.2% |
+| OilCap - w/o CCS | -372.9 | -322.9 | +50.0 | -177.8 | -171.3 | +6.5 | +3.6% |
+| BiomassCap - w/o CCS | -47.6 | -23.6 | +24.0 | -14.1 | -11.7 | +2.3 | +16.6% |
+| WindCap - Offshore | -60.9 | 169.4 | +230.3 | 57.9 | 88.9 | +31.0 | +53.5% |
+| SolarCap - CSP | -53.4 | 3.4 | +56.8 | 107.8 | 103.2 | -4.6 | -4.3% |
+| NuclearCap | -262.2 | 201.8 | +464.0 | 442.2 | 453.7 | +11.5 | +2.6% |
+| HydroCap | 135.5 | 1,165.6 | +1,030.2 | 551.7 | 545.1 | -6.6 | -1.2% |
+| SolarCap - PV | 286.8 | 781.2 | +494.4 | 930.8 | 881.8 | -49.0 | -5.3% |
+| WindCap - Onshore | 1,104.0 | 1,606.0 | +501.9 | 1,127.5 | 1,123.9 | -3.7 | -0.3% |
+
+| scenario_geography | Σ base R1 | Σ base R13 | Δ base | signal R1 | signal R13 | Δ signal | Δ signal % |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| CHN | -915.3 | -64.4 | +851.0 | -2,000.6 | -1,955.5 | +45.1 | +2.3% |
+| IND | 157.8 | 381.9 | +224.1 | -554.6 | -552.0 | +2.5 | +0.5% |
+| R10AFRICA | -108.9 | 27.5 | +136.3 | -529.0 | -548.5 | -19.5 | -3.7% |
+| R10MIDDLE_EAST | 345.8 | 680.9 | +335.2 | -266.3 | -279.7 | -13.4 | -5.0% |
+| R10REST_ASIA | 62.4 | 208.8 | +146.5 | -219.2 | -222.9 | -3.7 | -1.7% |
+| IDN | 17.4 | 44.2 | +26.8 | -140.0 | -139.0 | +1.0 | +0.7% |
+| R10CHINA+ | -173.8 | -105.1 | +68.7 | -102.7 | -107.4 | -4.7 | -4.6% |
+| R10PAC_OECD | 127.3 | 304.6 | +177.3 | -74.1 | -68.2 | +5.9 | +8.0% |
+| R10INDIA+ | -59.9 | -7.0 | +52.9 | -58.8 | -57.1 | +1.8 | +3.0% |
+| ZAF | -15.7 | 12.7 | +28.4 | -37.6 | -34.0 | +3.6 | +9.6% |
+| MEX | 15.2 | 59.5 | +44.2 | -20.3 | -18.2 | +2.1 | +10.5% |
+| Global | -0.0 | -0.0 | +0.0 | -0.1 | -0.1 | +0.0 | +2.5% |
+| R10NORTH_AM | -0.1 | 0.0 | +0.1 | -0.0 | -0.0 | -0.0 | -1.5% |
+| R10EUROPE | 6.2 | 118.3 | +112.1 | -8.0 | 0.4 | +8.4 | +105.1% |
+| R10LATIN_AM | 17.2 | 154.6 | +137.4 | 17.0 | 11.5 | -5.5 | -32.4% |
+| BRA | -49.5 | 138.0 | +187.4 | 6.5 | 23.0 | +16.5 | +253.4% |
+| CAN | 33.8 | 139.2 | +105.3 | 41.1 | 41.3 | +0.1 | +0.3% |
+| EU | 8.5 | 403.7 | +395.3 | 26.5 | 60.7 | +34.2 | +128.8% |
+| R10REF_ECON | 145.1 | 393.7 | +248.6 | 127.7 | 134.6 | +6.9 | +5.4% |
+| USA | 80.9 | 775.7 | +694.8 | 383.2 | 383.9 | +0.7 | +0.2% |
+
 ### R14 — the deletion changes nothing beyond the switch
 
 | Output | Rows | Max abs diff vs R13 | Identical rows |
