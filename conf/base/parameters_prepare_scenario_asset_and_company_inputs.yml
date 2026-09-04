@@ -162,3 +162,28 @@ company_ids:
 # measured on the full universe as arms R11/R13 in
 # docs/superpowers/plans/measurement-batch-results.md.
 decom_cost_fraction_of_capex: 0.15
+
+# ── Capture prices ────────────────────────────────────────────────────────────────
+# The scenarios carry ONE electricity price per region-year, and the model pays
+# every technology that average. In real markets technologies capture different
+# prices: wind and solar below the average (they produce together, when prices
+# are low), dispatchable plant above it. Hirth (2013, "The market value of
+# variable renewables", Energy Economics 38) measures the VALUE FACTOR
+# (capture price / average price) falling with market share: wind ~1.1 at zero
+# share to 0.5-0.8 at 30%, solar reaching the same by ~15%.
+# method: "none" (DEFAULT) - factor 1.0 everywhere, the validated behaviour.
+#         "hirth2013" - wind and PV take intercept + slope x (their generation
+#         share of the region-year, leaf technologies only), floored at
+#         vre_floor; every other technology takes the residual that keeps the
+#         generation-weighted capture price equal to the system price, capped
+#         at dispatchable_cap. Shares come from the scenario's own pathways, so
+#         the factor is per scenario x region x year and moves with the
+#         transition. Held on the same functional form in both pathways.
+capture_price:
+  method: none
+  wind_intercept: 1.1
+  wind_slope: -1.5      # 0.65 at 30% share (Hirth: 0.5-0.8)
+  solar_intercept: 1.1
+  solar_slope: -3.5     # 0.575 at 15% share
+  vre_floor: 0.4
+  dispatchable_cap: 2.0

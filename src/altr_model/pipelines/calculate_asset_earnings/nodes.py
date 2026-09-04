@@ -655,8 +655,16 @@ def compute_ops_block(
         excess_ef.mean(),
     )
 
-    # Revenue (ex-carbon price)
-    ops_data["revenue"] = ops_data["Q"] * ops_data["power_price_excarbon_usd_per_mwh"]
+    # Revenue (ex-carbon price), at the technology's capture price: the regional
+    # system price times `capture_price_factor` (1.0 unless capture_price.method
+    # is set in the input-preparation parameters).
+    capture = pd.to_numeric(
+        ops_data.get("capture_price_factor", pd.Series(1.0, index=ops_data.index)),
+        errors="coerce",
+    ).fillna(1.0)
+    ops_data["revenue"] = (
+        ops_data["Q"] * ops_data["power_price_excarbon_usd_per_mwh"] * capture
+    )
 
     # EBITDA
     ops_data["EBITDA"] = (
