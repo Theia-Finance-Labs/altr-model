@@ -1190,6 +1190,95 @@ capture-price correction) rather than following the pathway to 2050.
   factor cannot reach.
 
 ---
+## L — long-run-marginal-cost price floor: build, review, sample test, full run (2026-09-04)
+
+**Owner instruction:** implement the LRMC floor as an optional, parameter-switched
+step, Santa-review it, then test on the affected negative firms and a few positive
+ones.
+
+**Built** (`4449952` → `88d593d`, `price_floor: {method: none|lrmc, discount_rate}`,
+default `none`): per region-year, the price in every scenario becomes
+max(IAM price, LRMC of the **baseline** scenario's price-setting thermal technology
+— the largest thermal generator whose six cost inputs are finite and positive —
+with LRMC = fuel/efficiency + O&M/hours + capex × CRF(r, lifetime)/hours,
+CRF = r/(1 − (1+r)^−L)). One market price for every technology; `scenario_price`
+keeps the raw IAM value; `price_floor_lrmc` reports the floor. Anchor: WITCH China
+2030 coal, $40.18 against an IAM price of $25.27.
+
+**Santa (opus + codex, ledger `altr-lrmc-price-floor-4449952..21596da`):** rounds
+1 and 2 both FAIL (parent-only frames, zero-generation setters, negative-price
+clamp, index join, non-positive/inf cost inputs — all fixed with regression
+tests); round 3 opus PASS / codex FAIL on CRF overflow at absurd lifetimes and an
+over-general doc claim — cap reached, patched post-cap (`9385ec9`). The first
+sample test then exposed a design defect (below); the redesign (`2e234ee`) had
+its own delta review: opus PASS; codex verdict recorded in the ledger.
+
+### The defect the sample test caught — and a data flag for the marts
+
+The first floor derived per scenario produced late&sudden NPVs of 1e17–1e21 for
+167 of 195 WITCH sample firms. Cause: the extract's **target** scenarios carry
+capacity factors of ~1e-12 for phased-out thermal plant while their generation
+columns stay at the baseline's order of magnitude (WITCH EN_NPi2020_500, CHN,
+`CoalCap - w/o CCS`: CF 4e-12 from 2025, pathway 6.2e5). Capital over ~zero hours
+= 1e12/MWh. The floor is now derived from the baseline scenario only.
+
+**Independent of the floor, this defect already drives the shock pathway.**
+Golden run, CHN coal, late&sudden 2045: 645 GW standing, 4e-8 TWh produced, zero
+revenue, zero carbon cost, fixed O&M only — while the same rows' pathway column
+says coal generation is 97% of baseline. The post-2040 coal stranding signal is
+that contradiction, not a modelled shutdown. → marts: reconcile
+`scenario_capacity_factor` and `scenario_pathway` for `- w/o CCS` rows in target
+scenarios (the pathway looks like the technology aggregate).
+
+### Sample test (up to 30 negative firms per dominant technology + 3 positive controls per technology, floor off vs on)
+
+| | WITCH | MESSAGE | REMIND | IMAGE |
+| --- | --- | --- | --- | --- |
+| Negative firms sampled | 165 | 191 | 159 | 92 |
+| **Turned positive under the floor** | **64%** | **88%** | **70%** | **32%** |
+| Positive controls still positive | 100% (30) | 100% (24) | 100% (24) | 100% (24) |
+| Median uplift of positive controls | +92% | +855% | +254% | +32% |
+
+| Dominant technology | WITCH | MESSAGE | REMIND | IMAGE |
+| --- | --- | --- | --- | --- |
+| Coal | **100%** (30) | 100% (30) | 53% (30) | 100% (1) |
+| Gas | 43% (30) | 100% (30) | 83% (30) | 50% (30) |
+| Oil | 23% (30) | 30% (30) | 7% (30) | 13% (30) |
+| Biomass | 50% (30) | 100% (30) | 100% (30) | 30% (30) |
+| Nuclear / hydro / PV / wind | 80–100% | 97–100% | 100% | — |
+
+Pooled: **68% of 607** negative-baseline firms turn positive. Sample runs
+reproduce the full-run baselines exactly (median relative difference 0).
+
+### R16 — the floor on the whole WITCH universe (vs R14)
+
+| | R14 (no floor) | R16 (LRMC floor) |
+| --- | --- | --- |
+| Σ baseline NPV | 3,667 bn | **11,501 bn** |
+| Σ late&sudden NPV | 340 bn | 9,031 bn |
+| Headline signal | −3,327 bn | **−2,470 bn (+858, +25.8%)** |
+| Baseline-negative companies | 57.8% | **23.1%** |
+| Median company baseline NPV | −12 mn | +353 mn |
+| Coal / gas / oil / biomass companies negative | 74 / 70 / 98 / 88% | **0 / 49 / 91 / 53%** |
+| PV / wind / hydro / nuclear companies negative | 9 / 1 / 1 / 24% | 1 / 0 / 0 / 4% |
+| Technologies below cost coverage | 4 | **1 (oil, 0.37)** |
+| Risk-signal sign flips | — | 237 (67 neg→pos, 170 pos→neg) |
+
+Against R15 (Hirth capture factors: 29.2% negative, PV owners 83% negative,
+signal −32%), the floor reaches a smaller negative share **without** moving the
+loss onto renewables, and the signal shrinks rather than grows: fossil plants
+have more baseline value, but the target pathway's prices are floored too, so
+the shock loss narrows. Remaining negatives are oil (out of merit everywhere)
+and half of gas (WITCH's zero spark spread persists under the floor, since the
+floor is set by coal).
+
+**Open for the owner:** adopt `lrmc` as the default (it is a methodology
+choice: the counterfactual's long-run cost level applied to both pathways; the
+floor never falls in the transition even where the target's marginal entrant
+becomes cheaper); the discount rate (8% — tie to `dcf`?); and the marts data
+flag above, which matters more than the floor.
+
+---
 ## December table completion
 
 > **Scope note on the row numbering.** The brief asked for rows **1–15**. The
