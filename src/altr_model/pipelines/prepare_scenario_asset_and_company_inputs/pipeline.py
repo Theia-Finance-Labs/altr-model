@@ -20,6 +20,7 @@ PIPELINE_PARAMETERS = {
     "max_forecast_horizon",
     "ownership_aggregation",
     "ownership_type",
+    "price_floor",
     "reduce_granularity_from_asset_to_company_level",
     "target_scenario",
 }
@@ -36,6 +37,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                     "baseline_scenario": "params:baseline_scenario",
                     "decom_cost_fraction_of_capex": "params:decom_cost_fraction_of_capex",
                     "capture_price": "params:capture_price",
+                    "price_floor": "params:price_floor",
                 },
                 outputs="_scenario_pathways",
                 name="prepare_scenarios",

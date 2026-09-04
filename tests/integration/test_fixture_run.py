@@ -225,6 +225,7 @@ ASSET_TRAJECTORIES_COLUMNS = [
     "scrap_usd_per_mw",
     # Capture-price factor (1.0 under method "none"); schema change, re-pinned.
     "capture_price_factor",
+    "price_floor_lrmc",
     "increasing",
     "aligned",
 ]

@@ -187,3 +187,27 @@ capture_price:
   solar_slope: -3.5     # 0.575 at 15% share
   vre_floor: 0.4
   dispatchable_cap: 2.0
+
+# ── Price floor ───────────────────────────────────────────────────────────────────
+# IAM electricity prices are annual marginal-cost shadow prices. Under WITCH,
+# MESSAGE and REMIND they sit BELOW the full cost of the plants those pathways
+# keep building (WITCH China 2030: $25/MWh against a coal LRMC of ~$40) - a price
+# at which the scenario's own entrants could never recover their capital. In
+# long-run equilibrium the average price must at least cover the levelised cost
+# of the price-setting entrant, or nothing gets built.
+# method: "none" (DEFAULT) - the IAM price as delivered, the validated behaviour.
+#         "lrmc" - per scenario x region x year, the price becomes
+#         max(IAM price, LRMC of the price-setting technology), where the price
+#         setter is the largest thermal generator (coal/gas/oil/biomass, leaf
+#         rows only) and its LRMC = fuel/efficiency + O&M/hours + capex x CRF /
+#         hours from its own scenario columns. One market price: every
+#         technology in the region-year receives it. Where the IAM price is
+#         already above the LRMC (IMAGE, AIM/CGE) nothing changes. The raw IAM
+#         price stays in `scenario_price`; `price_floor_lrmc` reports the floor.
+# discount_rate: the REAL cost of capital in the capital-recovery annuity
+#         (r(1+r)^L / ((1+r)^L - 1) over the technology's lifetime). It is the
+#         one assumption; 8% is on the high side for a utility, 5-6% is common,
+#         and a lower rate gives a lower floor. Consider tying it to `dcf`.
+price_floor:
+  method: none
+  discount_rate: 0.08
