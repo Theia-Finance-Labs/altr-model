@@ -62,6 +62,7 @@ at two commits.
 | R8 | `dcf.stranding_aware_tv = false` | toggle ablation | 259 s | 30/30 | −3,425.75 | −16.42 (−0.482%) vs R1 |
 | **R9** | `apply_continued_om_shock = false` | toggle ablation | 260 s | 30/30 | −3,574.42 | **−165.09 (−4.84%)** vs R1 |
 | R10 | `ownership_aggregation = sum` | toggle ablation | ~2,340 s | **21/30, killed** | **not obtainable** | disk-blocked (259 MB free) |
+| **R11** | `decom_cost_fraction_of_capex = 0.15` (calibration arm, added 2026-09-04 @ d7219b8) | toggle ablation | 272 s | 30/30 | −3,122.06 | **+287.28 (+8.43%)** vs R1 |
 
 **Ranked by absolute impact on the risk signal** (all vs R1 except where noted):
 
@@ -71,18 +72,19 @@ at two commits.
 | 2 | **R1** the proposals, jointly | +572.45 bn | **+14.38%** | signal shrinks (vs R0) |
 | 3 | **R3** retirement deferred | −532.47 bn | **−15.62%** | signal *grows* |
 | 4 | **R5** pre-ruling-12/13 carrier | +459.02 bn | **+13.46%** | signal shrinks |
-| 5 | **R9** continued O&M off | −165.09 bn | −4.84% | signal *grows* |
-| 6 | R8 stranding tiers off | −16.42 bn | −0.482% | signal grows |
-| 7 | R4 raw TV anchor | +4.29 bn | +0.126% | signal shrinks |
-| 8 | R2 unbounded negative TV | −2.40 bn | −0.070% | signal grows |
-| 9 | **R0** synthetic EF | −1.40 bn | −0.035% | signal grows (vs GOLDEN) |
-| 10 | R7 uniform terminal growth | −0.68 bn | −0.020% | signal grows |
+| 5 | **R11** decom at 15% of build cost | +287.28 bn | **+8.43%** | signal shrinks |
+| 6 | **R9** continued O&M off | −165.09 bn | −4.84% | signal *grows* |
+| 7 | R8 stranding tiers off | −16.42 bn | −0.482% | signal grows |
+| 8 | R4 raw TV anchor | +4.29 bn | +0.126% | signal shrinks |
+| 9 | R2 unbounded negative TV | −2.40 bn | −0.070% | signal grows |
+| 10 | **R0** synthetic EF | −1.40 bn | −0.035% | signal grows (vs GOLDEN) |
+| 11 | R7 uniform terminal growth | −0.68 bn | −0.020% | signal grows |
 | — | R10 ownership `sum` | **not obtainable** | | disk |
 
 **Confirmations carried on every run:** node completion **29/29** for R0 and the
-golden lineage, **30/30** for R1–R9 (the proposals add `asset_horizon_attributes`
+golden lineage, **30/30** for R1–R9 and R11 (the proposals add `asset_horizon_attributes`
 and its node); 4,878 companies, 26,033 asset rows, 1,353,716 earnings rows and
-52,066 valuation groups on all ten completed runs; **0 NaN-empty-window
+52,066 valuation groups on all eleven completed runs; **0 NaN-empty-window
 perpetuity groups on every run**, R1 included, as expected.
 
 ---
@@ -742,6 +744,127 @@ as "no commits to src/conf".
 > footprint is ~1.7 GB per run and it cleans up after itself.
 
 ---
+## R11 — `decom_cost_fraction_of_capex = 0.15` (calibration arm, 2026-09-04)
+
+**Kind: toggle ablation** against R1. Added after the batch, on the owner's
+instruction, once the baseline cash-flow decomposition (below) showed where the
+sub-1 coverage ratios come from. The parameter (`d7219b8`) rewrites the delivered
+`scrap_usd_per_mw = -capital_cost/2` as `-(0.15 × capex_usd_per_mw)` once, where
+the scenario surface enters the run, so BOTH consumers of that column — the
+in-window decommissioning charge and the terminal value's decommissioning floor —
+price retirement at 15% of new-build cost instead of 50%. Default `null` keeps
+the delivered convention; fixture pins are byte-identical under it.
+
+Runtime **272 s**, **30/30** nodes, 4,878 companies, 52,066 valuation groups,
+0 NaN-empty-window groups.
+
+### Why this arm exists — the baseline cash-flow decomposition (golden snapshot)
+
+At the *operating* level (revenue − fuel − O&M − carbon) only three technologies
+fail to cover cost at baseline: `OilCap` (0.33), `BiomassCap` (0.83), `GasCap`
+(0.93). The other four sub-1 technologies in the Q2 table (`SolarCap - CSP`,
+`WindCap - Offshore`, `NuclearCap`, `CoalCap`) are pushed under by the **capex
+layer** alone: ~9.7 tn USD over the window on the golden lineage, roughly half
+replacement CapEx (2%/yr of year-t new-build cost on standing capacity) and
+half decommissioning at capex/2. Both switches were OFF in December 2025
+(baseline +2.3 tn); they are the entire swing to a negative baseline. Underneath,
+WITCH prices are the low outlier among providers (CHN coal power 2030: WITCH
+$25.3/MWh vs MESSAGE $34.5, REMIND $72.8, IMAGE $76.8) and the data gives gas a
+zero spark spread (price $58.1 vs fuel-in $59.4), so margins sit at zero by
+construction before any capex is charged.
+
+### Headline and levels
+
+| Metric | R1 (decom 50%) | R11 (decom 15%) | Δ |
+| --- | --- | --- | --- |
+| Σ baseline NPV | −305.46 bn | **+901.37 bn** | **+1,206.82** |
+| Σ late&sudden NPV | −3,714.79 bn | −2,220.69 bn | +1,494.10 |
+| Headline (Σ ls − Σ base) | −3,409.34 bn | **−3,122.06 bn** | **+287.28 (+8.43%)** |
+| `npv_change` median / mean | −0.764 / −1.893 | −0.817 / −1.778 | −0.053 / +0.115 |
+| `npv_change` NaN | 14 | 14 | 0 |
+| Sign flips (of 4,878) | — | **57** (54 neg→pos, 3 pos→neg) | |
+| Companies moved > 10% | — | 627 (12.9%); median relative move +1.75% | |
+| Capex layer, baseline, undiscounted | 9,378 bn | **6,093 bn** | −3,285 |
+| Fleet baseline FCFF, undiscounted | (golden lineage: −2,383 bn) | **+970 bn** | |
+
+Top technology moves on the signal: `WindCap - Offshore` +121.68 bn (+210% of a
+small +57.9 base), `CoalCap - w/o CCS` +85.52 bn (+2.24%), `GasCap - w/o CCS`
++79.48 bn (+3.03%).
+
+### Q2 diagnostic — coverage ratio per technology (baseline; R1 → R11)
+
+| Technology | Revenue (bn) | Capex layer R1 → R11 (bn) | Ratio R1 | Ratio R11 |
+| --- | --- | --- | --- | --- |
+| OilCap - w/o CCS | 343.25 | 119.99 → 69.80 | 0.292 | **0.304** |
+| SolarCap - CSP | 172.68 | 265.79 → 120.73 | 0.447 | **0.715** |
+| BiomassCap - w/o CCS | 133.62 | 57.00 → 25.98 | 0.615 | **0.717** |
+| WindCap - Offshore | 809.43 | 487.57 → 461.35 | 0.823 | **0.846** |
+| GasCap - w/o CCS | 8,224.97 | 1,468.20 → 740.47 | 0.790 | **0.849** |
+| NuclearCap | 2,106.37 | 956.81 → 546.17 | 0.813 | **0.966** |
+| CoalCap - w/o CCS | 9,006.12 | 1,289.64 → 664.71 | 0.982 | **1.054** |
+| HydroCap | 4,225.24 | 1,933.38 → 1,619.48 | 1.025 | **1.109** |
+| SolarCap - PV | 3,722.67 | 1,572.07 → 974.06 | 1.005 | **1.198** |
+| WindCap - Onshore | 3,956.70 | 1,227.61 → 870.10 | 1.757 | **2.088** |
+
+**Below 1 at baseline: 7 → 6.** `CoalCap` crosses (0.988 → 1.054); `NuclearCap`
+reaches 0.966. The three operating-level losers (`OilCap`, `BiomassCap`,
+`GasCap`) and the two capex-heavy renewables (`SolarCap - CSP`, `WindCap -
+Offshore`) remain below 1 — decommissioning was never their problem.
+
+### Baseline NPV levels per technology (bn, discounted)
+
+| Technology | R1 | R11 | Δ |
+| --- | --- | --- | --- |
+| GasCap - w/o CCS | −985.8 | −684.2 | +301.6 |
+| CoalCap - w/o CCS | −49.0 | **+200.2** | +249.2 |
+| NuclearCap | −262.2 | −49.8 | +212.4 |
+| HydroCap | 135.5 | 276.4 | +141.0 |
+| SolarCap - PV | 286.8 | 419.7 | +132.9 |
+| WindCap - Onshore | 1,104.0 | 1,196.9 | +92.8 |
+| SolarCap - CSP | −53.4 | −17.5 | +35.9 |
+| OilCap - w/o CCS | −372.9 | −353.6 | +19.3 |
+| BiomassCap - w/o CCS | −47.6 | −33.5 | +14.1 |
+| WindCap - Offshore | −60.9 | −53.2 | +7.7 |
+
+### The company-majority test — NOT met by this arm
+
+The owner's stated target is a baseline in which the high majority of firms are
+reasonably profitable. Under R11 **65.8% of companies still carry a negative
+baseline NPV** (R1: 70.7%); the median company moves from −89.6 mn to −49.0 mn.
+By each company's dominant technology (largest absolute NPV footprint):
+
+| Dominant technology | Companies | Baseline-negative share | Median baseline NPV (mn) |
+| --- | --- | --- | --- |
+| GasCap - w/o CCS | 1,706 | **77.0%** | −95.7 |
+| CoalCap - w/o CCS | 1,576 | **75.3%** | −114.7 |
+| WindCap - Onshore | 462 | 5.4% | +426.5 |
+| BiomassCap - w/o CCS | 341 | **88.9%** | −36.4 |
+| HydroCap | 272 | 24.6% | +42.7 |
+| SolarCap - PV | 261 | 41.8% | +10.0 |
+| OilCap - w/o CCS | 161 | **100.0%** | −364.4 |
+| WindCap - Offshore | 53 | 41.5% | +42.3 |
+| NuclearCap | 37 | 43.2% | +226.2 |
+| SolarCap - CSP | 9 | 77.8% | −77.8 |
+
+Gas-, coal-, biomass- and oil-dominant companies are 3,784 of 4,878 (77.6%) of
+the universe, and three-quarters or more of each group stay negative. `CoalCap`
+turns positive in aggregate (+200 bn) while 75% of coal companies do not: the
+aggregate is carried by a few large positive owners. Their negativity is
+operating-level (WITCH price level, zero spark spread) plus replacement CapEx,
+which this arm does not touch. **The decom calibration moves the fleet
+aggregate; it does not move the company majority.** The next levers are
+`replacement_capex_rate` (already a parameter; the conf's own growth-capex
+comment argues IAM O&M bundles annualised capital, in which case 2%/yr
+double-counts) and the provider price stance. Neither is measured here.
+
+### Housekeeping
+
+`data/07_model_output` now holds R11's outputs, not the golden configuration's;
+`tests/golden/test_golden.py::test_outputs_match_golden` is not meaningful until
+a golden-config run is repeated. Metrics and per-technology tables are in
+`scratchpad/runs/R11/` alongside R1–R10.
+
+---
 ## December table completion
 
 > **Scope note on the row numbering.** The brief asked for rows **1–15**. The
@@ -757,7 +880,7 @@ as "no commits to src/conf".
 | # | Adjustment | Measured number | Measurement kind | Source |
 | --- | --- | --- | --- | --- |
 | 1 | Replacement CapEx (`include_replacement_capex`) | headline **−88.3 bn (+2.22%)** | toggle ablation vs GOLDEN | A2, prior batch — **not re-measured here** |
-| 2 | Decommissioning costs (`include_decom_costs`) | headline **−524.0 bn (+13.17%)** | toggle ablation vs GOLDEN | A3, prior batch — **not re-measured here** |
+| 2 | Decommissioning costs (`include_decom_costs`) | headline **−524.0 bn (+13.17%)** for the switch; **calibration at 15% of build cost (R11): signal +287.3 bn (+8.43%) vs R1, Σ baseline NPV −305 → +901 bn, 65.8% of companies still baseline-negative** | toggle ablation vs GOLDEN; calibration arm vs R1 | A3, prior batch; **R11 — calibration newly measured** |
 | 3 | Price ramp (`price_ramp`) | headline **−1,434.3 bn (+36.03%)** | toggle ablation vs GOLDEN | A4, prior batch — **not re-measured here** |
 | 4 | Stranding-aware terminal value (`dcf.stranding_aware_tv`) | **−16.42 bn (−0.482%)** on the candidate branch; −22.1 bn (+0.55%) on the golden | toggle ablation vs R1 | **R8 — re-measured** |
 | 5 | Perpetuity anchor (`!= 0` vs `> 0`, D3) | **−2.40 bn (−0.070%)**; bucket 2,699 → **115** groups | toggle ablation vs R1 | **R2 — NPV number newly obtained** |
