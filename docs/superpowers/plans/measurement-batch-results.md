@@ -63,6 +63,9 @@ at two commits.
 | **R9** | `apply_continued_om_shock = false` | toggle ablation | 260 s | 30/30 | −3,574.42 | **−165.09 (−4.84%)** vs R1 |
 | R10 | `ownership_aggregation = sum` | toggle ablation | ~2,340 s | **21/30, killed** | **not obtainable** | disk-blocked (259 MB free) |
 | **R11** | `decom_cost_fraction_of_capex = 0.15` (calibration arm, added 2026-09-04 @ d7219b8) | toggle ablation | 272 s | 30/30 | −3,122.06 | **+287.28 (+8.43%)** vs R1 |
+| **R12** | `include_replacement_capex = false` (decom at the delivered 50%) | toggle ablation | 266 s | 30/30 | -3,616.60 | **-207.27 (-6.08%)** vs R1 |
+| **R13** | `include_replacement_capex = false` + `decom_cost_fraction_of_capex = 0.15` | toggle ablation (two switches) | 288 s | 30/30 | -3,327.32 | **+82.02 (+2.41%)** vs R1; -205.26 (-6.57%) vs R11; +289.29 (+8.00%) vs R12 |
+| R14 | replacement CapEx **deleted from the code** (`afa1bd6`) + `decom_cost_fraction_of_capex = 0.15` | equivalence proof | 260 s | 30/30 | -3,327.32 | max abs diff vs R13: company NPV 0, company×technology 0 |
 
 **Ranked by absolute impact on the risk signal** (all vs R1 except where noted):
 
@@ -73,18 +76,21 @@ at two commits.
 | 3 | **R3** retirement deferred | −532.47 bn | **−15.62%** | signal *grows* |
 | 4 | **R5** pre-ruling-12/13 carrier | +459.02 bn | **+13.46%** | signal shrinks |
 | 5 | **R11** decom at 15% of build cost | +287.28 bn | **+8.43%** | signal shrinks |
-| 6 | **R9** continued O&M off | −165.09 bn | −4.84% | signal *grows* |
-| 7 | R8 stranding tiers off | −16.42 bn | −0.482% | signal grows |
-| 8 | R4 raw TV anchor | +4.29 bn | +0.126% | signal shrinks |
-| 9 | R2 unbounded negative TV | −2.40 bn | −0.070% | signal grows |
-| 10 | **R0** synthetic EF | −1.40 bn | −0.035% | signal grows (vs GOLDEN) |
-| 11 | R7 uniform terminal growth | −0.68 bn | −0.020% | signal grows |
+| 6 | **R12** replacement CapEx off | -207.27 bn | **-6.08%** | signal *grows* |
+| 7 | **R9** continued O&M off | −165.09 bn | −4.84% | signal *grows* |
+| 8 | **R13** replacement off + decom 15% (the ruled configuration) | +82.02 bn | +2.41% | signal shrinks |
+| 9 | R8 stranding tiers off | −16.42 bn | −0.482% | signal grows |
+| 10 | R4 raw TV anchor | +4.29 bn | +0.126% | signal shrinks |
+| 11 | R2 unbounded negative TV | −2.40 bn | −0.070% | signal grows |
+| 12 | **R0** synthetic EF | −1.40 bn | −0.035% | signal grows (vs GOLDEN) |
+| 13 | R7 uniform terminal growth | −0.68 bn | −0.020% | signal grows |
+| — | R14 replacement deleted from code | ≡ R13 | | equivalence, not an arm |
 | — | R10 ownership `sum` | **not obtainable** | | disk |
 
 **Confirmations carried on every run:** node completion **29/29** for R0 and the
-golden lineage, **30/30** for R1–R9 and R11 (the proposals add `asset_horizon_attributes`
+golden lineage, **30/30** for R1–R9 and R11–R14 (the proposals add `asset_horizon_attributes`
 and its node); 4,878 companies, 26,033 asset rows, 1,353,716 earnings rows and
-52,066 valuation groups on all eleven completed runs; **0 NaN-empty-window
+52,066 valuation groups on all fourteen completed runs; **0 NaN-empty-window
 perpetuity groups on every run**, R1 included, as expected.
 
 ---
@@ -865,6 +871,114 @@ a golden-config run is repeated. Metrics and per-technology tables are in
 `scratchpad/runs/R11/` alongside R1–R10.
 
 ---
+## R12–R14 — replacement CapEx: switched off, then deleted (owner ruling 2026-09-04)
+
+**Ruling.** "Drop the replacement rate altogether if O&M covers it. The only way
+we could consider it is if the rate is variable per technology — but it is much
+better to drop it." Replacement CapEx was the 2%/yr roll-over charge on a real
+asset's standing capacity, priced at the year's new-build cost:
+`replacement_t = 0.02 × K_t × capex_t` on every non-decline year. The parameters
+file justified keeping growth CapEx OFF with "IAM O&M already bundles annualized
+capital costs"; the same reasoning applies to replacement, and the delivered O&M
+runs 1.8–5.9% of build cost per year (PV 5.9% against ~1–2% for pure fixed O&M),
+which supports the bundling reading. Kept: growth CapEx (off) and decommissioning.
+
+**Three measurements, one proof.** R12 switches the charge off at the delivered
+50% decom (isolates replacement alone); R13 switches it off at decom 15% (the
+ruled configuration); R14 runs the tree with the charge **deleted from the code**
+(`afa1bd6`: parameter, constant, `roll_over_cap` flow, `replace_capex` column, the
+identity validator's roll-over term) and must reproduce R13 exactly.
+
+Runtimes R12 266 s, R13 288 s, R14 260 s; all **30/30**, 4,878 companies,
+52,066 valuation groups, 0 NaN-empty-window groups.
+
+### The 2×2 — replacement × decommissioning (full universe, bn USD)
+
+| | Replacement **on** (2%/yr) | Replacement **off** |
+| --- | --- | --- |
+| **Decom 50%** (delivered) | **R1** — Σ base -305, Σ ls -3,715, signal **-3,409.34** | **R12** — Σ base 2,462, Σ ls -1,154, signal **-3,616.60** (-207.27, -6.08% vs R1) |
+| **Decom 15%** | **R11** — Σ base 901, Σ ls -2,221, signal **-3,122.06** (+287.28, +8.43% vs R1) | **R13** — Σ base 3,667, Σ ls 340, signal **-3,327.32** (+82.02, +2.41% vs R1) |
+
+**Removing replacement CapEx makes the risk signal *larger* by ~6%** (R12 vs R1
+-207.27 bn; R13 vs R11 -205.26 bn — the same size at either decom
+rate, so the two levers are close to additive). The mechanism: the charge is
+levied on standing capacity in *both* pathways, and the shock pathway sheds
+fossil capacity earlier, so it was paying less replacement than the baseline.
+Removing it therefore lifts the baseline more than the shock, and the gap
+widens. Sign flips R12 vs R1: 56 (5 neg→pos, **51 pos→neg**); 593 companies
+(12.2%) move more than 10%. Top technology moves: `WindCap - Offshore` −90.7 bn,
+`GasCap` −48.6 bn, `SolarCap - PV` −27.4 bn.
+
+**The ruled configuration (R13) leaves the signal nearly where R1 had it**
+(+82.02 bn, +2.41%) while transforming the levels: the
+baseline fleet goes from −305 bn to **+3,667 bn** and the late&sudden
+pathway from −3,715 bn to **+340 bn** — the shock pathway is positive
+in aggregate for the first time. Median `npv_change` moves −0.764 → -0.898
+(the ratio's denominator grew); 41 sign flips vs R1 (26 neg→pos, 15 pos→neg),
+827 companies (17.0%) moved more than 10%.
+
+### Q2 diagnostic — coverage ratio per technology (baseline)
+
+| Technology | Ratio R1 | Ratio R11 | Ratio R12 | Ratio R13 |
+| --- | --- | --- | --- | --- |
+| OilCap - w/o CCS | 0.292 | 0.304 | 0.304 | 0.318 |
+| BiomassCap - w/o CCS | 0.615 | 0.717 | 0.653 | 0.770 |
+| GasCap - w/o CCS | 0.790 | 0.849 | 0.824 | 0.889 |
+| SolarCap - CSP | 0.447 | 0.715 | 0.526 | 0.944 |
+| CoalCap - w/o CCS | 0.982 | 1.054 | 1.027 | 1.106 |
+| NuclearCap | 0.813 | 0.966 | 0.948 | 1.163 |
+| SolarCap - PV | 1.005 | 1.198 | 1.246 | 1.558 |
+| WindCap - Offshore | 0.823 | 0.846 | 1.518 | 1.597 |
+| HydroCap | 1.025 | 1.109 | 1.601 | 1.817 |
+| WindCap - Onshore | 1.757 | 2.088 | 2.577 | 3.359 |
+
+Below 1 at baseline: R1 7, R11 6, R12 5, **R13 4** — under the ruled
+configuration only the three operating-level losers (`OilCap` 0.318, `BiomassCap`
+0.770, `GasCap` 0.889) and `SolarCap - CSP` (0.944) remain below cost coverage.
+
+### The company-majority test across the 2×2
+
+| Run | Baseline-negative companies | Median company baseline NPV | gas | coal | biomass | oil | PV | hydro | nuclear |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| R1 | 70.4% | −89.6 mn | 80.3% | 77.2% | 93.2% | 100% | 52.7% | 36.1% | 72.5% |
+| R11 | 65.8% | −49.0 mn | 77.0% | 75.3% | 88.9% | 100% | 41.8% | 24.6% | 43.2% |
+| R12 | 62.9% | −38.3 mn | 77.4% | 75.9% | 87.7% | 100% | 28.1% | 3.0% | 38.1% |
+| **R13** | **57.8%** | **−12.0 mn** | 70.3% | 73.6% | 87.9% | 98.1% | **9.3%** | **1.0%** | 24.4% |
+
+(Per-technology columns: share of companies with a negative baseline NPV among
+those whose dominant technology — largest absolute NPV footprint — is that one.)
+
+Under the ruled configuration the non-fossil universe is now mostly profitable
+at baseline (PV 9%, hydro 1%, onshore wind ~5%, nuclear 24% negative). The
+fossil-dominant companies — gas, coal, biomass, oil, 78% of the universe by count
+— remain 70–98% negative. Their shortfall was never the capex layer: it is the
+operating margin under WITCH's prices (China coal power at $25/MWh, a zero spark
+spread for gas, oil out of merit at $120/MWh fuel cost). The target "high
+majority reasonably profitable in baseline" is therefore now a **revenue-side**
+question — provider price level, spark spread, peak/capacity revenue — not a
+cost-side one. Nothing below measures that.
+
+### R14 — the deletion changes nothing beyond the switch
+
+| Output | Rows | Max abs diff vs R13 | Identical rows |
+| --- | --- | --- | --- |
+| company_npv | 4,878 | 0 | 4,878 |
+| company_technology_npv | 7,527 | 0 | 7,527 |
+
+Headline R13 -3,327.3161 vs R14 -3,327.3161; Σ baseline 3,666.9667 vs 3,666.9667;
+Q2 table max abs diff 0. The output schema is unchanged (`replace_capex`
+was never written to `asset_earnings`), so the fixture's schema pins stay green;
+the value pins stay strict-xfail with the removal named as their sixth mover.
+
+### Housekeeping
+
+`data/07_model_output` holds R14's outputs. The golden compare remains
+inapplicable until the golden is re-pinned to the configuration the owners sign
+off. The former `test_replacement_rate_scenario_alignment.py` lives on as
+`test_om_bundles_capital_evidence.py` (renamed, not deleted), keeping the
+data-side reasoning for the ruling under test.
+
+---
 ## December table completion
 
 > **Scope note on the row numbering.** The brief asked for rows **1–15**. The
@@ -879,7 +993,7 @@ a golden-config run is repeated. Metrics and per-technology tables are in
 
 | # | Adjustment | Measured number | Measurement kind | Source |
 | --- | --- | --- | --- | --- |
-| 1 | Replacement CapEx (`include_replacement_capex`) | headline **−88.3 bn (+2.22%)** | toggle ablation vs GOLDEN | A2, prior batch — **not re-measured here** |
+| 1 | Replacement CapEx (`include_replacement_capex`) | headline **−88.3 bn (+2.22%)** on the golden; on the candidate, switching it **off** moves the signal **-207.27 bn (-6.08%)** and Σ baseline NPV −305 → +2,462 bn (R12). **DELETED from the code 2026-09-04 by owner ruling; R14 ≡ R13** | toggle ablation vs GOLDEN; toggle ablation vs R1 | A2, prior batch; **R12 — re-measured; R14 — deletion proof** |
 | 2 | Decommissioning costs (`include_decom_costs`) | headline **−524.0 bn (+13.17%)** for the switch; **calibration at 15% of build cost (R11): signal +287.3 bn (+8.43%) vs R1, Σ baseline NPV −305 → +901 bn, 65.8% of companies still baseline-negative** | toggle ablation vs GOLDEN; calibration arm vs R1 | A3, prior batch; **R11 — calibration newly measured** |
 | 3 | Price ramp (`price_ramp`) | headline **−1,434.3 bn (+36.03%)** | toggle ablation vs GOLDEN | A4, prior batch — **not re-measured here** |
 | 4 | Stranding-aware terminal value (`dcf.stranding_aware_tv`) | **−16.42 bn (−0.482%)** on the candidate branch; −22.1 bn (+0.55%) on the golden | toggle ablation vs R1 | **R8 — re-measured** |
