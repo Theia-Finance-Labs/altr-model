@@ -961,8 +961,8 @@ cost-side one. Nothing below measures that.
 ### R1 → R13 by technology and by region (bn USD, discounted)
 
 The signal barely moves anywhere; the levels move everywhere. Under R13 the
-only baseline-negative blocks left are China ( −64,  −105,
- −7) and, by technology, gas, oil and biomass — which is the same
+only baseline-negative blocks left are China (`CHN` −64, `R10CHINA+` −105,
+`R10INDIA+` −7) and, by technology, gas, oil and biomass — which is the same
 finding as the company-majority table read geographically: WITCH prices China's
 electricity at coal's marginal cost, and China is where the fossil fleet is.
 
