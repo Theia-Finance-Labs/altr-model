@@ -1364,6 +1364,32 @@ upside of the shock pathway. **Keep it** (owner ruling 2026-09-05: keep, with th
 three-year smoothing).
 
 ---
+## R19 / R20 — brown spread off + tier-2 annuity on the technology carrier; tier 2 dropped (2026-09-05)
+
+**R19** = the tree's new defaults after the owner rulings (`brown_discount_spread:
+0.0`, tier-2 annuity selecting on `brown_technologies`, `carbontech_annuity:
+True`), vs R14. **R20** = R19 with `carbontech_annuity: False` (no tier 2; a
+profitable brown asset takes the perpetuity at its 0% growth).
+
+| | R14 | R19 (new defaults) | R20 (tier 2 dropped) |
+| --- | --- | --- | --- |
+| Σ baseline NPV | 3,667 bn | 3,658 bn | 3,701 bn |
+| Σ late&sudden NPV | 340 bn | −422 bn | −422 bn |
+| Headline signal | −3,327 bn | **−4,080 bn** (−752, −22.6%) | −4,124 bn (−44 vs R19, −1.1%) |
+| Sign flips / moved > 10% | — | 14 / 2,715 | 0 / 15 |
+
+Reading: R19's move is the spread going to zero (R6 measured −765 bn for the
+same switch); the tier-2 carrier change itself is worth ~+13 bn, i.e. nothing
+— under the technology carrier the assets tier 2 catches are the same fossil
+plants it caught before, minus the mislabelled offshore wind and nuclear that
+rulings 12/13 already moved. **Dropping tier 2 altogether costs 1.1% of the
+signal and adds 43 bn to the baseline**: few brown assets are still profitable
+at the horizon, and for those the 10-year annuity and the 0%-growth perpetuity
+are close. It is safe to drop; `brown_remaining_life_years` stays because the
+bounded negative TV uses it as the fallback horizon where a lifetime is missing.
+Owner to rule on `carbontech_annuity` default (True today).
+
+---
 ## December table completion
 
 > **Scope note on the row numbering.** The brief asked for rows **1–15**. The
