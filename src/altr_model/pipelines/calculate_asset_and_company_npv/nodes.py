@@ -435,7 +435,7 @@ def compute_yearly_npv_trajectories(
 
     # Collapse CapEx flow-split rows to ONE row per asset-year before any
     # row-indexed logic runs. Upstream, compute_capacity_flows emits separate
-    # component rows per (asset, year) — operating, decommissioning, rollover —
+    # component rows per (asset, year) — operating, decommissioning —
     # and their FCFFs sum correctly for present value, but the terminal-value
     # anchor (the group's last ROW) assumes one row per year. In the 2026-08
     # WITCH audit 38% of asset-trajectories carried duplicate years in the

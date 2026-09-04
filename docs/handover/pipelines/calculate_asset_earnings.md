@@ -16,7 +16,7 @@ this stage joins only one thing - the `frozen_capacity_at_retirement` lookup
 produced by stage 3, merged onto the panel in `validate_asset_trajectories`. It
 validates the contract, decomposes year-on-year capacity changes into
 new-build, roll-over and retirement flows and prices them into growth,
-replacement and decommissioning CapEx, then turns capacity into production and
+decommissioning CapEx, then turns capacity into production and
 production into earnings. Fuel, fixed O&M and net carbon cost net to EBITDA,
 and EBITDA less CapEx gives free cash flow to the firm.
 
@@ -67,21 +67,23 @@ carbon_t     = Q_t × carbon_price_usd_per_tco2 × emission_factor × (1 − mar
 revenue_t    = Q_t × power_price_excarbon_usd_per_mwh
 EBITDA_t     = revenue_t − var_cost_t − fixed_cost_t − carbon_t
 
-capex_total_t = growth_t + replacement_t + decom_t, where
+capex_total_t = growth_t + decom_t, where
   growth_t      = capex_usd_per_mw × new_buildout_cap_t    (if include_growth_capex)
-  replacement_t = capex_usd_per_mw × roll_over_cap_t       (if include_replacement_capex)
   decom_t       = |scrap_usd_per_mw| × retired_max_cap_t   (if include_decom_costs)
 
 FCFF_t       = EBITDA_t − capex_total_t
 ```
 
-The three capacity flows come from the year-on-year capacity decomposition:
-`new_buildout_cap` is net new capacity on synthetic assets, `roll_over_cap` is
-`replacement_capex_rate` times the year's rolled-over real capacity, and
-`retired_max_cap` is the capacity a retirement removes. `scrap_usd_per_mw`
-arrives negative in the extracts; the `abs()` makes decommissioning a positive
-outflow either way, so retiring an asset always costs money and never pays its
-owner. The symbol names left of the `=` map back to input columns via the
+The two capacity flows come from the year-on-year capacity decomposition:
+`new_buildout_cap` is net new capacity on synthetic assets and `retired_max_cap`
+is the capacity a real asset's retirement removes. Standing capacity carries no
+annual capital charge: replacement CapEx (a 2%/yr roll-over charge on installed
+capacity) was removed on 2026-09-04 because IAM O&M already bundles annualised
+capital upkeep, the same reasoning that keeps growth CapEx off. `scrap_usd_per_mw`
+arrives negative in the extracts (at half the build cost by the marts convention;
+`decom_cost_fraction_of_capex` recalibrates it); the `abs()` makes decommissioning
+a positive outflow either way, so retiring an asset always costs money and never
+pays its owner. The symbol names left of the `=` map back to input columns via the
 [rename table](../input_data.md#how-the-scenario-columns-appear-inside-the-model).
 
 `K_for_fixed_cost` is where continued O&M enters: for a decreasing-technology
@@ -139,7 +141,7 @@ one.
 | Node | Function | What it does |
 | --- | --- | --- |
 | `validate_asset_trajectories` | `validate_asset_trajectories` | Checks the canonical contract: required columns present, no duplicate asset-trajectory years, no gaps in the year series |
-| `calculate_capacity_flows_and_capex` | `compute_flow_based_capex` | Derives the capacity flows and prices them into growth, replacement and decommissioning CapEx |
+| `calculate_capacity_flows_and_capex` | `compute_flow_based_capex` | Derives the capacity flows and prices them into growth and decommissioning CapEx |
 | `calculate_operating_earnings` | `compute_ops_block` | Production, fuel, fixed O&M and net carbon cost into EBITDA |
 | `calculate_free_cash_flow` | `compute_fcff` | EBITDA less CapEx - free cash flow to the firm |
 | `write_asset_earnings` | `write_asset_earnings_series` | Writes the final `asset_earnings` table with every column downstream stages expect |
@@ -164,16 +166,15 @@ Two functions in this pipeline are not nodes:
 | Key | Defined in |
 | --- | --- |
 | `market_passthrough` | `conf/base/parameters_calculate_asset_earnings.yml` |
-| `include_growth_capex`, `include_replacement_capex`, `replacement_capex_rate`, `include_decom_costs` | `conf/base/parameters_calculate_asset_earnings.yml` |
+| `include_growth_capex`, `include_decom_costs` | `conf/base/parameters_calculate_asset_earnings.yml` |
 | `apply_continued_om_baseline`, `apply_continued_om_shock` | `conf/base/parameters_calculate_asset_earnings.yml` |
 | `carbon_cost_method` | `conf/base/parameters_calculate_asset_earnings.yml` |
 
-Every key this stage reads is defined in its own file. `include_replacement_capex`
-and `include_decom_costs` ship `True` and `include_growth_capex` ships `False` -
-IAM O&M already bundles annualized capital costs, so charging growth CapEx on top
-would double-count. `replacement_capex_rate` is read only when
-`include_replacement_capex` is on. Defaults and units:
-[parameters reference](../parameters.md).
+Every key this stage reads is defined in its own file. `include_decom_costs`
+ships `True` and `include_growth_capex` ships `False` - IAM O&M already bundles
+annualized capital costs, so charging growth CapEx on top would double-count.
+The same reasoning removed the former replacement-CapEx switch and rate on
+2026-09-04. Defaults and units: [parameters reference](../parameters.md).
 
 `carbon_cost_method` chooses between charging each technology's **full** emission
 factor (`"full_ef"`, the default) and charging only the **excess** over the
