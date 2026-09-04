@@ -17,11 +17,6 @@ CARBON_COST_METHODS = ("full_ef", "differential_ef")
 # Constants
 HOURS_PER_YEAR = 8760
 
-# Annual capital maintenance as a fraction of installed capacity. 1-3% of
-# replacement cost per year is the standard utility benchmark (EPRI, Lazard
-# LCOE methodology); 2% is the value the handover branch charged. Only a
-# fallback for direct callers — the pipeline reads params:replacement_capex_rate.
-REPLACEMENT_CAPEX_RATE = 0.02
 
 # A physical asset can legitimately appear once per owner. Every time-series
 # operation must therefore use the complete canonical asset-series grain, not
@@ -191,12 +186,9 @@ def validate_asset_trajectories(
     return assets.reset_index(drop=True)
 
 
-def validate_capacity_flow_identity(
-    asset_panel_enriched: pd.DataFrame,
-    replacement_capex_rate: float = REPLACEMENT_CAPEX_RATE,
-):
+def validate_capacity_flow_identity(asset_panel_enriched: pd.DataFrame):
     """
-    Validate the capacity flow identity: K_t = K_{t-1} - retired + replaced + new_build
+    Validate the capacity flow identity: K_t = K_{t-1} - retired + new_build
 
     This function checks that the upstream pipeline correctly calculated capacity flows
     and logs any discrepancies for debugging.
@@ -231,7 +223,7 @@ def validate_capacity_flow_identity(
     ).reset_index()
 
     # Ensure all flow columns exist
-    for col in ["new_buildout_cap", "roll_over_cap", "retired_max_cap"]:
+    for col in ["new_buildout_cap", "retired_max_cap"]:
         if col not in flows_pivot.columns:
             flows_pivot[col] = 0.0
 
@@ -247,11 +239,10 @@ def validate_capacity_flow_identity(
         "asset_trajectory"
     ].shift(1)
 
-    # Apply flow identity: K_t = K_{t-1} - retired + replaced + new_build
+    # Apply flow identity: K_t = K_{t-1} - retired + new_build
     validation_data["K_calculated"] = (
         validation_data["K_prev"]
         - validation_data["retired_max_cap"]
-        + (validation_data["roll_over_cap"] / replacement_capex_rate)
         + validation_data["new_buildout_cap"]
     )
 
@@ -296,17 +287,16 @@ def validate_capacity_flow_identity(
                 )
 
 
-def compute_capacity_flows(
-    asset_panel: pd.DataFrame, replacement_capex_rate: float = REPLACEMENT_CAPEX_RATE
-) -> pd.DataFrame:
+def compute_capacity_flows(asset_panel: pd.DataFrame) -> pd.DataFrame:
     """
     Compute capacity flows from capacity changes in the asset panel (vectorized).
 
     Creates flow indicators, exactly one per asset-year:
     - new_buildout_cap: Net new capacity on synthetic assets (shock growth)
-    - roll_over_cap: replacement_capex_rate of a real asset's installed capacity
     - retired_max_cap: Capacity retired on a real asset (reduction from baseline)
-    - none: everything else (a synthetic asset with no capacity event)
+    - none: everything else — standing capacity carries no annual capital
+      charge. Replacement CapEx (a roll-over charge on installed capacity) was
+      removed on 2026-09-04: IAM O&M already bundles annualised capital upkeep.
     """
 
     logger.info("Computing capacity flows from capacity changes...")
@@ -346,22 +336,8 @@ def compute_capacity_flows(
         retirement_data["capex_capacity"] = retirement_data["capacity_change"].abs()
         flow_records.append(retirement_data)
 
-    # 3. Replacement flows (replacement_capex_rate of existing installed capacity
-    # annually for real assets). Routine capital maintenance/refurbishment is a
-    # fraction of replacement cost per year (EPRI, Lazard LCOE methodology), so it
-    # is charged on what is standing, not on the year's growth — a flat asset still
-    # pays it. Excludes retiring assets, which are already charged decom costs.
-    replacement_mask = is_real & ~retirement_mask
-    if replacement_mask.any():
-        replacement_data = data[replacement_mask].copy()
-        replacement_data["capex_indicator"] = "roll_over_cap"
-        replacement_data["capex_capacity"] = (
-            replacement_data["asset_trajectory"] * replacement_capex_rate
-        )
-        flow_records.append(replacement_data)
-
-    # 4. No-flow records (synthetic assets with no capacity events need placeholders)
-    no_flow_mask = ~(new_buildout_mask | retirement_mask | replacement_mask)
+    # 3. No-flow records: every asset-year without a capacity event
+    no_flow_mask = ~(new_buildout_mask | retirement_mask)
     if no_flow_mask.any():
         no_flow_data = data[no_flow_mask].copy()
         no_flow_data["capex_indicator"] = "none"
@@ -399,30 +375,23 @@ def compute_capacity_flows(
 def compute_flow_based_capex(
     asset_panel_enriched: pd.DataFrame,
     include_growth_capex: bool,
-    include_replacement_capex: bool,
     include_decom_costs: bool,
-    replacement_capex_rate: float = REPLACEMENT_CAPEX_RATE,
 ) -> pd.DataFrame:
     """
     Node 5: Compute CapEx using flow-based approach.
 
     Computes capacity flows from capacity changes and then calculates:
     - GrowthCapEx_t = κ_t * new_buildout_cap
-    - ReplaceCapEx_t = κ_t * roll_over_cap
     - DecomCost_t = δ_decom * retired_max_cap
     """
 
     logger.info("Computing flow-based CapEx...")
 
     # Compute capacity flows from the data
-    capex_data = compute_capacity_flows(asset_panel_enriched, replacement_capex_rate)
+    capex_data = compute_capacity_flows(asset_panel_enriched)
 
-    # NOTE: Flow identity validation disabled because it's based on flawed assumptions:
-    # - Roll-over flows are replacement_capex_rate of INSTALLED capacity annually
-    #   (EPRI/Lazard benchmark), which is not a capacity movement at all
-    # - The validation expects flows to fully explain capacity trajectories, which they don't by design
-    # - The flows themselves are correct and properly used in CapEx calculations
-    # validate_capacity_flow_identity(capex_data, replacement_capex_rate)
+    # Flow identity validation is a debugging aid, not part of the run:
+    # validate_capacity_flow_identity(capex_data)
 
     # Ensure capex_capacity is numeric and fill NaNs
     capex_data["capex_capacity"] = pd.to_numeric(
@@ -443,18 +412,6 @@ def compute_flow_based_capex(
         capex_data["growth_capex"] = 0.0
         logger.info("Growth CapEx switched OFF - setting to zero")
 
-    # Replacement CapEx: rolled over capacity (can be switched off)
-    if include_replacement_capex:
-        rollover_mask = capex_data["capex_indicator"] == "roll_over_cap"
-        capex_data["replace_capex"] = np.where(
-            rollover_mask,
-            capex_data["capex_usd_per_mw"] * capex_data["capex_capacity"],
-            0.0,
-        )
-    else:
-        capex_data["replace_capex"] = 0.0
-        logger.info("Replacement CapEx switched OFF - setting to zero")
-
     # Decommissioning costs: retired capacity (can be switched off).
     # scrap_usd_per_mw is negative (= -capex/2), representing the cost to
     # decommission. abs() makes decom_cost POSITIVE in capex_total — a real cash
@@ -472,11 +429,7 @@ def compute_flow_based_capex(
         logger.info("Decommissioning costs switched OFF - setting to zero")
 
     # Total CapEx
-    capex_data["capex_total"] = (
-        capex_data["growth_capex"]
-        + capex_data["replace_capex"]
-        + capex_data["decom_cost"]
-    )
+    capex_data["capex_total"] = capex_data["growth_capex"] + capex_data["decom_cost"]
 
     # Log summary by flow type
     flow_summary = (
@@ -485,7 +438,6 @@ def compute_flow_based_capex(
             {
                 "capex_capacity": "sum",
                 "growth_capex": "sum",
-                "replace_capex": "sum",
                 "decom_cost": "sum",
             }
         )
@@ -495,11 +447,10 @@ def compute_flow_based_capex(
     logger.info("CapEx summary by flow type:")
     for idx, row in flow_summary.iterrows():
         logger.info(
-            "  %s: %.0f MW -> Growth: $%.0f, Replace: $%.0f, Decom: $%.0f",
+            "  %s: %.0f MW -> Growth: $%.0f, Decom: $%.0f",
             idx,
             row["capex_capacity"],
             row["growth_capex"],
-            row["replace_capex"],
             row["decom_cost"],
         )
 
@@ -801,7 +752,6 @@ def write_asset_earnings_series(asset_cashflows: pd.DataFrame) -> pd.DataFrame:
         "EBITDA",
         # CapEx & decom (flow-based)
         # "growth_capex",
-        # "replace_capex",
         # NPV: the terminal anchor takes operating cash flow, so it needs the
         # one-off exit charge inside capex_total identified rather than netted.
         # A per-asset-year FLOW, unlike the horizon scalars in

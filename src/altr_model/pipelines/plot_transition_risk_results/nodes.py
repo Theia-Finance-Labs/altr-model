@@ -1183,7 +1183,6 @@ def reporting_validate_inputs(
         "carbon_cost_net",
         "EBITDA",
         "growth_capex",
-        "replace_capex",
         "decom_cost",
         "capex_total",
         "FCFF",

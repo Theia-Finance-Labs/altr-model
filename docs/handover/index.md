@@ -15,7 +15,7 @@ imposed at `shock_year` and must be completed by `alignment_year`, and the
 resulting company-level capacity change is *allocated* down onto the company's
 individual assets rather than applied uniformly. Each asset's physical
 trajectory is then turned into money: production, revenue at the scenario power
-price, fuel and carbon costs, fixed O&M, growth/replacement CapEx and
+price, fuel and carbon costs, fixed O&M, growth CapEx and
 decommissioning, netting to EBITDA and free cash flow to the firm. The cash
 flows are discounted (with an optional terminal value) into an NPV per asset and
 rolled up to company-technology and company level.

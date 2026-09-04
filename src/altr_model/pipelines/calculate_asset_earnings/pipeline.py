@@ -20,8 +20,6 @@ PIPELINE_PARAMETERS = {
     "carbon_cost_method",
     "include_decom_costs",
     "include_growth_capex",
-    "include_replacement_capex",
-    "replacement_capex_rate",
     "market_passthrough",
 }
 
@@ -43,8 +41,6 @@ def create_pipeline(**kwargs) -> Pipeline:
                 inputs=dict(
                     asset_panel_enriched="_temp_asset_panel_enriched",
                     include_growth_capex="params:include_growth_capex",
-                    include_replacement_capex="params:include_replacement_capex",
-                    replacement_capex_rate="params:replacement_capex_rate",
                     include_decom_costs="params:include_decom_costs",
                 ),
                 outputs="_temp_asset_capex_block",

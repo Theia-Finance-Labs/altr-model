@@ -267,14 +267,14 @@ The switches with the largest, most interpretable effect on the headline number:
   - the scenario base rate for cash flows on the target-scenario surface, and
   inert under the shipped configuration. See [Discount rates](#discount-rates)
   below.
-* **`market_passthrough`** (who pays the carbon cost) and the three cost
-  switches `include_growth_capex`, `include_replacement_capex` and
-  `include_decom_costs`, all in `parameters_calculate_asset_earnings.yml`.
-  `include_replacement_capex` and `include_decom_costs` ship `True`, so
-  `capex_total` is non-zero out of the box; `include_growth_capex` ships
-  `False`, because IAM O&M already bundles annualized capital costs and
-  charging growth CapEx on top would double-count. Flipping any of them
-  changes `capex_total` and therefore FCFF in both pathways at once.
+* **`market_passthrough`** (who pays the carbon cost) and the two cost
+  switches `include_growth_capex` and `include_decom_costs`, both in
+  `parameters_calculate_asset_earnings.yml`. `include_decom_costs` ships
+  `True`, so `capex_total` is non-zero out of the box; `include_growth_capex`
+  ships `False`, because IAM O&M already bundles annualized capital costs and
+  charging growth CapEx on top would double-count (the former replacement-CapEx
+  charge was removed for the same reason). Flipping either changes
+  `capex_total` and therefore FCFF in both pathways at once.
 
 ### Discount rates
 
