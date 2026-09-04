@@ -91,7 +91,7 @@ def test_a_short_run_price_is_lifted_to_the_price_setters_lrmc_for_every_technol
             _row("WindCap - Onshore", 25.3, 30.0),
         ]
     )
-    out = apply_lrmc_price_floor(frame, LRMC).set_index("technology")
+    out = apply_lrmc_price_floor(frame, LRMC, "S").set_index("technology")
     assert out.loc["CoalCap - w/o CCS", "price_floor_lrmc"] == pytest.approx(
         _coal_lrmc(), rel=1e-6
     )
@@ -113,7 +113,7 @@ def test_a_price_already_above_the_lrmc_is_unchanged():
             _row("WindCap - Onshore", 130.0, 30.0),
         ]
     )
-    out = apply_lrmc_price_floor(frame, LRMC)
+    out = apply_lrmc_price_floor(frame, LRMC, "S")
     assert (out["power_price_excarbon_usd_per_mwh"] == 130.0).all()
     assert (
         out["price_floor_lrmc"] < 130.0
@@ -137,7 +137,7 @@ def test_the_price_setter_is_the_thermal_technology_with_the_largest_generation(
             ),  # largest overall, not thermal
         ]
     )
-    out = apply_lrmc_price_floor(frame, LRMC).set_index("technology")
+    out = apply_lrmc_price_floor(frame, LRMC, "S").set_index("technology")
     hours = gas["cf"] * HOURS
     gas_lrmc = (
         gas["fuel"] / gas["eff"]
@@ -160,7 +160,7 @@ def test_aggregate_parent_rows_never_set_the_price():
             _row("CoalCap - w/ CCS", 25.0, 1.0, **{**COAL, "capex": 2_275_000.0}),
         ]
     )
-    out = apply_lrmc_price_floor(frame, LRMC)
+    out = apply_lrmc_price_floor(frame, LRMC, "S")
     assert (out["price_setter_technology"] == "CoalCap - w/o CCS").all()
 
 
@@ -171,7 +171,7 @@ def test_a_region_year_without_thermal_generation_gets_no_floor():
             _row("WindCap - Onshore", 25.0, 20.0),
         ]
     )
-    out = apply_lrmc_price_floor(frame, LRMC)
+    out = apply_lrmc_price_floor(frame, LRMC, "S")
     assert (out["power_price_excarbon_usd_per_mwh"] == 25.0).all()
     assert (out["price_floor_lrmc"] == 0.0).all()
 
@@ -183,7 +183,7 @@ def test_floors_are_per_scenario_region_year():
             _row("CoalCap - w/o CCS", 90.0, 70.0, geo="EU", **COAL),
         ]
     )
-    out = apply_lrmc_price_floor(frame, LRMC).set_index("scenario_geography")
+    out = apply_lrmc_price_floor(frame, LRMC, "S").set_index("scenario_geography")
     assert out.loc["CHN", "power_price_excarbon_usd_per_mwh"] == pytest.approx(
         _coal_lrmc(), rel=1e-6
     )
@@ -201,13 +201,13 @@ def test_floors_are_per_scenario_region_year():
 def test_bad_parameters_are_rejected(params):
     frame = pd.DataFrame([_row("CoalCap - w/o CCS", 25.3, 70.0, **COAL)])
     with pytest.raises(ValueError, match="price_floor"):
-        apply_lrmc_price_floor(frame, params)
+        apply_lrmc_price_floor(frame, params, "S")
 
 
 def test_input_frame_is_not_mutated():
     frame = pd.DataFrame([_row("CoalCap - w/o CCS", 25.3, 70.0, **COAL)])
     before = frame.copy()
-    apply_lrmc_price_floor(frame, LRMC)
+    apply_lrmc_price_floor(frame, LRMC, "S")
     pd.testing.assert_frame_equal(frame, before)
 
 
@@ -237,7 +237,7 @@ def test_an_unusable_setter_row_yields_no_floor_and_an_untouched_price(broken):
             _row("WindCap - Onshore", 25.0, 30.0),
         ]
     )
-    out = apply_lrmc_price_floor(frame, LRMC)
+    out = apply_lrmc_price_floor(frame, LRMC, "S")
     assert (out["price_floor_lrmc"] == 0.0).all()
     assert (out["power_price_excarbon_usd_per_mwh"] == 25.0).all()
     assert out["price_setter_technology"].isna().all()
@@ -255,7 +255,7 @@ def test_zero_or_missing_generation_never_sets_the_price():
             _row("GasCap - w/o CCS", 25.0, 5.0, **gas),
         ]
     )
-    out = apply_lrmc_price_floor(frame, LRMC)
+    out = apply_lrmc_price_floor(frame, LRMC, "S")
     assert (out["price_setter_technology"] == "GasCap - w/o CCS").all()
     all_zero = pd.DataFrame(
         [
@@ -263,7 +263,7 @@ def test_zero_or_missing_generation_never_sets_the_price():
             _row("WindCap - Onshore", 25.0, 30.0),
         ]
     )
-    out0 = apply_lrmc_price_floor(all_zero, LRMC)
+    out0 = apply_lrmc_price_floor(all_zero, LRMC, "S")
     assert (out0["price_floor_lrmc"] == 0.0).all() and (
         out0["power_price_excarbon_usd_per_mwh"] == 25.0
     ).all()
@@ -273,13 +273,13 @@ def test_a_negative_price_is_left_alone_when_no_floor_applies():
     frame = pd.DataFrame(
         [_row("HydroCap", -5.0, 80.0, capex=2_400_000.0, cf=0.45, life=70.0)]
     )
-    out = apply_lrmc_price_floor(frame, LRMC)
+    out = apply_lrmc_price_floor(frame, LRMC, "S")
     assert out["power_price_excarbon_usd_per_mwh"].iloc[0] == -5.0
 
 
 def test_a_missing_price_takes_the_floor_where_one_exists():
     frame = pd.DataFrame([_row("CoalCap - w/o CCS", float("nan"), 70.0, **COAL)])
-    out = apply_lrmc_price_floor(frame, LRMC)
+    out = apply_lrmc_price_floor(frame, LRMC, "S")
     assert out["power_price_excarbon_usd_per_mwh"].iloc[0] == pytest.approx(
         _coal_lrmc(), rel=1e-6
     )
@@ -289,7 +289,7 @@ def test_a_bare_family_name_is_never_a_candidate_even_without_children():
     frame = pd.DataFrame(
         [_row("CoalCap", 25.0, 70.0, **COAL), _row("WindCap - Onshore", 25.0, 30.0)]
     )
-    out = apply_lrmc_price_floor(frame, LRMC)
+    out = apply_lrmc_price_floor(frame, LRMC, "S")
     assert (out["price_floor_lrmc"] == 0.0).all()
     assert (out["power_price_excarbon_usd_per_mwh"] == 25.0).all()
 
@@ -298,7 +298,7 @@ def test_a_row_with_a_missing_technology_name_does_not_break_selection():
     frame = pd.DataFrame(
         [_row("CoalCap - w/o CCS", 25.0, 70.0, **COAL), _row(None, 25.0, 1.0)]
     )
-    out = apply_lrmc_price_floor(frame, LRMC)
+    out = apply_lrmc_price_floor(frame, LRMC, "S")
     assert out["power_price_excarbon_usd_per_mwh"].tolist() == pytest.approx(
         [_coal_lrmc()] * 2, rel=1e-6
     )
@@ -313,7 +313,7 @@ def test_row_count_is_preserved_on_a_non_unique_index():
         ]
     )
     frame.index = [0, 0]
-    out = apply_lrmc_price_floor(frame, LRMC)
+    out = apply_lrmc_price_floor(frame, LRMC, "S")
     assert len(out) == 2
     assert sorted(out["scenario_geography"]) == ["CHN", "EU"]
 
@@ -325,7 +325,7 @@ def test_tied_generation_resolves_by_technology_name_regardless_of_row_order():
         _row("CoalCap - w/o CCS", 25.0, 50.0, **COAL),
     ]
     for order in (rows, rows[::-1]):
-        out = apply_lrmc_price_floor(pd.DataFrame(order), LRMC)
+        out = apply_lrmc_price_floor(pd.DataFrame(order), LRMC, "S")
         assert (out["price_setter_technology"] == "CoalCap - w/o CCS").all()
 
 
@@ -357,7 +357,7 @@ def test_the_witch_china_2030_anchor_on_the_staged_extract():
         & (sc[year_col] == 2030)
     ].rename(columns={year_col: "year"})
     w = w.assign(power_price_excarbon_usd_per_mwh=w["scenario_price"])
-    out = apply_lrmc_price_floor(w, LRMC)
+    out = apply_lrmc_price_floor(w, LRMC, "AR6_WITCH 5.0_EN_NoPolicy")
     assert (out["price_setter_technology"] == "CoalCap - w/o CCS").all()
     assert out["price_floor_lrmc"].iloc[0] == pytest.approx(40.18, abs=0.05)
     assert out["power_price_excarbon_usd_per_mwh"].tolist() == pytest.approx(
@@ -393,7 +393,7 @@ def test_a_non_positive_or_infinite_cost_input_disqualifies_the_setter(broken):
             _row("WindCap - Onshore", -5.0, 30.0),
         ]
     )
-    out = apply_lrmc_price_floor(frame, LRMC)
+    out = apply_lrmc_price_floor(frame, LRMC, "S")
     assert (out["price_floor_lrmc"] == 0.0).all()
     assert (out["power_price_excarbon_usd_per_mwh"] == -5.0).all()
     assert out["price_setter_technology"].isna().all()
@@ -409,7 +409,7 @@ def test_an_unusable_largest_candidate_is_skipped_for_the_next_usable_one():
             _row("GasCap - w/o CCS", 25.0, 20.0, **gas),
         ]
     )
-    out = apply_lrmc_price_floor(frame, LRMC)
+    out = apply_lrmc_price_floor(frame, LRMC, "S")
     assert (out["price_setter_technology"] == "GasCap - w/o CCS").all()
     assert (out["price_floor_lrmc"] > 0).all()
 
@@ -422,7 +422,7 @@ def test_negative_or_infinite_generation_is_not_a_candidate(generation):
             _row("WindCap - Onshore", 25.0, 30.0),
         ]
     )
-    out = apply_lrmc_price_floor(frame, LRMC)
+    out = apply_lrmc_price_floor(frame, LRMC, "S")
     assert (out["price_floor_lrmc"] == 0.0).all() and (
         out["power_price_excarbon_usd_per_mwh"] == 25.0
     ).all()
@@ -433,7 +433,9 @@ def test_a_zero_price_is_left_alone_when_no_floor_applies():
         [_row("HydroCap", 0.0, 80.0, capex=2_400_000.0, cf=0.45, life=70.0)]
     )
     assert (
-        apply_lrmc_price_floor(frame, LRMC)["power_price_excarbon_usd_per_mwh"].iloc[0]
+        apply_lrmc_price_floor(frame, LRMC, "S")[
+            "power_price_excarbon_usd_per_mwh"
+        ].iloc[0]
         == 0.0
     )
 
@@ -447,14 +449,14 @@ def test_a_name_extended_by_another_name_is_a_parent_even_outside_the_bare_famil
             ),
         ]
     )
-    out = apply_lrmc_price_floor(frame, LRMC)
+    out = apply_lrmc_price_floor(frame, LRMC, "S")
     assert (out["price_setter_technology"] == "CoalCap - w/o CCS - Sub").all()
 
 
 def test_identical_duplicate_rows_survive_the_merge_unduplicated():
     row = _row("CoalCap - w/o CCS", 25.0, 70.0, **COAL)
     frame = pd.DataFrame([row, row, row])
-    out = apply_lrmc_price_floor(frame, LRMC)
+    out = apply_lrmc_price_floor(frame, LRMC, "S")
     assert len(out) == 3
     assert out["power_price_excarbon_usd_per_mwh"].tolist() == pytest.approx(
         [_coal_lrmc()] * 3, rel=1e-6
@@ -471,7 +473,7 @@ def test_valid_and_invalid_region_years_coexist_in_one_frame():
             ),
         ]
     )
-    out = apply_lrmc_price_floor(frame, LRMC).set_index("scenario_geography")
+    out = apply_lrmc_price_floor(frame, LRMC, "S").set_index("scenario_geography")
     assert len(out) == 3
     assert out.loc["CHN", "power_price_excarbon_usd_per_mwh"] == pytest.approx(
         _coal_lrmc(), rel=1e-6
@@ -488,7 +490,7 @@ def test_numeric_like_strings_in_generation_are_compared_as_numbers():
             _row("GasCap - w/o CCS", 25.0, "9", **gas),
         ]
     )
-    out = apply_lrmc_price_floor(frame, LRMC)
+    out = apply_lrmc_price_floor(frame, LRMC, "S")
     assert (out["price_setter_technology"] == "CoalCap - w/o CCS").all()
 
 
@@ -509,6 +511,7 @@ def test_the_witch_china_2030_anchor_embedded():
     out = apply_lrmc_price_floor(
         pd.DataFrame([row, _row("SolarCap - PV", 25.272907283496348, 1.0, geo="CHN")]),
         LRMC,
+        "S",
     )
     assert out["price_floor_lrmc"].iloc[0] == pytest.approx(40.17898240, abs=1e-6)
     assert out["power_price_excarbon_usd_per_mwh"].tolist() == pytest.approx(
@@ -544,7 +547,7 @@ def test_an_absurdly_long_but_finite_lifetime_still_sets_a_floor():
     frame = pd.DataFrame(
         [_row("CoalCap - w/o CCS", 25.0, 70.0, **{**COAL, "life": 10_000.0})]
     )
-    out = apply_lrmc_price_floor(frame, LRMC)
+    out = apply_lrmc_price_floor(frame, LRMC, "S")
     assert (out["price_setter_technology"] == "CoalCap - w/o CCS").all()
     assert out["price_floor_lrmc"].iloc[0] > 25.0
 
@@ -560,5 +563,47 @@ def test_an_absurdly_long_but_finite_lifetime_still_sets_a_floor():
 def test_a_missing_or_non_numeric_rate_is_a_value_error(params):
     with pytest.raises(ValueError, match="price_floor.discount_rate"):
         apply_lrmc_price_floor(
-            pd.DataFrame([_row("CoalCap - w/o CCS", 25.0, 70.0, **COAL)]), params
+            pd.DataFrame([_row("CoalCap - w/o CCS", 25.0, 70.0, **COAL)]), params, "S"
         )
+
+
+# ── the floor comes from the baseline scenario and is shared by every scenario ─
+
+
+def test_the_target_scenario_takes_the_baseline_floor_even_when_its_own_setter_is_broken():
+    """2026-09-01 extract: target capacity factors of ~1e-12 for phased-out coal."""
+    target_coal = {**COAL, "cf": 4e-12}
+    frame = pd.DataFrame(
+        [
+            _row("CoalCap - w/o CCS", 25.3, 70.0, **COAL),
+            {**_row("CoalCap - w/o CCS", 33.8, 70.0, **target_coal), "scenario": "T"},
+            {**_row("WindCap - Onshore", 33.8, 30.0), "scenario": "T"},
+        ]
+    )
+    out = apply_lrmc_price_floor(frame, LRMC, "S").set_index("scenario")
+    assert out.loc["S", "price_floor_lrmc"] == pytest.approx(_coal_lrmc(), rel=1e-6)
+    assert out.loc["T", "price_floor_lrmc"].tolist() == pytest.approx(
+        [_coal_lrmc()] * 2, rel=1e-6
+    )
+    assert out.loc["T", "power_price_excarbon_usd_per_mwh"].tolist() == pytest.approx(
+        [_coal_lrmc()] * 2, rel=1e-6
+    )
+
+
+def test_a_target_price_above_the_baseline_floor_is_untouched():
+    frame = pd.DataFrame(
+        [
+            _row("CoalCap - w/o CCS", 25.3, 70.0, **COAL),
+            {**_row("CoalCap - w/o CCS", 90.0, 70.0, **COAL), "scenario": "T"},
+        ]
+    )
+    out = apply_lrmc_price_floor(frame, LRMC, "S").set_index("scenario")
+    assert out.loc["T", "power_price_excarbon_usd_per_mwh"] == 90.0
+
+
+def test_the_baseline_scenario_must_be_named_and_present():
+    frame = pd.DataFrame([_row("CoalCap - w/o CCS", 25.3, 70.0, **COAL)])
+    with pytest.raises(ValueError, match="baseline_scenario"):
+        apply_lrmc_price_floor(frame, LRMC, None)
+    with pytest.raises(ValueError, match="not in the scenarios frame"):
+        apply_lrmc_price_floor(frame, LRMC, "MISSING")

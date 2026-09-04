@@ -84,7 +84,7 @@ def prepare_scenario_pathways(
     scenarios["capacity_factor"] = scenarios["scenario_capacity_factor"]
     scenarios["capex_usd_per_mw"] = scenarios["capital_cost_usd_per_mw"]
     scenarios["fom_usd_per_mw_yr"] = scenarios["om_cost_usd_per_mw_per_yr"]
-    scenarios = apply_lrmc_price_floor(scenarios, price_floor)
+    scenarios = apply_lrmc_price_floor(scenarios, price_floor, baseline_scenario)
     scenarios = apply_decom_cost_fraction(scenarios, decom_cost_fraction_of_capex)
     return compute_capture_price_factor(scenarios, capture_price)
 

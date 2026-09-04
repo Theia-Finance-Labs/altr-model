@@ -196,8 +196,15 @@ capture_price:
 # long-run equilibrium the average price must at least cover the levelised cost
 # of the price-setting entrant, or nothing gets built.
 # method: "none" (DEFAULT) - the IAM price as delivered, the validated behaviour.
-#         "lrmc" - per scenario x region x year, the price becomes
-#         max(IAM price, LRMC of the price-setting technology), where the price
+#         "lrmc" - per region x year, the price in EVERY scenario becomes
+#         max(IAM price, LRMC of the BASELINE scenario's price-setting
+#         technology). The floor is the long-run cost level of the
+#         counterfactual market; the transition moves prices through the IAM
+#         target price and the carbon charge, not through the floor. (It is
+#         also not derivable from the target pathway: the extract's target
+#         capacity factors collapse to ~1e-12 for phased-out thermal plant while
+#         their generation columns do not - a marts inconsistency flagged
+#         2026-09-04.) The price
 #         setter is the largest thermal generator with positive generation whose
 #         cost inputs are all finite and positive (coal/gas/oil/biomass; the bare
 #         family names are aggregate parents and are never candidates; an
