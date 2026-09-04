@@ -746,3 +746,35 @@ def determine_lifetime_per_technology(
     return unique_combinations
 
 
+# Share of new-build cost charged at retirement: 0 = free exit, 1 = a full rebuild.
+DECOM_FRACTION_BOUNDS = (0.0, 1.0)
+
+
+def apply_decom_cost_fraction(
+    scenarios: pd.DataFrame, fraction: float | None
+) -> pd.DataFrame:
+    """Recalibrate ``scrap_usd_per_mw`` as ``-fraction * capex_usd_per_mw``.
+
+    The marts drop delivers scrap at ``-capital_cost / 2``: retiring a plant is
+    charged half its build cost. ``None`` keeps the delivered column. A number
+    rewrites it for every scenario row, so both consumers -- the in-window
+    decommissioning charge and the terminal value's decommissioning floor --
+    price retirement at the same share of new-build cost. Kept negative: the
+    charge site takes ``abs()``.
+    """
+    if fraction is None:
+        return scenarios
+    lo, hi = DECOM_FRACTION_BOUNDS
+    if not (lo <= float(fraction) <= hi):
+        raise ValueError(
+            "decom_cost_fraction_of_capex must be within [0, 1] or null "
+            f"(share of capex_usd_per_mw charged at retirement); got {fraction!r}"
+        )
+    if "capex_usd_per_mw" not in scenarios.columns:
+        raise ValueError(
+            "decom_cost_fraction_of_capex needs the capex_usd_per_mw column, "
+            "which prepare_scenario_pathways derives from capital_cost_usd_per_mw"
+        )
+    return scenarios.assign(
+        scrap_usd_per_mw=-float(fraction) * scenarios["capex_usd_per_mw"]
+    )

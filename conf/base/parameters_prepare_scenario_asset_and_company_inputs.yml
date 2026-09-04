@@ -147,3 +147,17 @@ company_ids:
   - "CN_6741456596082465682"
   - "CP_3185202543523296674"
   - "CN_6894373266496773215"
+
+# ── Decommissioning cost calibration ──────────────────────────────────────────────
+# The scenarios input delivers `scrap_usd_per_mw` as -capital_cost/2: retiring a
+# plant is charged HALF of what building it costs (`include_decom_costs` in
+# parameters_calculate_asset_earnings.yml books it as a positive outflow, and the
+# terminal value's decommissioning floor prices standing capacity with the same
+# number). Real-world decommissioning for thermal and renewable plant runs closer
+# to 5–15% of build cost; nuclear is the exception.
+# Values: null (DEFAULT) keeps the delivered column, i.e. the 50% convention the
+# pinned fixture and golden runs were produced under. A number in [0, 1] rewrites
+# scrap as -(fraction × capex_usd_per_mw) for every scenario row, so BOTH
+# consumers move together. Measured on the full universe as calibration arm R11
+# (docs/superpowers/plans/measurement-batch-results.md).
+decom_cost_fraction_of_capex: null
