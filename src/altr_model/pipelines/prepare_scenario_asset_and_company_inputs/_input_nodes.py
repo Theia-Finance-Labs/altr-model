@@ -949,11 +949,11 @@ def apply_lrmc_price_floor(
         )
     if "scenario" not in scenarios.columns:
         raise ValueError("price_floor: the scenarios frame has no 'scenario' column")
-    present = set(scenarios["scenario"].unique())
+    present = set(scenarios["scenario"].dropna().unique())
     if baseline_scenario not in present:
         raise ValueError(
             f"price_floor: baseline scenario {baseline_scenario!r} is not in the "
-            f"scenarios frame (present: {sorted(present)})"
+            f"scenarios frame (present: {sorted(map(str, present))})"
         )
     base = scenarios[scenarios["scenario"] == baseline_scenario]
     named = base["technology"].notna()
