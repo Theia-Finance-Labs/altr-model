@@ -869,6 +869,8 @@ PRICE_FLOOR_METHODS = ("none", "lrmc")
 #: generator by scenario pathway. Nuclear and hydro are price-takers in practice.
 PRICE_SETTING_TECHNOLOGY_PREFIXES = ("CoalCap", "GasCap", "OilCap", "BiomassCap")
 HOURS_PER_YEAR = 8760
+#: The floor is one number per region-year, shared by every scenario in the run.
+_FLOOR_KEYS = ["scenario_geography", "year"]
 #: A real cost of capital must be a rate strictly between these bounds.
 DISCOUNT_RATE_BOUNDS = (0.0, 1.0)
 
@@ -882,11 +884,20 @@ def capital_recovery_factor(rate: float, lifetime_years) -> float:
 
 
 def apply_lrmc_price_floor(
-    scenarios: pd.DataFrame, params: dict | None
+    scenarios: pd.DataFrame, params: dict | None, baseline_scenario: str | None = None
 ) -> pd.DataFrame:
     """Lift ``power_price_excarbon_usd_per_mwh`` to the price-setter's LRMC.
 
-    Per scenario x region x year, the price-setting technology is the LEAF
+    The floor is derived from the BASELINE scenario only and applied, by
+    region x year, to every scenario in the frame. It represents the long-run
+    cost level a market must pay in the counterfactual; the transition changes
+    prices through the IAM target price and the carbon charge, not through the
+    floor. Deriving it from the target pathway would also be unsafe: in the
+    2026-09-01 extract the target scenarios carry capacity factors of ~1e-12
+    for phased-out thermal technologies alongside unchanged generation
+    columns, which turns capital cost per MWh into 1e12.
+
+    Per region x year of the baseline, the price-setting technology is the LEAF
     thermal technology with the largest finite positive ``scenario_pathway``
     among those whose cost inputs are USABLE. The bare family names
     (``CoalCap``, ``GasCap``, ``OilCap``, ``BiomassCap``) are aggregate parents
@@ -927,15 +938,27 @@ def apply_lrmc_price_floor(
             f"got {params.get('discount_rate')!r}"
         )
 
-    named = scenarios["technology"].notna()
-    tech = scenarios["technology"].where(named, "").astype(str)
+    if baseline_scenario is None:
+        raise ValueError(
+            "price_floor.method 'lrmc' needs the baseline_scenario name to derive "
+            "the floor from"
+        )
+    present = set(scenarios["scenario"].unique())
+    if baseline_scenario not in present:
+        raise ValueError(
+            f"price_floor: baseline scenario {baseline_scenario!r} is not in the "
+            f"scenarios frame (present: {sorted(present)})"
+        )
+    base = scenarios[scenarios["scenario"] == baseline_scenario]
+    named = base["technology"].notna()
+    tech = base["technology"].where(named, "").astype(str)
     names = set(tech[named].unique())
     parents = set(PRICE_SETTING_TECHNOLOGY_PREFIXES) | {
         t for t in names if any(o.startswith(t + " - ") for o in names)
     }
 
     def usable(column: str) -> pd.Series:
-        values = pd.to_numeric(scenarios[column], errors="coerce")
+        values = pd.to_numeric(base[column], errors="coerce")
         return values.where(np.isfinite(values) & (values > 0))
 
     generation = usable("scenario_pathway")
@@ -956,7 +979,7 @@ def apply_lrmc_price_floor(
         & (lrmc > 0)
     )
     setter = (
-        scenarios.loc[candidate, _REGION_YEAR_KEYS]
+        base.loc[candidate, _FLOOR_KEYS]
         .assign(
             _generation=generation[candidate],
             price_floor_lrmc=lrmc[candidate],
@@ -967,13 +990,11 @@ def apply_lrmc_price_floor(
             ascending=[False, True],
             kind="mergesort",
         )
-        .drop_duplicates(_REGION_YEAR_KEYS)
+        .drop_duplicates(_FLOOR_KEYS)
         .drop(columns="_generation")
         .reset_index(drop=True)
     )
-    out = scenarios.merge(
-        setter, on=_REGION_YEAR_KEYS, how="left", validate="many_to_one"
-    )
+    out = scenarios.merge(setter, on=_FLOOR_KEYS, how="left", validate="many_to_one")
     out["price_floor_lrmc"] = out["price_floor_lrmc"].fillna(0.0)
     out["price_setter_technology"] = out["price_setter_technology"].where(
         out["price_setter_technology"].notna(), None
