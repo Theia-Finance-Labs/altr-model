@@ -282,7 +282,8 @@ base rate is `dcf.discount_rate` (`0.07`) in
 `parameters_calculate_asset_and_company_npv.yml`, applied to every row of both
 pathways (owner ruling 2026-09-05 — there is no pathway-specific rate, so the
 whole `npv_change` comes from the cash flows rather than the rate). The spread
-is `dcf.brown_discount_spread` (+100 bps), charged to the technologies named in
+is `dcf.brown_discount_spread` (default `0.0` by owner ruling 2026-09-05; `0.01`
+restores the +100 bps carbon-premium sensitivity), charged to the technologies named in
 `dcf.brown_technologies` and to nobody else; everything outside that list takes
 the base rate. It applies to both pathways alike. There is no greenium leg - the
 literature the premium rests on measures a penalty on high emitters and no

@@ -110,8 +110,9 @@ both directions — 30 offshore-wind, 21 nuclear and 7 biomass assets paid the
 fossil penalty and grew at the fossil rate, while 3 oil assets collected the
 greenium.
 
-The **tier-2 carbontech annuity is not governed by this switch**. It still
-the tier-2 annuity rides the same carrier since the 2026-09-05 ruling.
+The tier-2 carbontech annuity rides the same carrier since the 2026-09-05
+ruling (`dcf.carbontech_annuity` switches that tier off); no consumer of
+`alignment_type` remains in this stage under the shipped carrier.
 
 !!! note "Tier census — check it on your own run"
 
