@@ -527,3 +527,38 @@ def test_the_pipeline_wires_the_price_floor_parameter_into_prepare_scenarios():
         n for n in create_pipeline().nodes if n.name.endswith("prepare_scenarios")
     )
     assert "params:price_floor" in node.inputs
+
+
+# ── Santa round-3 findings ───────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("lifetime", [10_000.0, 1e6, 1e-6])
+def test_the_annuity_factor_is_finite_for_any_finite_positive_lifetime(lifetime):
+    crf = capital_recovery_factor(0.08, lifetime)
+    assert 0.0 < crf < float("inf")
+    if lifetime >= 1e4:
+        assert crf == pytest.approx(0.08, abs=1e-9)  # tends to the interest rate
+
+
+def test_an_absurdly_long_but_finite_lifetime_still_sets_a_floor():
+    frame = pd.DataFrame(
+        [_row("CoalCap - w/o CCS", 25.0, 70.0, **{**COAL, "life": 10_000.0})]
+    )
+    out = apply_lrmc_price_floor(frame, LRMC)
+    assert (out["price_setter_technology"] == "CoalCap - w/o CCS").all()
+    assert out["price_floor_lrmc"].iloc[0] > 25.0
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"method": "lrmc"},
+        {"method": "lrmc", "discount_rate": "eight percent"},
+        {"method": "lrmc", "discount_rate": [0.08]},
+    ],
+)
+def test_a_missing_or_non_numeric_rate_is_a_value_error(params):
+    with pytest.raises(ValueError, match="price_floor.discount_rate"):
+        apply_lrmc_price_floor(
+            pd.DataFrame([_row("CoalCap - w/o CCS", 25.0, 70.0, **COAL)]), params
+        )
