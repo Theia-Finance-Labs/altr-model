@@ -4,9 +4,10 @@ IAM electricity prices are annual marginal-cost shadow prices; under WITCH,
 MESSAGE and REMIND they sit BELOW the full cost of the plants those pathways
 keep building. In long-run equilibrium the average price must at least cover
 the levelised cost of the price-setting entrant, or nothing gets built. The
-floor is that levelised cost, computed from the scenario's own technology
-columns for the region-year's price-setting thermal technology, and applied
-as a single market price to every technology in the region-year.
+floor is that levelised cost, computed from the BASELINE scenario's own
+technology columns for the region-year's price-setting thermal technology, and
+applied as a single market price to every technology in the region-year, in
+every scenario of the run.
 """
 
 from pathlib import Path
@@ -649,3 +650,14 @@ def test_a_frame_without_a_scenario_column_is_a_value_error():
     )
     with pytest.raises(ValueError, match="scenario"):
         apply_lrmc_price_floor(frame, LRMC, "S")
+
+
+def test_a_missing_baseline_is_a_value_error_even_with_null_scenario_names():
+    frame = pd.DataFrame(
+        [
+            _row("CoalCap - w/o CCS", 25.3, 70.0, **COAL),
+            {**_row("CoalCap - w/o CCS", 25.3, 70.0, **COAL), "scenario": None},
+        ]
+    )
+    with pytest.raises(ValueError, match="not in the scenarios frame"):
+        apply_lrmc_price_floor(frame, LRMC, "MISSING")
