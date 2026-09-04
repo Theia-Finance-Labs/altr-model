@@ -59,3 +59,20 @@ apply_continued_om_baseline: False
 # moves the median npv_change from -0.42 to -0.16. Same first-year-capacity
 # mechanics as the baseline switch above, applied to the shock pathway.
 apply_continued_om_shock: True
+
+# ── Dispatch floor ────────────────────────────────────────────────────────────────
+# The scenarios carry one annual-average price per region-year, so a fuelled
+# plant is otherwise paid that average in every hour and books fuel burnt at a
+# loss whenever the average sits below its own fuel cost (WITCH baseline: 34% of
+# gas and 78% of oil asset-years). No operator does that: a dispatchable plant
+# runs only in hours where the price covers its fuel, so the hours the scenario
+# says it runs carry a price of at least its own variable cost.
+# Values: "none" (DEFAULT, owner ruling 2026-09-05) - the average price as
+#         delivered, the validated behaviour.
+#         "own_variable_cost" - the captured price (after any capture factor) is
+#         bounded below by fuel_price / efficiency for plants with fuel. Energy
+#         margins can then not be negative; fixed O&M and capex are still paid,
+#         and a plant without fuel is never touched. Parameter-free.
+# Measured offline on the golden run (operating coverage): gas 0.925 -> 1.033,
+# oil 0.33 -> 0.88, biomass 0.83 -> 0.86; nothing else moves.
+dispatch_floor: none

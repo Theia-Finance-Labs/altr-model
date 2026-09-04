@@ -59,8 +59,7 @@ META = dict(
 )
 
 SHIPPED = dict(
-    discount_rate_baseline=BASE_RATE,
-    discount_rate_shock=BASE_RATE,
+    discount_rate=BASE_RATE,
     brown_discount_spread=SPREAD,
     brown_technologies=BROWN_TECHNOLOGIES,
     terminal_method="perpetuity",

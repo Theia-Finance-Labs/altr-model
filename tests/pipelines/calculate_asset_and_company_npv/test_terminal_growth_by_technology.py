@@ -37,8 +37,7 @@ R_GREEN = 0.07
 FINAL_YEAR = 2050
 
 SHIPPED = dict(
-    discount_rate_baseline=0.07,
-    discount_rate_shock=0.07,
+    discount_rate=0.07,
     terminal_method="perpetuity",
     terminal_growth_rate=0.02,
     terminal_growth_rate_brown=G_BROWN,

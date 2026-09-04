@@ -263,9 +263,8 @@ The switches with the largest, most interpretable effect on the headline number:
     turning `apply_continued_om_shock` off moves the median `npv_change` from
     -0.42 to -0.16 - the switch carries roughly 60% of the median signal there,
     and per-company effects range far wider.
-* **`dcf.discount_rate_shock`** (in `parameters_calculate_asset_and_company_npv.yml`)
-  - the scenario base rate for cash flows on the target-scenario surface, and
-  inert under the shipped configuration. See [Discount rates](#discount-rates)
+* **`dcf.discount_rate`** (in `parameters_calculate_asset_and_company_npv.yml`)
+  - the one real rate for both pathways. See [Discount rates](#discount-rates)
   below.
 * **`market_passthrough`** (who pays the carbon cost) and the two cost
   switches `include_growth_capex` and `include_decom_costs`, both in
@@ -278,45 +277,17 @@ The switches with the largest, most interpretable effect on the headline number:
 
 ### Discount rates
 
-Cash flows are discounted at a scenario base rate plus a technology spread. The
-base rate is `dcf.discount_rate_baseline` on the baseline surface and
-`dcf.discount_rate_shock` on the target surface, both in
-`parameters_calculate_asset_and_company_npv.yml`; they ship equal (`0.07`), so
-the whole `npv_change` comes from the cash flows rather than the rate. The
-spread is `dcf.brown_discount_spread` (+100 bps), charged to the technologies
-named in `dcf.brown_technologies` and to nobody else; everything outside that
-list takes the base rate. It applies to both pathways alike. There is no
-greenium leg - the literature the premium rests on measures a penalty on high
-emitters and no discount for clean firms (owner ruling 12).
+Cash flows are discounted at one real base rate plus a technology spread. The
+base rate is `dcf.discount_rate` (`0.07`) in
+`parameters_calculate_asset_and_company_npv.yml`, applied to every row of both
+pathways (owner ruling 2026-09-05 — there is no pathway-specific rate, so the
+whole `npv_change` comes from the cash flows rather than the rate). The spread
+is `dcf.brown_discount_spread` (+100 bps), charged to the technologies named in
+`dcf.brown_technologies` and to nobody else; everything outside that list takes
+the base rate. It applies to both pathways alike. There is no greenium leg - the
+literature the premium rests on measures a penalty on high emitters and no
+discount for clean firms (owner ruling 12).
 
-Raising the shock rate above the baseline rate prices transition risk into the
-rate as well. It moves `npv_change` down for every company at once - a level
-shift, not a re-ranking, which is what makes it easy to read and easy to
-over-interpret.
-
-**Under the shipped configuration that knob is INERT: raising it changes
-nothing.** The rate is selected off `scenario_type`, and a *ramped* late &
-sudden pathway is a blend of the two scenario surfaces, so it keeps carrying the
-*baseline* label rather than falsely claiming the target's. Every row of
-`asset_earnings` then reads `scenario_type: baseline`, and every row takes
-`dcf.discount_rate_baseline`.
-
-The pathway ramps when **both** of these hold, in
-`parameters_calculate_company_trajectories.yml`:
-
-| Condition | Shipped value |
-| --- | --- |
-| `price_ramp: True` | `True` |
-| `alignment_year` strictly greater than `shock_year` | `2038 > 2033` — holds |
-
-Break either one and `dcf.discount_rate_shock` is live again:
-
-* `price_ramp: False` - the hard switch to the target surface at `shock_year`;
-* `alignment_year` equal to `shock_year` - legal (`check_input_parameters`
-  requires `alignment_year >= shock_year`, not `>`), and it leaves an empty
-  transition window, so there is nothing to blend across.
-
-Either is a configuration to run if you want the two pathways discounted at
-different rates - but both also change the capacity pathway itself, so the
-discount rate is not the only thing that moves. `trajectory_type` separates the
-two worlds regardless; it is `scenario_type` alone that collapses under a ramp.
+The LRMC price floor's `price_floor.discount_rate` (`0.08`) is a different
+quantity: the cost of capital a new entrant must recover, used only to build
+that floor.

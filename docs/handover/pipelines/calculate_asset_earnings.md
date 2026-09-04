@@ -64,7 +64,7 @@ fuel_cost_per_mwh = fuel_price_usd_per_mwh_fuel ÷ efficiency_decimal
 var_cost_t   = Q_t × fuel_cost_per_mwh
 fixed_cost_t = fom_usd_per_mw_yr × K_for_fixed_cost_t
 carbon_t     = Q_t × carbon_price_usd_per_tco2 × emission_factor × (1 − market_passthrough)
-revenue_t    = Q_t × power_price_excarbon_usd_per_mwh × capture_price_factor
+revenue_t    = Q_t × max(power_price_excarbon_usd_per_mwh × capture_price_factor, fuel_cost_per_mwh if dispatch_floor)
 EBITDA_t     = revenue_t − var_cost_t − fixed_cost_t − carbon_t
 
 capex_total_t = growth_t + decom_t, where
@@ -174,6 +174,7 @@ Two functions in this pipeline are not nodes:
 | `include_growth_capex`, `include_decom_costs` | `conf/base/parameters_calculate_asset_earnings.yml` |
 | `apply_continued_om_baseline`, `apply_continued_om_shock` | `conf/base/parameters_calculate_asset_earnings.yml` |
 | `carbon_cost_method` | `conf/base/parameters_calculate_asset_earnings.yml` |
+| `dispatch_floor` | `conf/base/parameters_calculate_asset_earnings.yml` |
 
 Every key this stage reads is defined in its own file. `include_decom_costs`
 ships `True` and `include_growth_capex` ships `False` - IAM O&M already bundles

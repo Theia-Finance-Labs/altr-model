@@ -11,30 +11,14 @@
 ## Purpose
 
 Converts the per-asset FCFF series into present values. Each year's cash flow is
-discounted at a rate that depends on which scenario surface the row sits on -
-`dcf.discount_rate_baseline` for baseline rows, `dcf.discount_rate_shock` for
-target rows; a terminal value is added beyond the forecast horizon; and the
-result is rolled up from asset to company-technology to company level.
-
-!!! note "`dcf.discount_rate_shock` is inert under the shipped configuration"
-
-    The rate is chosen off `scenario_type`, and a *ramped* late & sudden
-    pathway is a blend of the two scenario surfaces, so it keeps the baseline
-    label rather than falsely claiming the target's. Every row arriving here
-    then reads `scenario_type: baseline` and takes
-    `dcf.discount_rate_baseline`.
-
-    The pathway ramps when `price_ramp: True` **and** `alignment_year` is
-    strictly greater than `shock_year` — both set in stage 2, and both true as
-    shipped (`price_ramp: True`, 2038 > 2033). Either half turns the ramp off
-    and makes `dcf.discount_rate_shock` live again: `price_ramp: False` (the
-    hard switch at `shock_year`), or `alignment_year` equal to `shock_year`,
-    which `check_input_parameters` accepts — it requires `alignment_year >=
-    shock_year` — and which leaves an empty transition window to blend across.
-
-    The two pathways stay distinguishable by `trajectory_type` regardless. See
-    the [user guide](../user_guide.md#discount-rates) for what to change if the
-    pathways should be discounted differently.
+discounted at one real rate, `dcf.discount_rate` (owner ruling 2026-09-05: a
+single rate for both pathways; until then two keys shipped equal at 7%, and the
+shock key was inert under the price ramp), plus the technology carbon-risk
+spread; a terminal value is added beyond the forecast horizon; and the result is
+rolled up from asset to company-technology to company level. The whole
+baseline-vs-shock difference therefore comes from the cash flows, never from a
+pathway-specific rate. The two pathways stay distinguishable by
+`trajectory_type` regardless.
 
 The terminal value is where most of the valuation judgement sits. It can be
 switched off (`terminal_value.method: "none"`) or computed from a **normalized**
@@ -219,8 +203,7 @@ Every key sits in the `dcf` block of
 
 | Key | Default | What it controls |
 | --- | --- | --- |
-| `dcf.discount_rate_baseline` | `0.07` | Real discount rate for rows on the baseline scenario surface |
-| `dcf.discount_rate_shock` | `0.07` | Real discount rate for rows on the target scenario surface |
+| `dcf.discount_rate` | `0.07` | Real discount rate for every row, both pathways |
 | `dcf.terminal_value.method` | `"perpetuity"` | `"none"` or `"perpetuity"` |
 | `dcf.terminal_value.g_real_default` | `0.02` | Real terminal growth rate, used where a technology-specific rate is not set |
 | `dcf.terminal_value.g_real_brown` | `0.0` | Terminal growth for whatever `spread_carrier` calls brown - declining assets, no perpetual growth |
