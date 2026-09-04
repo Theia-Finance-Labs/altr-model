@@ -198,8 +198,9 @@ capture_price:
 # method: "none" (DEFAULT) - the IAM price as delivered, the validated behaviour.
 #         "lrmc" - per scenario x region x year, the price becomes
 #         max(IAM price, LRMC of the price-setting technology), where the price
-#         setter is the largest thermal generator (coal/gas/oil/biomass, leaf
-#         rows only) and its LRMC = fuel/efficiency + O&M/hours + capex x CRF /
+#         setter is the largest thermal generator with positive generation
+#         (coal/gas/oil/biomass; the bare family names are aggregate parents
+#         and are never candidates) and its LRMC = fuel/efficiency + O&M/hours + capex x CRF /
 #         hours from its own scenario columns. One market price: every
 #         technology in the region-year receives it. Where the IAM price is
 #         already above the LRMC (IMAGE, AIM/CGE) nothing changes. The raw IAM
