@@ -165,7 +165,7 @@ column:
 
 | Input column | Name inside the model |
 | --- | --- |
-| `scenario_price` | `power_price_excarbon_usd_per_mwh` (lifted to `price_floor_lrmc` when `price_floor.method` is `lrmc`) |
+| `scenario_price` | `power_price_excarbon_usd_per_mwh` (lifted to at least `price_floor_lrmc` when `price_floor.method` is `lrmc`) |
 | `fuel_price` | `fuel_price_usd_per_mwh_fuel` |
 | `scenario_capacity_factor` | `capacity_factor` |
 | `capital_cost_usd_per_mw` | `capex_usd_per_mw` |

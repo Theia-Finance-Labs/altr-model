@@ -148,7 +148,12 @@ market price for every technology; the raw IAM value stays in `scenario_price`
 and the floor is reported in `price_floor_lrmc`), `decom_cost_fraction_of_capex`
 (rewrites `scrap_usd_per_mw` as a share of build cost) and `capture_price`
 (method `hirth2013` adds a per-technology `capture_price_factor` the earnings
-stage multiplies into revenue). All three default to the delivered behaviour.
+stage multiplies into revenue). `price_floor` and `capture_price` ship at
+`none`, the delivered behaviour; `decom_cost_fraction_of_capex` ships at 0.15 by
+owner ruling (null restores the delivered scrap value). The order matters only
+for which columns exist when each step runs: none of the three reads another's
+output, and the earnings stage multiplies the (floored) price by the capture
+factor regardless.
 
 Every key this stage reads is defined in its own file - the pipeline declares
 them explicitly in `PIPELINE_PARAMETERS`, so a key it does not list is not
