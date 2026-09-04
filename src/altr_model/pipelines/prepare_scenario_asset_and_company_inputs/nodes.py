@@ -19,6 +19,7 @@ from altr_model.pipelines.prepare_scenario_asset_and_company_inputs._asset_prepa
 from altr_model.pipelines.prepare_scenario_asset_and_company_inputs._input_nodes import (
     allocate_assets_to_companies,
     apply_ccs_suffix,
+    apply_decom_cost_fraction,
     assign_scenario_geographies_to_assets,
     determine_increasing_or_decreasing_techs,
     determine_lifetime_per_technology,
@@ -45,6 +46,7 @@ def prepare_scenario_pathways(
     downloaded_scenarios: pd.DataFrame,
     target_scenario: str,
     baseline_scenario: str,
+    decom_cost_fraction_of_capex: float | None = None,
 ) -> pd.DataFrame:
     """Filter scenarios once and add all downstream trajectory/model fields."""
     # Some scenarios.csv deliveries use "scenario_name" instead of "scenario"
@@ -76,7 +78,7 @@ def prepare_scenario_pathways(
     scenarios["capacity_factor"] = scenarios["scenario_capacity_factor"]
     scenarios["capex_usd_per_mw"] = scenarios["capital_cost_usd_per_mw"]
     scenarios["fom_usd_per_mw_yr"] = scenarios["om_cost_usd_per_mw_per_yr"]
-    return scenarios
+    return apply_decom_cost_fraction(scenarios, decom_cost_fraction_of_capex)
 
 
 def prepare_asset_forecast_panel(

@@ -48,6 +48,8 @@ replacement_capex_rate: 0.02
 # (= -capex/2); it is charged as a POSITIVE outflow, so retiring an asset costs
 # money rather than paying the owner.
 include_decom_costs: True          # Include decommissioning costs for retired assets
+# The rate itself (delivered as -capex/2) is recalibrated, if at all, by
+# `decom_cost_fraction_of_capex` in parameters_prepare_scenario_asset_and_company_inputs.yml.
 
 # ── Continued O&M ─────────────────────────────────────────────────────────────────
 # When enabled for a trajectory type, fixed O&M is charged on that trajectory's
