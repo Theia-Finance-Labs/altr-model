@@ -1272,11 +1272,25 @@ the shock loss narrows. Remaining negatives are oil (out of merit everywhere)
 and half of gas (WITCH's zero spark spread persists under the floor, since the
 floor is set by coal).
 
-**Open for the owner:** adopt `lrmc` as the default (it is a methodology
-choice: the counterfactual's long-run cost level applied to both pathways; the
-floor never falls in the transition even where the target's marginal entrant
-becomes cheaper); the discount rate (8% — tie to `dcf`?); and the marts data
-flag above, which matters more than the floor.
+**Owner rulings (Jakub, 2026-09-05):** `lrmc` stays **off by default** — kept as
+an optional method; `discount_rate` stays at **8%**. The marts capacity-factor
+defect is confirmed a bug and raised with Bertrand (message below).
+
+### Capacity-factor defect — evidence and message to the marts owner
+
+Same fleet, same year (WITCH 5.0, CHN, 2025): `CoalCap - w/o CCS` capacity
+factor 0.696 in EN_NoPolicy vs 4.0e-12 in EN_NPi2020_500, generation 852,525
+MWh/yr in both. Extract-wide: 28,736 rows (8.5%) with capacity factor < 1e-6
+and positive generation, in 24 provider blocks, 27,700+ of them in target
+scenarios, almost all thermal (`OilCap - w/o CCS` 4,794, `GasCap - w/ CCS`
+3,970, `CoalCap - w/o CCS` 2,524, ...). The `- w/o CCS` pathway equals the
+parent `CoalCap` aggregate in the target, i.e. one column fell back to the
+family aggregate while the other fell back to ~zero. Downstream, the model
+computes Q = capacity × capacity_factor × 8760, so every affected plant in the
+shock pathway produces nothing: no revenue, no fuel, no carbon, fixed O&M
+only. The 2035 shock year still shows carbon (the price/CF ramp blends 0.70
+and ~0 to 0.42); by 2045 CHN coal carries 645 GW, 4e-8 TWh and zero carbon.
+
 
 ---
 ## December table completion
