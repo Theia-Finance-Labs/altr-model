@@ -165,7 +165,7 @@ column:
 
 | Input column | Name inside the model |
 | --- | --- |
-| `scenario_price` | `power_price_excarbon_usd_per_mwh` (under `price_floor.method: lrmc`, lifted to at least `price_floor_lrmc` wherever a usable thermal price setter gives a positive floor; otherwise delivered as is) |
+| `scenario_price` | `power_price_excarbon_usd_per_mwh` (under `price_floor.method: lrmc`, lifted to at least `price_floor_lrmc` wherever the baseline scenario's usable thermal price setter gives a positive floor for that region-year; otherwise delivered as is) |
 | `fuel_price` | `fuel_price_usd_per_mwh_fuel` |
 | `scenario_capacity_factor` | `capacity_factor` |
 | `capital_cost_usd_per_mw` | `capex_usd_per_mw` |

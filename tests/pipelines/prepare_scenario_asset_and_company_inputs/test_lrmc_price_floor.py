@@ -176,7 +176,7 @@ def test_a_region_year_without_thermal_generation_gets_no_floor():
     assert (out["price_floor_lrmc"] == 0.0).all()
 
 
-def test_floors_are_per_scenario_region_year():
+def test_floors_are_per_region_year():
     frame = pd.DataFrame(
         [
             _row("CoalCap - w/o CCS", 25.3, 70.0, geo="CHN", **COAL),
@@ -607,3 +607,45 @@ def test_the_baseline_scenario_must_be_named_and_present():
         apply_lrmc_price_floor(frame, LRMC, None)
     with pytest.raises(ValueError, match="not in the scenarios frame"):
         apply_lrmc_price_floor(frame, LRMC, "MISSING")
+
+
+def test_a_larger_usable_target_candidate_never_sets_the_price():
+    """Pins baseline-only derivation: pooling target rows would pick the gas row."""
+    gas = dict(fuel=30.0, eff=0.55, om=32_000.0, capex=820_000.0, cf=0.5, life=35.0)
+    frame = pd.DataFrame(
+        [
+            _row("CoalCap - w/o CCS", 25.3, 70.0, **COAL),
+            {**_row("GasCap - w/o CCS", 25.3, 999.0, **gas), "scenario": "T"},
+        ]
+    )
+    out = apply_lrmc_price_floor(frame, LRMC, "S")
+    assert (out["price_setter_technology"] == "CoalCap - w/o CCS").all()
+    assert out["price_floor_lrmc"].tolist() == pytest.approx(
+        [_coal_lrmc()] * 2, rel=1e-6
+    )
+
+
+def test_a_target_region_year_absent_from_the_baseline_gets_no_floor():
+    frame = pd.DataFrame(
+        [
+            _row("CoalCap - w/o CCS", 25.3, 70.0, geo="CHN", **COAL),
+            {
+                **_row("CoalCap - w/o CCS", 12.0, 70.0, geo="IND", **COAL),
+                "scenario": "T",
+            },
+        ]
+    )
+    out = apply_lrmc_price_floor(frame, LRMC, "S").set_index("scenario_geography")
+    assert out.loc["IND", "price_floor_lrmc"] == 0.0
+    assert out.loc["IND", "power_price_excarbon_usd_per_mwh"] == 12.0
+    assert out.loc["IND", "price_setter_technology"] is None or pd.isna(
+        out.loc["IND", "price_setter_technology"]
+    )
+
+
+def test_a_frame_without_a_scenario_column_is_a_value_error():
+    frame = pd.DataFrame([_row("CoalCap - w/o CCS", 25.3, 70.0, **COAL)]).drop(
+        columns="scenario"
+    )
+    with pytest.raises(ValueError, match="scenario"):
+        apply_lrmc_price_floor(frame, LRMC, "S")

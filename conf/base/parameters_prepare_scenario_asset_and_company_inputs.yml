@@ -200,7 +200,11 @@ capture_price:
 #         max(IAM price, LRMC of the BASELINE scenario's price-setting
 #         technology). The floor is the long-run cost level of the
 #         counterfactual market; the transition moves prices through the IAM
-#         target price and the carbon charge, not through the floor. (It is
+#         target price and the carbon charge, not through the floor - which
+#         means the floor never falls in the transition even where the target's
+#         own marginal entrant becomes cheaper: late-transition target prices
+#         below the fossil-era cost level are lifted, and target revenues with
+#         them. (It is
 #         also not derivable from the target pathway: the extract's target
 #         capacity factors collapse to ~1e-12 for phased-out thermal plant while
 #         their generation columns do not - a marts inconsistency flagged

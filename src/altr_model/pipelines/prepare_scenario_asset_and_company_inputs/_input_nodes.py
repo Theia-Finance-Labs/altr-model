@@ -892,7 +892,11 @@ def apply_lrmc_price_floor(
     region x year, to every scenario in the frame. It represents the long-run
     cost level a market must pay in the counterfactual; the transition changes
     prices through the IAM target price and the carbon charge, not through the
-    floor. Deriving it from the target pathway would also be unsafe: in the
+    floor. The consequence to keep in mind: the floor never falls in the
+    transition, even where the target pathway's own marginal entrant becomes
+    cheaper, so late-transition target prices below the fossil-era cost level
+    are lifted and target-pathway revenues with them.
+    Deriving it from the target pathway would also be unsafe: in the
     2026-09-01 extract the target scenarios carry capacity factors of ~1e-12
     for phased-out thermal technologies alongside unchanged generation
     columns, which turns capital cost per MWh into 1e12.
@@ -943,6 +947,8 @@ def apply_lrmc_price_floor(
             "price_floor.method 'lrmc' needs the baseline_scenario name to derive "
             "the floor from"
         )
+    if "scenario" not in scenarios.columns:
+        raise ValueError("price_floor: the scenarios frame has no 'scenario' column")
     present = set(scenarios["scenario"].unique())
     if baseline_scenario not in present:
         raise ValueError(
