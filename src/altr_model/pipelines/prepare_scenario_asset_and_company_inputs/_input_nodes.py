@@ -790,7 +790,7 @@ def apply_decom_cost_fraction(
 CAPTURE_PRICE_METHODS = ("none", "hirth2013")
 CAPTURE_WIND_TECHNOLOGIES = ("WindCap - Onshore", "WindCap - Offshore")
 CAPTURE_SOLAR_TECHNOLOGIES = ("SolarCap - PV",)
-_CAPTURE_KEYS = ["scenario", "scenario_geography", "year"]
+_REGION_YEAR_KEYS = ["scenario", "scenario_geography", "year"]
 # Below this residual generation share the dispatchable factor is undefined (all-VRE).
 _CAPTURE_MIN_RESIDUAL_SHARE = 1e-9
 
@@ -818,16 +818,16 @@ def compute_capture_price_factor(
     techs = set(scenarios["technology"].unique())
     parents = {t for t in techs if any(o.startswith(t + " - ") for o in techs)}
     leaf = scenarios[~scenarios["technology"].isin(parents)]
-    total = leaf.groupby(_CAPTURE_KEYS)["scenario_pathway"].sum().rename("total")
+    total = leaf.groupby(_REGION_YEAR_KEYS)["scenario_pathway"].sum().rename("total")
     wind = (
         leaf[leaf["technology"].isin(CAPTURE_WIND_TECHNOLOGIES)]
-        .groupby(_CAPTURE_KEYS)["scenario_pathway"]
+        .groupby(_REGION_YEAR_KEYS)["scenario_pathway"]
         .sum()
         .rename("wind")
     )
     solar = (
         leaf[leaf["technology"].isin(CAPTURE_SOLAR_TECHNOLOGIES)]
-        .groupby(_CAPTURE_KEYS)["scenario_pathway"]
+        .groupby(_REGION_YEAR_KEYS)["scenario_pathway"]
         .sum()
         .rename("solar")
     )
@@ -848,10 +848,100 @@ def compute_capture_price_factor(
         .clip(upper=cap)
     )
     factors = pd.DataFrame({"_vf_w": vf_w, "_vf_s": vf_s, "_vf_d": vf_d})
-    out = scenarios.merge(factors, left_on=_CAPTURE_KEYS, right_index=True, how="left")
+    out = scenarios.merge(
+        factors, left_on=_REGION_YEAR_KEYS, right_index=True, how="left"
+    )
     is_wind = out["technology"].isin(CAPTURE_WIND_TECHNOLOGIES)
     is_solar = out["technology"].isin(CAPTURE_SOLAR_TECHNOLOGIES)
     out["capture_price_factor"] = np.where(
         is_wind, out["_vf_w"], np.where(is_solar, out["_vf_s"], out["_vf_d"])
     )
     return out.drop(columns=["_vf_w", "_vf_s", "_vf_d"])
+
+
+# Long-run-marginal-cost price floor. IAM electricity prices are annual
+# marginal-cost shadow prices; under WITCH, MESSAGE and REMIND they sit below
+# the full cost of the plants those pathways keep building. In long-run
+# equilibrium the average price must at least cover the levelised cost of the
+# price-setting entrant, or nothing gets built (peak-load pricing, Boiteux).
+PRICE_FLOOR_METHODS = ("none", "lrmc")
+#: Technologies that can set the price: the region-year's largest thermal
+#: generator by scenario pathway. Nuclear and hydro are price-takers in practice.
+PRICE_SETTING_TECHNOLOGY_PREFIXES = ("CoalCap", "GasCap", "OilCap", "BiomassCap")
+HOURS_PER_YEAR = 8760
+#: A real cost of capital must be a rate strictly between these bounds.
+DISCOUNT_RATE_BOUNDS = (0.0, 1.0)
+
+
+def capital_recovery_factor(rate: float, lifetime_years) -> float:
+    """Annuity factor: the equal yearly payment that repays one unit of capital
+    over ``lifetime_years`` at ``rate`` -- r(1+r)^L / ((1+r)^L - 1)."""
+    growth = (1.0 + rate) ** lifetime_years
+    return rate * growth / (growth - 1.0)
+
+
+def apply_lrmc_price_floor(
+    scenarios: pd.DataFrame, params: dict | None
+) -> pd.DataFrame:
+    """Lift ``power_price_excarbon_usd_per_mwh`` to the price-setter's LRMC.
+
+    Per scenario x region x year, the price-setting technology is the LEAF
+    thermal technology with the largest ``scenario_pathway`` (aggregate parents
+    such as ``CoalCap`` are excluded). Its levelised cost per MWh is
+    ``fuel_price / efficiency + om / hours + capex x CRF(rate, lifetime) / hours``
+    with ``hours = capacity_factor x 8760``, all from that technology's own row.
+    The floor is ONE market price: every technology in the region-year receives
+    ``max(price, floor)``. ``scenario_price`` keeps the raw IAM value for audit;
+    ``price_floor_lrmc`` reports the floor (0.0 where none applies: method
+    ``none``, no thermal generation, or a setter whose cost inputs are not
+    usable) and ``price_setter_technology`` names the setter.
+    """
+    params = params or {}
+    method = params.get("method", "none")
+    if method not in PRICE_FLOOR_METHODS:
+        raise ValueError(
+            f"price_floor.method must be one of {PRICE_FLOOR_METHODS}; got {method!r}"
+        )
+    if method == "none":
+        return scenarios.assign(price_floor_lrmc=0.0, price_setter_technology=None)
+    rate = float(params.get("discount_rate", float("nan")))
+    lo, hi = DISCOUNT_RATE_BOUNDS
+    if not (lo < rate < hi):
+        raise ValueError(
+            "price_floor.discount_rate must be a real rate within (0, 1), e.g. 0.08; "
+            f"got {params.get('discount_rate')!r}"
+        )
+
+    techs = set(scenarios["technology"].unique())
+    parents = {t for t in techs if any(o.startswith(t + " - ") for o in techs)}
+    thermal = scenarios[
+        ~scenarios["technology"].isin(parents)
+        & scenarios["technology"].str.startswith(PRICE_SETTING_TECHNOLOGY_PREFIXES)
+    ]
+    setter = thermal.sort_values("scenario_pathway", ascending=False).drop_duplicates(
+        _REGION_YEAR_KEYS
+    )
+    hours = (setter["scenario_capacity_factor"] * HOURS_PER_YEAR).where(
+        setter["scenario_capacity_factor"] > 0
+    )
+    efficiency = setter["efficiency_decimal"].where(setter["efficiency_decimal"] > 0)
+    lifetime = setter["lifetime_years"].where(setter["lifetime_years"] > 0)
+    lrmc = (
+        setter["fuel_price"] / efficiency
+        + setter["om_cost_usd_per_mw_per_yr"] / hours
+        + setter["capital_cost_usd_per_mw"]
+        * capital_recovery_factor(rate, lifetime)
+        / hours
+    )
+    floors = pd.DataFrame(
+        {
+            "price_floor_lrmc": lrmc.fillna(0.0),
+            "price_setter_technology": setter["technology"],
+        }
+    ).join(setter[_REGION_YEAR_KEYS])
+    out = scenarios.merge(floors, on=_REGION_YEAR_KEYS, how="left")
+    out["price_floor_lrmc"] = out["price_floor_lrmc"].fillna(0.0)
+    out["power_price_excarbon_usd_per_mwh"] = np.maximum(
+        out["power_price_excarbon_usd_per_mwh"], out["price_floor_lrmc"]
+    )
+    return out
