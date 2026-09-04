@@ -36,9 +36,9 @@ BASE_RATE = 0.07
 SPREAD = 0.01
 GREENIUM = 0.005
 
-BROWN_RATE = 0.08          # base + penalty
-GREEN_RATE = BASE_RATE      # base, no greenium (shipped)
-GREENIUM_RATE = 0.065       # base - greenium (pre-ruling-12)
+BROWN_RATE = 0.08  # base + penalty
+GREEN_RATE = BASE_RATE  # base, no greenium (shipped)
+GREENIUM_RATE = 0.065  # base - greenium (pre-ruling-12)
 
 G_BROWN = 0.0
 G_GREEN = 0.02
@@ -175,15 +175,13 @@ def test_the_rate_and_the_growth_rate_never_disagree(
     A group paying the carbon PENALTY must also grow at the BROWN rate, and a
     group at the base rate must grow at the GREEN rate - under either carrier.
     """
-    rate, growth = _rate_and_growth(
-        technology, alignment_type, spread_carrier=carrier
-    )
+    rate, growth = _rate_and_growth(technology, alignment_type, spread_carrier=carrier)
 
     pays_penalty = rate == pytest.approx(BROWN_RATE)
     grows_brown = growth == pytest.approx(G_BROWN)
-    assert pays_penalty == grows_brown, (
-        f"{technology}/{alignment_type} under {carrier}: rate {rate}, g {growth}"
-    )
+    assert (
+        pays_penalty == grows_brown
+    ), f"{technology}/{alignment_type} under {carrier}: rate {rate}, g {growth}"
 
 
 # ── the shipped carrier is unchanged, bitwise ──────────────────────────────
@@ -221,9 +219,7 @@ def test_a_greenium_under_the_technology_carrier_is_ignored():
 
 def test_the_greenium_is_live_under_the_alignment_carrier():
     """Under the ablation arm it does what it always did: -50 bps."""
-    rate, _ = _rate_and_growth(
-        "SolarCap - PV", "aligned_low_carbon", **PRE_RULING
-    )
+    rate, _ = _rate_and_growth("SolarCap - PV", "aligned_low_carbon", **PRE_RULING)
     assert rate == pytest.approx(GREENIUM_RATE)
 
 

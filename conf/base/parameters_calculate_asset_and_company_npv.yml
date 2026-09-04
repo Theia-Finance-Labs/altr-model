@@ -18,7 +18,13 @@ dcf:
   # (the parameter below exists only for the measurement arm). Set the penalty
   # to 0 for a uniform rate. Added to the scenario base rate above; a negative value is
   # rejected rather than applied as a discount.
-  brown_discount_spread: 0.01   # +100 bps carbon risk premium
+  # DEFAULT 0 by owner ruling (2026-09-05): the transition scenario already
+  # prices transition risk into the cash flows, so a rate premium on top counts
+  # it twice and, because a higher rate compresses every later-year cash flow,
+  # it NARROWS the measured signal (WITCH: by 22%, R6) whatever the provider.
+  # Kept as a documented sensitivity: 0.01 restores the Bolton & Kacperczyk
+  # +100 bps carbon premium on the brown technologies.
+  brown_discount_spread: 0.0    # +0 bps; 0.01 = the measured carbon-premium sensitivity
 
   # The GREENIUM leg, restored as a MEASURABLE parameter rather than a deleted
   # one. It ships at 0.0 and is IGNORED (with a warning) under the shipped
@@ -44,9 +50,8 @@ dcf:
   #                      carbon` paid the fossil penalty AND grew at the fossil
   #                      0%, while oil classed `misaligned_low_carbon` collected
   #                      the greenium.
-  # NOTE the tier-2 carbontech annuity is NOT governed by this switch — it
-  # still selects on `alignment_type` under either carrier, pending its own
-  # ruling.
+  # The tier-2 carbontech annuity rides the same carrier (owner ruling
+  # 2026-09-05); `carbontech_annuity` below switches that tier off.
   spread_carrier: "technology"  # "technology" | "alignment_type"
 
   # WHICH assets pay it — by TECHNOLOGY, not by `alignment_type`. Alignment is a
@@ -105,14 +110,15 @@ dcf:
   #   2. DECLINING BUT PROFITABLE CARBONTECH — TV = a finite annuity over
   #      brown_remaining_life_years, reflecting a fossil asset's finite remaining
   #      economic life in a transition, rather than a growing perpetuity.
-  #      NOTE: this tier is the ONE place in the valuation stage still selecting
-  #      on `alignment_type`, after rulings 12 and 13 moved the discount spread
-  #      and the terminal growth rate onto `brown_technologies`. Left as-is
-  #      pending its own ruling.
+  #      Selects on the same brown carrier as the spread and the growth rate
+  #      (technology list, owner ruling 2026-09-05; alignment only under the
+  #      legacy carrier). `carbontech_annuity: False` drops the tier: a
+  #      profitable brown asset then takes the perpetuity at its 0% growth.
   #   3. EVERYTHING ELSE — standard Gordon Growth perpetuity, unchanged.
   stranding_aware_tv: True
   stranding_consecutive_years: 3   # a company weathers 1-2 bad years, not N in a row
   brown_remaining_life_years: 10   # annuity horizon for tier 2
+  carbontech_annuity: True         # False = no tier 2 (measured as R20)
 
   # ── Bounded negative terminal value (decision D3) ───────────────────────────
   # What a NON-stranded group losing money at the horizon is worth. Tier 3 above

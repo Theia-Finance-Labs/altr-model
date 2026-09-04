@@ -135,6 +135,7 @@ def compute_yearly_npv_trajectories(
     stranding_aware_tv: bool = False,
     stranding_consecutive_years: int = 3,
     brown_remaining_life_years: int = 10,
+    carbontech_annuity: bool = True,
     negative_tv_method: str = "perpetuity",
     tv_anchor_policy: str = "raw",
 ) -> pd.DataFrame:
@@ -192,8 +193,8 @@ def compute_yearly_npv_trajectories(
                 fossil rate, while oil classed `misaligned_low_carbon` collected
                 the greenium. Kept reachable for the ablation batch so the
                 ruling's effect can be measured rather than asserted.
-            NOTE the tier-2 carbontech annuity below is NOT governed by this
-            switch — it still selects on `alignment_type` under either carrier,
+            The tier-2 carbontech annuity below rides the same carrier since
+            the 2026-09-05 ruling (it used to select on `alignment_type`),
             pending its own ruling.
         stranding_aware_tv: Three-tier terminal value instead of a single
             perpetuity (Gourdel 2024):
@@ -656,8 +657,17 @@ def compute_yearly_npv_trajectories(
             )
             # Declining but still profitable carbontech: a finite annuity over
             # the remaining economic life instead of a perpetuity.
+            # Tier 2 selects on the SAME brown carrier as the discount spread and
+            # the terminal growth rate (owner ruling 2026-09-05: technology list
+            # under the shipped carrier, alignment only under the legacy one).
+            # `carbontech_annuity: False` drops the tier: a profitable brown
+            # asset then takes the tier-3 perpetuity at its own (zero) growth.
             annuity = (
-                has_terminal_fcff & ~is_stranded & is_carbontech & (final_fcff > 0)
+                has_terminal_fcff
+                & ~is_stranded
+                & is_brown_group
+                & (final_fcff > 0)
+                & bool(carbontech_annuity)
             )
             annuity_factor = np.zeros(n_groups, dtype=np.float64)
             for t in range(1, brown_remaining_life_years + 1):

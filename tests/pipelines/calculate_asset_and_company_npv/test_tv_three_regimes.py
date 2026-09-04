@@ -503,6 +503,90 @@ def test_negative_terminal_fcff_without_stranding_takes_a_bounded_negative():
     unbounded = _gordon(
         normalised_fcff * (1.0 + green_growth), R_GREEN, green_growth, 3
     )
-    assert expected > unbounded, (
-        "D3 resolved: bounded above the unbounded perpetuity it replaces"
+    assert (
+        expected > unbounded
+    ), "D3 resolved: bounded above the unbounded perpetuity it replaces"
+
+
+# ── tier 2 on the brown carrier, and its off-switch (owner ruling 2026-09-05) ─
+
+
+def _profitable_group(technology, alignment_type):
+    """A single asset with positive, flat FCFF to the horizon: tier 2 or tier 3."""
+    years = list(range(2025, 2031))
+    return pd.DataFrame(
+        {
+            "asset_id": "A",
+            "asset_name": "A",
+            "company_id": "C",
+            "company_name": "C",
+            "is_synthetic": False,
+            "scenario_geography": "EU",
+            "sector": "Power",
+            "technology": technology,
+            "alignment_type": alignment_type,
+            "trajectory_type": "baseline",
+            "scenario_type": "baseline",
+            "year": years,
+            "FCFF": 100.0,
+            "EBITDA": 100.0,
+            "decom_cost": 0.0,
+            "capex_total": 0.0,
+            "asset_trajectory": 10.0,
+        }
     )
+
+
+def _tv(frame, **overrides):
+    kwargs = dict(
+        discount_rate=0.07,
+        terminal_growth_rate=0.02,
+        terminal_method="perpetuity",
+        terminal_growth_rate_brown=0.0,
+        terminal_growth_rate_green=0.02,
+        terminal_normalization_window=1,
+        brown_technologies=["CoalCap - w/o CCS"],
+        spread_carrier="technology",
+        stranding_aware_tv=True,
+        brown_remaining_life_years=10,
+        negative_tv_method="bounded_annuity",
+        tv_anchor_policy="raw",
+    )
+    kwargs.update(overrides)
+    out = compute_yearly_npv_trajectories(frame, None, **kwargs)
+    return float(out["terminal_value"].sum())
+
+
+def test_a_brown_technology_takes_the_annuity_whatever_its_alignment_label():
+    coal_aligned = _tv(_profitable_group("CoalCap - w/o CCS", "aligned_low_carbon"))
+    coal_misaligned = _tv(
+        _profitable_group("CoalCap - w/o CCS", "misaligned_high_carbon")
+    )
+    assert coal_aligned == pytest.approx(coal_misaligned)
+    # a 10-year annuity at 7% is worth less than the 0%-growth perpetuity (1/0.07)
+    perpetuity = _tv(
+        _profitable_group("CoalCap - w/o CCS", "aligned_low_carbon"),
+        carbontech_annuity=False,
+    )
+    assert coal_aligned < perpetuity
+
+
+def test_a_green_technology_with_a_high_carbon_alignment_label_is_not_annuitised():
+    """Offshore wind classed misaligned_high_carbon used to take the fossil annuity."""
+    wind = _tv(_profitable_group("WindCap - Offshore", "misaligned_high_carbon"))
+    wind_off = _tv(
+        _profitable_group("WindCap - Offshore", "misaligned_high_carbon"),
+        carbontech_annuity=False,
+    )
+    assert wind == pytest.approx(wind_off)  # the switch cannot touch a non-brown asset
+    coal = _tv(_profitable_group("CoalCap - w/o CCS", "misaligned_high_carbon"))
+    assert wind > coal  # 2% growth perpetuity vs 10-year annuity
+
+
+def test_the_legacy_alignment_carrier_still_selects_tier_two_on_alignment():
+    wind_legacy = _tv(
+        _profitable_group("WindCap - Offshore", "misaligned_high_carbon"),
+        spread_carrier="alignment_type",
+    )
+    wind_tech = _tv(_profitable_group("WindCap - Offshore", "misaligned_high_carbon"))
+    assert wind_legacy < wind_tech

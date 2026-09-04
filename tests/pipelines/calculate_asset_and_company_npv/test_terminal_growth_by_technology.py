@@ -150,14 +150,12 @@ def test_an_empty_technology_list_grows_everything_at_the_clean_rate():
 # ── what this ruling deliberately did NOT move ──────────────────────────────
 
 
-def test_the_tier_2_annuity_still_selects_on_alignment_type():
-    """OUTSIDE ruling 13, pinned so a later ruling has a before-picture.
+def test_the_tier_2_annuity_now_selects_on_the_technology_carrier():
+    """Owner ruling 2026-09-05: tier 2 rides the same carrier as rulings 12/13.
 
-    `WindCap - Offshore` classed `misaligned_high_carbon` is now green for its
-    growth rate and green for its discount rate, and still takes the CARBONTECH
-    annuity - "declining but profitable carbontech" reads the alignment. The
-    exact annuity arithmetic is asserted, so the tier moving to the technology
-    list (which would send this frame to the 20x perpetuity instead) fails here.
+    `WindCap - Offshore` classed `misaligned_high_carbon` used to take the
+    CARBONTECH annuity off its alignment label. It is not on the brown list, so
+    it now takes the 2%-growth perpetuity like every other clean asset.
     """
     out = compute_yearly_npv_trajectories(
         _frame(
@@ -169,12 +167,11 @@ def test_the_tier_2_annuity_still_selects_on_alignment_type():
     )
 
     normalised_fcff = (300.0 + 200.0 + 100.0) / 3.0
-    annuity_factor = (1.0 - (1.0 + R_GREEN) ** -10) / R_GREEN
     expected = (
         normalised_fcff
-        * (1.0 + G_GREEN)  # ruling 13: the clean rate, where it used to be 0%
-        * annuity_factor
-        * (1.0 + R_GREEN) ** -4  # base 2046 -> final 2050
+        * (1.0 + G_GREEN)
+        / (R_GREEN - G_GREEN)
+        * (1.0 + R_GREEN) ** -5  # base 2046 -> final 2050, perpetuity at final+1
     )
 
     assert float(out["terminal_value"].sum()) == pytest.approx(expected)

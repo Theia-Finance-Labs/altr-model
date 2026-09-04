@@ -150,9 +150,9 @@ def test_a_negative_spread_is_rejected():
 
 
 def test_a_zero_spread_gives_every_technology_the_base_rate():
-    assert _rate("CoalCap - w/o CCS", "misaligned_high_carbon", brown_discount_spread=0.0) == (
-        BASE_RATE
-    )
+    assert _rate(
+        "CoalCap - w/o CCS", "misaligned_high_carbon", brown_discount_spread=0.0
+    ) == (BASE_RATE)
 
 
 def test_an_empty_technology_list_charges_nobody(caplog):
