@@ -1339,6 +1339,31 @@ confirm which AR6 variable feeds `fuel_price` per provider and re-export, no
 golden re-pin. Recorded for Bertrand with the capacity-factor defect.
 
 ---
+## R18 — terminal value switched off entirely (`dcf.terminal_value.method: none`), vs R14
+
+Owner question 2026-09-05: "terminal value — do we really need it?" Full WITCH
+universe, ruled configuration, terminal value removed (which also removes the
+stranding tiers and the bounded negative TV, since they live inside the method).
+
+| | R14 (TV on) | R18 (TV off) | TV's contribution |
+| --- | --- | --- | --- |
+| Σ baseline NPV | 3,667 bn | 2,647 bn | **+1,020 bn (28%)** |
+| Σ late&sudden NPV | 340 bn | −1,930 bn | **+2,270 bn** |
+| Headline signal | −3,327 bn | **−4,577 bn** | TV narrows the signal by 1,249 bn (37.6%) |
+| Baseline-negative companies | 57.8% | 58.0% | — |
+| Signal by technology | wind +1,124 / PV +882 / hydro +545 / nuclear +454 | wind +560 / PV +539 / hydro +369 / nuclear +308 | fossil unchanged (coal −3,750 → −3,717) |
+
+Reading: the terminal value is where the transition's *winners* hold their
+value — every post-2050 cash flow of hydro (70-year life), nuclear, wind and PV.
+Removing it is a 26-year truncation that writes those off while leaving the
+fossil loss intact (bounded or zero TV already), so the signal widens by more
+than a third and the "renewables gain" half of the story disappears. The tiers
+and smoothing around the anchor were measured earlier at under half a percent;
+the TV as such is not a refinement but a quarter of the baseline and the entire
+upside of the shock pathway. **Keep it** (owner ruling 2026-09-05: keep, with the
+three-year smoothing).
+
+---
 ## December table completion
 
 > **Scope note on the row numbering.** The brief asked for rows **1–15**. The
