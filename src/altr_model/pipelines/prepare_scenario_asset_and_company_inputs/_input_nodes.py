@@ -875,9 +875,10 @@ DISCOUNT_RATE_BOUNDS = (0.0, 1.0)
 
 def capital_recovery_factor(rate: float, lifetime_years) -> float:
     """Annuity factor: the equal yearly payment that repays one unit of capital
-    over ``lifetime_years`` at ``rate`` -- r(1+r)^L / ((1+r)^L - 1)."""
-    growth = (1.0 + rate) ** lifetime_years
-    return rate * growth / (growth - 1.0)
+    over ``lifetime_years`` at ``rate`` -- r(1+r)^L / ((1+r)^L - 1), evaluated
+    in the overflow-free form r / (1 - (1+r)^-L) so that any finite positive
+    lifetime, however long, returns a finite number (it tends to r)."""
+    return rate / -np.expm1(-lifetime_years * np.log1p(rate))
 
 
 def apply_lrmc_price_floor(

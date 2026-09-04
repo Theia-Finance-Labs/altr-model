@@ -203,9 +203,12 @@ capture_price:
 #         family names are aggregate parents and are never candidates; an
 #         unusable row is skipped for the next largest) and its LRMC = fuel/efficiency + O&M/hours + capex x CRF /
 #         hours from its own scenario columns. One market price: every
-#         technology in the region-year receives it. Where the IAM price is
-#         already above the LRMC (IMAGE, AIM/CGE) nothing changes. The raw IAM
-#         price stays in `scenario_price`; `price_floor_lrmc` reports the floor.
+#         technology in the region-year receives it. Wherever the IAM price is
+#         already above the LRMC the floor is inert - most region-years under
+#         IMAGE and AIM/CGE, few under WITCH, MESSAGE or REMIND. The raw IAM
+#         price stays in `scenario_price`; `price_floor_lrmc` reports the floor
+#         (0.0 where none applies) and `price_setter_technology` names the
+#         setter on the scenario surface (it is not carried to the assets).
 # discount_rate: the REAL cost of capital in the capital-recovery annuity
 #         (r(1+r)^L / ((1+r)^L - 1) over the technology's lifetime). It is the
 #         one assumption; 8% is on the high side for a utility, 5-6% is common,
