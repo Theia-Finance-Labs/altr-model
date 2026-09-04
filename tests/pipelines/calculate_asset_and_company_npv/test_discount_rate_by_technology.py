@@ -64,8 +64,7 @@ def _rate(technology: str, alignment_type: str, **overrides) -> float:
     out = compute_yearly_npv_trajectories(
         frame,
         **{
-            "discount_rate_baseline": BASE_RATE,
-            "discount_rate_shock": BASE_RATE,
+            "discount_rate": BASE_RATE,
             "brown_discount_spread": SPREAD,
             "brown_technologies": BROWN_TECHNOLOGIES,
             **overrides,

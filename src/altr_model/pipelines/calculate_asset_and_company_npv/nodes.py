@@ -106,7 +106,9 @@ def _horizon_attributes_per_group(
         how="left",
         validate="many_to_one",
     )
-    unmatched = int(merged.drop(columns=HORIZON_ATTRIBUTE_KEYS).isna().all(axis=1).sum())
+    unmatched = int(
+        merged.drop(columns=HORIZON_ATTRIBUTE_KEYS).isna().all(axis=1).sum()
+    )
     if unmatched:
         logger.warning(
             "%d of %d valuation groups have no asset_horizon_attributes row; "
@@ -120,8 +122,7 @@ def _horizon_attributes_per_group(
 def compute_yearly_npv_trajectories(
     asset_earnings: pd.DataFrame,
     asset_horizon_attributes: pd.DataFrame | None = None,
-    discount_rate_baseline: float = 0.07,
-    discount_rate_shock: float = 0.08,
+    discount_rate: float = 0.07,
     terminal_growth_rate: float = 0.02,
     terminal_method: str = "perpetuity",
     terminal_growth_rate_brown: float | None = None,
@@ -288,19 +289,21 @@ def compute_yearly_npv_trajectories(
 
     unresolved_mask = npv_data["scenario_type"].isna()
     if unresolved_mask.any():
-        unresolved_asset_ids = sorted(npv_data.loc[unresolved_mask, "asset_id"].unique())
+        unresolved_asset_ids = sorted(
+            npv_data.loc[unresolved_mask, "asset_id"].unique()
+        )
         raise ValueError(
             f"{len(unresolved_asset_ids)} asset(s) have no scenario_type resolved "
             f"and cannot be included in NPV: {unresolved_asset_ids}"
         )
 
     def get_discount_rate(scenario_type):
-        if scenario_type == "baseline":
-            return discount_rate_baseline
-        elif scenario_type == "target":
-            return discount_rate_shock
-        else:
-            raise ValueError(f"Invalid scenario type: {scenario_type}")
+        # One real rate for both pathways (owner ruling 2026-09-05): transition
+        # risk enters through the cash flows and the technology spread, never
+        # through a pathway-specific rate.
+        if scenario_type in ("baseline", "target"):
+            return discount_rate
+        raise ValueError(f"Invalid scenario type: {scenario_type}")
 
     # map() over the column instead of a row-wise apply: same per-value
     # semantics (including the raise above), one Python call per row instead
@@ -548,7 +551,9 @@ def compute_yearly_npv_trajectories(
     if spread_carrier == SPREAD_CARRIER_ALIGNMENT:
         is_brown_group = is_carbontech
     elif "technology" in npv_data.columns:
-        is_brown_group = npv_data["technology"].iloc[last_idx].isin(brown_set).to_numpy()
+        is_brown_group = (
+            npv_data["technology"].iloc[last_idx].isin(brown_set).to_numpy()
+        )
     else:
         is_brown_group = np.zeros(n_groups, dtype=bool)
 
@@ -737,9 +742,7 @@ def compute_yearly_npv_trajectories(
                 still_standing = np.zeros(n_groups, dtype=bool)
             else:
                 still_standing = np.isfinite(capacity) & (capacity > 0)
-            run_out_tv = np.where(
-                past_lifetime & still_standing, -np.inf, run_out_tv
-            )
+            run_out_tv = np.where(past_lifetime & still_standing, -np.inf, run_out_tv)
 
             # BOTH arms unavailable — past its lifetime, still standing, and no
             # scrap price to quote the exit at. There is no number to put on
@@ -797,11 +800,7 @@ def compute_yearly_npv_trajectories(
             int((~has_terminal_fcff).sum()),
             int(
                 (
-                    has_terminal_fcff
-                    & ~stranded
-                    & ~annuity
-                    & ~negative
-                    & ~perpetuity
+                    has_terminal_fcff & ~stranded & ~annuity & ~negative & ~perpetuity
                 ).sum()
             ),
         )
@@ -847,9 +846,9 @@ def compute_yearly_npv_trajectories(
         terminal_rows = npv_data.iloc[anchors].copy()
         terminal_rows["year"] = final_year[add_groups] + 1
         terminal_rows["years_from_base"] = group_years_to_terminal
-        terminal_rows["discount_factor"] = (
-            1.0 + final_discount_rate[add_groups]
-        ) ** (-group_years_to_terminal)
+        terminal_rows["discount_factor"] = (1.0 + final_discount_rate[add_groups]) ** (
+            -group_years_to_terminal
+        )
         terminal_rows["pv_fcff"] = 0.0  # No FCFF in terminal year
         terminal_rows["terminal_value"] = terminal_value[add_groups]
         terminal_rows["yearly_npv"] = terminal_value[add_groups]

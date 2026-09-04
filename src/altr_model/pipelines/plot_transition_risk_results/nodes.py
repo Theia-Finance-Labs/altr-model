@@ -144,13 +144,9 @@ def plot_late_sudden_trajectories(
                 )
                 years = pivot.index.to_numpy()
                 if "late_sudden_requested" in pivot.columns:
-                    series_map["original"] = pivot[
-                        "late_sudden_requested"
-                    ].to_numpy()
+                    series_map["original"] = pivot["late_sudden_requested"].to_numpy()
                 if "late_sudden_realized" in pivot.columns:
-                    series_map["adjusted"] = pivot[
-                        "late_sudden_realized"
-                    ].to_numpy()
+                    series_map["adjusted"] = pivot["late_sudden_realized"].to_numpy()
                 # Also support baseline and target if present (optional)
                 if "baseline" in pivot.columns:
                     series_map["baseline"] = pivot["baseline"].to_numpy()
@@ -633,9 +629,7 @@ def plot_staggered_shock(
                 .to_numpy(dtype=float)
             )
             company_vals_adjusted = (
-                (
-                    comp_pvt.get("late_sudden_realized")
-                )
+                (comp_pvt.get("late_sudden_realized"))
                 .reindex(comp_pvt.index)
                 .to_numpy(dtype=float)
             )
@@ -1299,7 +1293,9 @@ def build_reporting_views(
     asset_explain = asset_earnings_validated.query(
         "trajectory_type == 'latesudden'"
     ).merge(
-        asset_npv_validated[[*owner_keys, "latesudden_discount_rate", "latesudden_npv"]],
+        asset_npv_validated[
+            [*owner_keys, "latesudden_discount_rate", "latesudden_npv"]
+        ],
         on=owner_keys,
         how="left",
         validate="many_to_one",
@@ -1344,8 +1340,7 @@ def build_reporting_views(
         asset_explain.assign(
             PV_Revenue=asset_explain["revenue"] * asset_explain["discount_factor"],
             PV_VarCost=asset_explain["var_cost"] * asset_explain["discount_factor"],
-            PV_FixedCost=asset_explain["fixed_cost"]
-            * asset_explain["discount_factor"],
+            PV_FixedCost=asset_explain["fixed_cost"] * asset_explain["discount_factor"],
         )
         .groupby(owner_keys, dropna=False, as_index=False)
         .agg(
@@ -1525,7 +1520,13 @@ def plot_earnings_inner_workings(
         # series into one panel.
         owner_slice_keys = [
             k
-            for k in ("asset_id", "company_id", "scenario_geography", "sector", "technology")
+            for k in (
+                "asset_id",
+                "company_id",
+                "scenario_geography",
+                "sector",
+                "technology",
+            )
             if k in view_asset_explain.columns and k in asset.index
         ]
         slice_mask = pd.Series(True, index=view_asset_explain.index)
@@ -1910,9 +1911,9 @@ def export_reporting_tables(
     )
 
     # Add methodology notes
-    company_summary["methodology_notes"] = (
-        f"Real {reporting_params.get('base_year', 2010)} USD, {reporting_params.get('basis', 'real')} basis"
-    )
+    company_summary[
+        "methodology_notes"
+    ] = f"Real {reporting_params.get('base_year', 2010)} USD, {reporting_params.get('basis', 'real')} basis"
 
     # Select final columns
     summary_columns = [
@@ -1966,15 +1967,13 @@ def export_reporting_tables(
             "parameter": [
                 "basis",
                 "base_year",
-                "discount_rate_baseline",
-                "discount_rate_shock",
+                "discount_rate",
                 "materiality_threshold",
             ],
             "value": [
                 reporting_params.get("basis", "real"),
                 reporting_params.get("base_year", 2010),
-                "7%",  # From valuation model
-                "8%",  # From valuation model
+                "7%",  # dcf.discount_rate, one rate for both pathways
                 reporting_params.get("materiality_threshold_usd", 1_000_000),
             ],
         }
@@ -2166,9 +2165,7 @@ def plot_asset_financial_trajectories(
     ]
 
     plots_created = 0
-    total_asset_company_pairs = (
-        merged[existing_group_cols].drop_duplicates().shape[0]
-    )
+    total_asset_company_pairs = merged[existing_group_cols].drop_duplicates().shape[0]
 
     logger.info(
         f"Creating trajectory plots for {total_asset_company_pairs} asset-company-geography groups..."
@@ -2176,9 +2173,7 @@ def plot_asset_financial_trajectories(
 
     for i, (_, asset_data) in enumerate(merged.groupby(existing_group_cols)):
         if i % 50 == 0:  # Log progress every 50 groups
-            logger.info(
-                f"Progress: {i}/{total_asset_company_pairs} groups processed"
-            )
+            logger.info(f"Progress: {i}/{total_asset_company_pairs} groups processed")
 
         # Get asset metadata
         first_row = asset_data.iloc[0]

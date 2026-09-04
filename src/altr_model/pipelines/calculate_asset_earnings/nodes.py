@@ -16,6 +16,9 @@ CARBON_COST_METHODS = ("full_ef", "differential_ef")
 
 # Constants
 HOURS_PER_YEAR = 8760
+#: `dispatch_floor` methods: "none" pays the average price; "own_variable_cost"
+#: bounds a fuelled plant's captured price below by its fuel cost per MWh.
+DISPATCH_FLOOR_METHODS = ("none", "own_variable_cost")
 
 
 # A physical asset can legitimately appear once per owner. Every time-series
@@ -82,8 +85,14 @@ def validate_asset_trajectories(
 
     assets = asset_trajectories.copy()
 
-    frozen_keys = ["asset_id", "company_id", "scenario_geography", "sector",
-                   "technology", "year"]
+    frozen_keys = [
+        "asset_id",
+        "company_id",
+        "scenario_geography",
+        "sector",
+        "technology",
+        "year",
+    ]
     if (
         frozen_capacity_at_retirement is not None
         and not frozen_capacity_at_retirement.empty
@@ -155,9 +164,10 @@ def validate_asset_trajectories(
         "NuclearCap",
         "GeothermalCap",
     }
-    renewable_missing = assets["technology"].isin(renewable_technologies) & assets[
-        "emission_factor"
-    ].isna()
+    renewable_missing = (
+        assets["technology"].isin(renewable_technologies)
+        & assets["emission_factor"].isna()
+    )
     assets.loc[renewable_missing, "emission_factor"] = 0.0
 
     duplicate_years = assets.duplicated(ASSET_SERIES_KEYS + ["year"], keep=False)
@@ -465,6 +475,7 @@ def compute_ops_block(
     apply_continued_om_baseline: bool = False,
     apply_continued_om_shock: bool = True,
     carbon_cost_method: str = "full_ef",
+    dispatch_floor: str = "none",
 ) -> pd.DataFrame:
     """
     Node 8: Compute operations block (production, costs, revenue, EBITDA).
@@ -662,9 +673,36 @@ def compute_ops_block(
         ops_data.get("capture_price_factor", pd.Series(1.0, index=ops_data.index)),
         errors="coerce",
     ).fillna(1.0)
-    ops_data["revenue"] = (
-        ops_data["Q"] * ops_data["power_price_excarbon_usd_per_mwh"] * capture
-    )
+    captured_price = ops_data["power_price_excarbon_usd_per_mwh"] * capture
+    # Rational dispatch: a plant with fuel only runs in hours where the price
+    # covers that fuel, so the hours the scenario says it runs carry a price of
+    # at least its own variable cost. Bounds the captured price below by
+    # fuel_cost_per_mwh for fuelled plant; never pays fixed costs, never
+    # touches a plant without fuel.
+    if dispatch_floor not in DISPATCH_FLOOR_METHODS:
+        raise ValueError(
+            f"dispatch_floor must be one of {DISPATCH_FLOOR_METHODS}; got {dispatch_floor!r}"
+        )
+    if dispatch_floor == "own_variable_cost":
+        fuelled = ops_data["fuel_cost_per_mwh"] > 0
+        captured_price = captured_price.where(
+            ~fuelled, np.fmax(captured_price, ops_data["fuel_cost_per_mwh"])
+        )
+        logger.info(
+            "Dispatch floor: %s of %s fuelled asset-year rows lifted to their own "
+            "variable cost",
+            int(
+                (
+                    fuelled
+                    & (
+                        ops_data["power_price_excarbon_usd_per_mwh"] * capture
+                        < ops_data["fuel_cost_per_mwh"]
+                    )
+                ).sum()
+            ),
+            int(fuelled.sum()),
+        )
+    ops_data["revenue"] = ops_data["Q"] * captured_price
 
     # EBITDA
     ops_data["EBITDA"] = (
@@ -807,7 +845,9 @@ def write_asset_horizon_attributes(asset_panel_enriched: pd.DataFrame) -> pd.Dat
 
     logger.info("Writing asset horizon attributes...")
 
-    present = [c for c in HORIZON_ATTRIBUTE_COLUMNS if c in asset_panel_enriched.columns]
+    present = [
+        c for c in HORIZON_ATTRIBUTE_COLUMNS if c in asset_panel_enriched.columns
+    ]
     absent = [c for c in HORIZON_ATTRIBUTE_COLUMNS if c not in present]
     if absent:
         logger.warning(
@@ -832,7 +872,6 @@ def write_asset_horizon_attributes(asset_panel_enriched: pd.DataFrame) -> pd.Dat
 
     logger.info("Asset horizon attributes: %s asset series", len(horizon))
 
-
     # POSTCONDITION, not input validation: the groupby(...).tail(1) above
     # already guarantees one row per key group, so this can only fire if a
     # future refactor replaces that collapse with something weaker. Input
@@ -842,9 +881,7 @@ def write_asset_horizon_attributes(asset_panel_enriched: pd.DataFrame) -> pd.Dat
     duplicated = horizon.duplicated(subset=ASSET_SERIES_KEYS)
     if bool(duplicated.any()):
         offenders = (
-            horizon.loc[duplicated, ASSET_SERIES_KEYS]
-            .head(5)
-            .to_dict("records")
+            horizon.loc[duplicated, ASSET_SERIES_KEYS].head(5).to_dict("records")
         )
         raise ValueError(
             f"asset_horizon_attributes holds {int(duplicated.sum())} duplicate "
