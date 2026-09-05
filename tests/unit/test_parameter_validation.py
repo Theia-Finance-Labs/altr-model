@@ -119,6 +119,18 @@ def test_a_misspelled_retirement_timing_raises():
         effective_retirement_year(2030, alignment_year=2038, retirement_timing="Natural")
 
 
+def test_a_misspelled_terminal_method_raises():
+    """`perpetutiy` used to fall silently into the "none" (zero-TV) arm.
+
+    `terminal_method` selects `if terminal_method == "perpetuity": ...`; a typo
+    took the else, which writes no terminal value at all -- every asset's NPV
+    quietly collapsed to the forecast-window sum. It was the one behaviour switch
+    the node did not validate.
+    """
+    with pytest.raises(ValueError, match=r"dcf\.terminal_value\.method"):
+        compute_yearly_npv_trajectories(_earnings_frame(), terminal_method="perpetutiy")
+
+
 # ── the legal values still work ─────────────────────────────────────────────
 
 
