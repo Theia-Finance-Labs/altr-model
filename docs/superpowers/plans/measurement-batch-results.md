@@ -1429,6 +1429,40 @@ first "defect" and reframes several readings above:
   carbon (~1.8× on WITCH).
 
 ---
+## R21 — the tree at its shipped defaults after the 2026-09-05 rulings and the ultrareview fixes (`bcfda0c`)
+
+Owner instruction: "once the commit lands, rerun the results to test impact
+after all those changes." R21 ran on `bcfda0c` (five hardening fixes from the
+multi-agent review, incl. the price ramp hard-switching lifetime and scrap
+rather than blending them) with every ruling of the week at its default:
+replacement CapEx deleted, decom 15%, one 7% rate, brown spread 0, tier-2
+annuity removed, price ramp on; LRMC floor, dispatch floor and capture factors
+off.
+
+| | R20 (pre-ultrareview, tier 2 off) | **R21 (shipped tree)** | Old golden (015a861) |
+| --- | --- | --- | --- |
+| Σ baseline NPV | 3,701 bn | **3,701 bn** | −421 bn |
+| Σ late&sudden NPV | −422 bn | **−422 bn** | −4,402 bn |
+| Headline signal | −4,124 bn | **−4,123 bn** | −3,980 bn |
+| vs R20 | — | +0.4 bn (0.0%), 2 sign flips, 12 companies moved > 10% | |
+| vs golden | | **−143 bn (−3.6%)**, 149 sign flips, 2,563 moved > 10%, median `npv_change` −1.54 → −0.96 | |
+
+Reading: the ultrareview fixes are numerically neutral at fleet level — the
+ramp's physics hard-switch touches a dozen assets' decommissioning inside the
+ramp window and nothing else; the tier-2 deletion, the single rate and the
+generation helper are exact no-ops as intended. Against the December-era golden
+the week's rulings net to a signal 3.6% larger with a baseline that moved from
+−0.4 tn to +3.7 tn: the capex-layer removal lifted the levels, the spread going
+to zero widened the signal (−765), natural retirement narrowed it (+532), decom
+at 15% narrowed it (+287). Per-technology: onshore wind −188, coal −170, gas
++168 vs the golden. This is the configuration to re-pin the golden to — **after**
+the fuel-price question (section F) is settled, since every absolute number
+here still carries that double count.
+
+Disk after R21: 2.3 GB free — below the runner's guard; clear
+`data/07_model_output` before the next arm.
+
+---
 ## December table completion
 
 > **Scope note on the row numbering.** The brief asked for rows **1–15**. The
