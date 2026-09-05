@@ -787,6 +787,23 @@ def apply_decom_cost_fraction(
 # solar reaching the same by ~15%. The model otherwise pays every technology the
 # regional annual-average price. Dispatchable plant takes the residual so that
 # generation-weighted capture prices still average to the system price.
+def _generation_mwh(frame: pd.DataFrame) -> pd.Series:
+    """Generation per scenario row: ``scenario_pathway`` × ``scenario_capacity_factor`` × 8760.
+
+    For power technologies the extract's ``scenario_pathway`` is CAPACITY in MW
+    (labelled MWh/yr — a unit-label bug in ar6_scenario_workflow, commit
+    a93e2e1, confirmed 2026-09-05), so generation has to be rebuilt from it.
+    Where the capacity factor is absent or unusable the pathway is used as
+    delivered, which keeps hand-built frames without that column meaningful.
+    """
+    pathway = pd.to_numeric(frame["scenario_pathway"], errors="coerce")
+    if "scenario_capacity_factor" not in frame.columns:
+        return pathway
+    cf = pd.to_numeric(frame["scenario_capacity_factor"], errors="coerce")
+    cf = cf.where(np.isfinite(cf) & (cf > 0))
+    return (pathway * cf * 8760).where(cf.notna(), pathway)
+
+
 CAPTURE_PRICE_METHODS = ("none", "hirth2013")
 CAPTURE_WIND_TECHNOLOGIES = ("WindCap - Onshore", "WindCap - Offshore")
 CAPTURE_SOLAR_TECHNOLOGIES = ("SolarCap - PV",)
@@ -817,17 +834,19 @@ def compute_capture_price_factor(
 
     techs = set(scenarios["technology"].unique())
     parents = {t for t in techs if any(o.startswith(t + " - ") for o in techs)}
-    leaf = scenarios[~scenarios["technology"].isin(parents)]
-    total = leaf.groupby(_REGION_YEAR_KEYS)["scenario_pathway"].sum().rename("total")
+    leaf = scenarios[~scenarios["technology"].isin(parents)].assign(
+        _generation=lambda f: _generation_mwh(f)
+    )
+    total = leaf.groupby(_REGION_YEAR_KEYS)["_generation"].sum().rename("total")
     wind = (
         leaf[leaf["technology"].isin(CAPTURE_WIND_TECHNOLOGIES)]
-        .groupby(_REGION_YEAR_KEYS)["scenario_pathway"]
+        .groupby(_REGION_YEAR_KEYS)["_generation"]
         .sum()
         .rename("wind")
     )
     solar = (
         leaf[leaf["technology"].isin(CAPTURE_SOLAR_TECHNOLOGIES)]
-        .groupby(_REGION_YEAR_KEYS)["scenario_pathway"]
+        .groupby(_REGION_YEAR_KEYS)["_generation"]
         .sum()
         .rename("solar")
     )
@@ -967,7 +986,8 @@ def apply_lrmc_price_floor(
         values = pd.to_numeric(base[column], errors="coerce")
         return values.where(np.isfinite(values) & (values > 0))
 
-    generation = usable("scenario_pathway")
+    generation = _generation_mwh(base)
+    generation = generation.where(np.isfinite(generation) & (generation > 0))
     hours = usable("scenario_capacity_factor") * HOURS_PER_YEAR
     lrmc = (
         usable("fuel_price") / usable("efficiency_decimal")

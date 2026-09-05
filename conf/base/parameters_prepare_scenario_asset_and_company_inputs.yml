@@ -173,7 +173,9 @@ decom_cost_fraction_of_capex: 0.15
 # share to 0.5-0.8 at 30%, solar reaching the same by ~15%.
 # method: "none" (DEFAULT) - factor 1.0 everywhere, the validated behaviour.
 #         "hirth2013" - wind and PV take intercept + slope x (their generation
-#         share of the region-year, leaf technologies only), floored at
+#         share of the region-year's GENERATION, rebuilt as capacity x capacity
+#         factor because `scenario_pathway` is capacity for power; leaf
+#         technologies only), floored at
 #         vre_floor; every other technology takes the residual that keeps the
 #         generation-weighted capture price equal to the system price, capped
 #         at dispatchable_cap. Shares come from the scenario's own pathways, so
@@ -209,7 +211,9 @@ capture_price:
 #         capacity factors collapse to ~1e-12 for phased-out thermal plant while
 #         their generation columns do not - a marts inconsistency flagged
 #         2026-09-04.) The price
-#         setter is the largest thermal generator with positive generation whose
+#         setter is the largest thermal generator (generation = capacity x
+#         capacity factor: the extract's `scenario_pathway` is CAPACITY for power
+#         technologies, mislabelled MWh/yr) with positive generation whose
 #         cost inputs are all finite and positive (coal/gas/oil/biomass; the bare
 #         family names are aggregate parents and are never candidates; an
 #         unusable row is skipped for the next largest) and its LRMC = fuel/efficiency + O&M/hours + capex x CRF /

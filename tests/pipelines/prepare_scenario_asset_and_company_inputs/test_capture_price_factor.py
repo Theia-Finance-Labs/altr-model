@@ -118,3 +118,14 @@ def test_input_frame_is_not_mutated():
     before = frame.copy()
     compute_capture_price_factor(frame, HIRTH)
     pd.testing.assert_frame_equal(frame, before)
+
+
+def test_shares_are_generation_weighted_not_capacity_weighted():
+    """The extract's pathway is CAPACITY for power (unit-label bug, a93e2e1):
+    100 MW of wind at 0.3 and 100 MW of coal at 0.7 is a 30% wind share, not 50%."""
+    frame = _region({"CoalCap - w/o CCS": 100.0, "WindCap - Onshore": 100.0})
+    frame["scenario_capacity_factor"] = [0.7, 0.3]
+    out = compute_capture_price_factor(frame, HIRTH).set_index("technology")[
+        "capture_price_factor"
+    ]
+    assert out["WindCap - Onshore"] == pytest.approx(1.1 - 1.5 * 0.3)

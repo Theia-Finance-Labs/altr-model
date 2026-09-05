@@ -1390,6 +1390,45 @@ bounded negative TV uses it as the fallback horizon where a lifetime is missing.
 Owner to rule on `carbontech_annuity` default (True today).
 
 ---
+## Correction (2026-09-05) — the capacity factor is not a bug; the pathway column is capacity
+
+Bertrand's trace of `ar6_scenario_workflow` (branch `results_v2`) settles the
+first "defect" and reframes several readings above:
+
+- **Near-zero target capacity factors are faithful to raw AR6.** WITCH's
+  EN_NPi2020_500 reports ~1e-10 EJ/yr of unabated coal generation against 852 GW
+  of standing capacity in China: the model keeps the plant on the books and
+  stops running it. `capacity_factor = generation / (capacity × 8760)` is then
+  correctly ~4e-12. Our shock pathway — plant standing, no output, fixed O&M,
+  no carbon — is WITCH's own mothballing, not a data error. It is a **modelling
+  question** (is mothballed-but-standing the stranding we want to value, and
+  should a plant with zero output pay decommissioning rather than sit?), not a
+  marts fix.
+- **`scenario_pathway` is CAPACITY (MW) for power technologies** since commit
+  `a93e2e1` ("change scenario_pathway to be in capacity"), still labelled
+  `MWh/yr` — the real bug, a unit label. Consequences for this document: every
+  reading of the pathway as generation is wrong — "coal generation stays at 97%
+  of baseline" (L, F) is *capacity*; "MESSAGE keeps Chinese unabated coal flat"
+  (P) is flat capacity with collapsing output, i.e. the same mothballing; the
+  Hirth capture-factor shares in S / R15 were **capacity shares**, which
+  overstate VRE (low capacity factor) and so pushed the VRE factors too far
+  toward the floor; and the LRMC price setter in L / R16 was the largest
+  thermal *fleet*, not the largest generator. The code now rebuilds generation
+  as capacity × capacity factor in both helpers (`_generation_mwh`); the
+  measured R15/R16 numbers stand as measured but would move somewhat on a
+  re-run (capture is off by default; the floor's setter is coal in China either
+  way).
+- **POLES carbon prices** ($5,500–10,700/t) come from AR6 unchanged; **AIM/CGE
+  target carbon = 0** is a downstream default in `crispy-datamodels`
+  (`int_scn_kapsarc_financial_surface_defaults.sql`) for a missing value —
+  still a data-quality flag, now with an owner.
+- **Section F (carbon inside target fuel prices) is NOT covered by the trace**
+  and remains the open, larger issue: whether `ar6_scenario_workflow` adds
+  carbon to `fuel_price`, or WITCH/IMAGE/REMIND report carbon-inclusive
+  `Price|Primary Energy|*`, decides whether the shock pathway double-counts
+  carbon (~1.8× on WITCH).
+
+---
 ## December table completion
 
 > **Scope note on the row numbering.** The brief asked for rows **1–15**. The
