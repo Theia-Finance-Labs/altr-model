@@ -661,3 +661,16 @@ def test_a_missing_baseline_is_a_value_error_even_with_null_scenario_names():
     )
     with pytest.raises(ValueError, match="not in the scenarios frame"):
         apply_lrmc_price_floor(frame, LRMC, "MISSING")
+
+
+def test_the_price_setter_is_the_largest_generator_not_the_largest_fleet():
+    """90 MW of coal at 0.5 generates less than 100 MW of gas at 0.6."""
+    gas = dict(fuel=30.0, eff=0.55, om=32_000.0, capex=820_000.0, cf=0.6, life=35.0)
+    frame = pd.DataFrame(
+        [
+            _row("CoalCap - w/o CCS", 25.0, 90.0, **{**COAL, "cf": 0.5}),
+            _row("GasCap - w/o CCS", 25.0, 100.0, **gas),
+        ]
+    )
+    out = apply_lrmc_price_floor(frame, LRMC, "S")
+    assert (out["price_setter_technology"] == "GasCap - w/o CCS").all()
