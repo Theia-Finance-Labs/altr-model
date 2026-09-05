@@ -36,7 +36,7 @@ order and the first match wins:
 | Tier | Condition | Terminal value |
 | --- | --- | --- |
 | Stranded | FCFF <= 0 for the last `stranding_consecutive_years` years | **Zero.** A rational owner exercises the abandonment option rather than funding perpetual losses |
-| Declining carbontech | Still profitable, technology in `dcf.brown_technologies` (alignment only under the legacy carrier); `dcf.carbontech_annuity: False` drops the tier | A **finite annuity** over `brown_remaining_life_years`, reflecting a fossil asset's finite remaining economic life in a transition |
+| Declining carbontech | Still profitable, technology in `dcf.brown_technologies` (alignment only under the legacy carrier); **off by default** (`dcf.carbontech_annuity: False`, owner ruling 2026-09-05 — measured at 1.1% of the signal); `True` restores it | A **finite annuity** over `brown_remaining_life_years`, reflecting a fossil asset's finite remaining economic life in a transition |
 | Bounded negative | Terminal FCFF negative, not stranded | Under `negative_tv_method: "bounded_annuity"` (shipped), the **least bad of two exits**; see below |
 | Everything else | — | The standard Gordon-growth **perpetuity** |
 
