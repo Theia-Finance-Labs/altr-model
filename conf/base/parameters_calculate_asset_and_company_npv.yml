@@ -112,13 +112,17 @@ dcf:
   #      economic life in a transition, rather than a growing perpetuity.
   #      Selects on the same brown carrier as the spread and the growth rate
   #      (technology list, owner ruling 2026-09-05; alignment only under the
-  #      legacy carrier). `carbontech_annuity: False` drops the tier: a
-  #      profitable brown asset then takes the perpetuity at its 0% growth.
+  #      legacy carrier). OFF by default (`carbontech_annuity: False`): a
+  #      profitable brown asset takes the perpetuity at its 0% growth.
   #   3. EVERYTHING ELSE — standard Gordon Growth perpetuity, unchanged.
   stranding_aware_tv: True
   stranding_consecutive_years: 3   # a company weathers 1-2 bad years, not N in a row
   brown_remaining_life_years: 10   # annuity horizon for tier 2
-  carbontech_annuity: True         # False = no tier 2 (measured as R20)
+  # DEFAULT False by owner ruling (2026-09-05): dropping the tier costs 1.1% of
+  # the signal and adds 43 bn to the baseline (R20 vs R19) — few brown assets are
+  # still profitable at the horizon, and for those the 10-year annuity and the
+  # 0%-growth perpetuity are close. True restores the three-tier structure.
+  carbontech_annuity: False        # True = tier-2 annuity on (measured as R19)
 
   # ── Bounded negative terminal value (decision D3) ───────────────────────────
   # What a NON-stranded group losing money at the horizon is worth. Tier 3 above
