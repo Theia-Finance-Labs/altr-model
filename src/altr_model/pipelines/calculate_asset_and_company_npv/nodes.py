@@ -135,7 +135,6 @@ def compute_yearly_npv_trajectories(
     stranding_aware_tv: bool = False,
     stranding_consecutive_years: int = 3,
     brown_remaining_life_years: int = 10,
-    carbontech_annuity: bool = True,
     negative_tv_method: str = "perpetuity",
     tv_anchor_policy: str = "raw",
 ) -> pd.DataFrame:
@@ -193,23 +192,21 @@ def compute_yearly_npv_trajectories(
                 fossil rate, while oil classed `misaligned_low_carbon` collected
                 the greenium. Kept reachable for the ablation batch so the
                 ruling's effect can be measured rather than asserted.
-            The tier-2 carbontech annuity below rides the same carrier since
-            the 2026-09-05 ruling (it used to select on `alignment_type`),
-            pending its own ruling.
-        stranding_aware_tv: Three-tier terminal value instead of a single
-            perpetuity (Gourdel 2024):
+            No consumer of `alignment_type` remains in this stage under the
+            shipped carrier (the former tier-2 carbontech annuity was removed
+            on 2026-09-05, measured at 1.1% of the signal).
+        stranding_aware_tv: Two-tier terminal value instead of a single
+            perpetuity (after Gourdel 2024):
             1. STRANDED — FCFF <= 0 for the last N years: TV = 0. A rational
                owner exercises the abandonment option rather than funding
                perpetual losses.
-            2. DECLINING BUT PROFITABLE CARBONTECH — TV = a finite annuity over
-               brown_remaining_life_years, not a perpetuity, because a fossil
-               asset in transition has a finite remaining economic life.
-            3. EVERYTHING ELSE — the standard Gordon Growth perpetuity.
+            2. EVERYTHING ELSE — the standard Gordon Growth perpetuity (a
+               negative anchor is bounded by ``negative_tv_method``).
         stranding_consecutive_years: How many consecutive loss-making years at
             the end of the horizon count as stranded. A company can weather one
             or two bad years; N in a row is a closure.
-        brown_remaining_life_years: Annuity horizon for tier 2, and the
-            fallback horizon for the bounded negative branch below.
+        brown_remaining_life_years: Fallback remaining-life horizon for the
+            bounded negative branch below, where an asset carries no lifetime.
         negative_tv_method: What a NON-stranded group with a negative terminal
             FCFF is worth.
             "perpetuity" — Gordon Growth on the negative cash flow, which is
@@ -255,10 +252,8 @@ def compute_yearly_npv_trajectories(
         logger.info(
             "Stranding-aware TV ENABLED (Gourdel 2024): "
             "stranded (>=%d consecutive loss years) -> TV=0; "
-            "declining carbontech (profitable) -> %d-year finite annuity; "
-            "greentech -> standard Gordon Growth perpetuity",
+            "everything else -> Gordon Growth perpetuity",
             stranding_consecutive_years,
-            brown_remaining_life_years,
         )
 
     if negative_tv_method == "bounded_annuity":
@@ -655,34 +650,8 @@ def compute_yearly_npv_trajectories(
             stranded = (
                 has_terminal_fcff & is_stranded & has_full_history & window_is_complete
             )
-            # Declining but still profitable carbontech: a finite annuity over
-            # the remaining economic life instead of a perpetuity.
-            # Tier 2 selects on the SAME brown carrier as the discount spread and
-            # the terminal growth rate (owner ruling 2026-09-05: technology list
-            # under the shipped carrier, alignment only under the legacy one).
-            # `carbontech_annuity: False` drops the tier: a profitable brown
-            # asset then takes the tier-3 perpetuity at its own (zero) growth.
-            annuity = (
-                has_terminal_fcff
-                & ~is_stranded
-                & is_brown_group
-                & (final_fcff > 0)
-                & bool(carbontech_annuity)
-            )
-            annuity_factor = np.zeros(n_groups, dtype=np.float64)
-            for t in range(1, brown_remaining_life_years + 1):
-                annuity_factor = annuity_factor + 1.0 / (1.0 + final_discount_rate) ** t
-            # The annuity factor already discounts t=1..N back to final_year, so
-            # discount from final_year (not final_year + 1) to base_year.
-            annuity_tv = (
-                terminal_cf
-                * annuity_factor
-                * (1.0 + final_discount_rate) ** (-(final_year - base_year_per_group))
-            )
-            terminal_value = np.where(annuity, annuity_tv, terminal_value)
         else:
             stranded = np.zeros(n_groups, dtype=bool)
-            annuity = np.zeros(n_groups, dtype=bool)
 
         # BOUNDED NEGATIVE — a non-stranded group losing money at the horizon.
         # Gordon Growth on a negative terminal FCFF is unbounded below: the
@@ -780,7 +749,6 @@ def compute_yearly_npv_trajectories(
         perpetuity = (
             has_terminal_fcff
             & ~stranded
-            & ~annuity
             & ~negative
             & (final_discount_rate > g_effective)
         )
@@ -798,21 +766,16 @@ def compute_yearly_npv_trajectories(
         # how to reproduce it on any other input.
         logger.info(
             "Terminal-value tier census of %d groups: %d stranded (TV=0), "
-            "%d carbontech annuity, %d bounded negative, %d perpetuity, "
+            "%d bounded negative, %d perpetuity, "
             "%d with no terminal anchor, %d perpetuity-clause rejects (r <= g, "
             "or rate/growth undefined; no terminal value) — assignments before the "
             "operating-anchor retirement override",
             n_groups,
             int(stranded.sum()),
-            int(annuity.sum()),
             int(negative.sum()),
             int(perpetuity.sum()),
             int((~has_terminal_fcff).sum()),
-            int(
-                (
-                    has_terminal_fcff & ~stranded & ~annuity & ~negative & ~perpetuity
-                ).sum()
-            ),
+            int((has_terminal_fcff & ~stranded & ~negative & ~perpetuity).sum()),
         )
 
         # RETIRED AT THE HORIZON — the hard case, and it outranks every tier

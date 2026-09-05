@@ -19,8 +19,8 @@ them to one carrier on purpose: an asset must not be brown for its discount
 rate and green for its growth rate. The tests below assert that property
 directly, alongside the three misfires the alignment carrier brings back.
 
-The tier-2 carbontech annuity is NOT governed by this switch - it still selects
-on `alignment_type` under either carrier, pending its own ruling.
+No other consumer of the carrier remains: the tier-2 carbontech annuity was
+removed on 2026-09-05.
 """
 
 import pandas as pd

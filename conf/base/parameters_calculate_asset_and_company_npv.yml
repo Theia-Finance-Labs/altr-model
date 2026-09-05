@@ -50,8 +50,8 @@ dcf:
   #                      carbon` paid the fossil penalty AND grew at the fossil
   #                      0%, while oil classed `misaligned_low_carbon` collected
   #                      the greenium.
-  # The tier-2 carbontech annuity rides the same carrier (owner ruling
-  # 2026-09-05); `carbontech_annuity` below switches that tier off.
+  # No other consumer of the carrier remains (the tier-2 carbontech annuity
+  # was removed on 2026-09-05, measured at 1.1% of the signal).
   spread_carrier: "technology"  # "technology" | "alignment_type"
 
   # WHICH assets pay it — by TECHNOLOGY, not by `alignment_type`. Alignment is a
@@ -104,25 +104,17 @@ dcf:
     normalization_window: 3
 
   # ── Stranding-aware terminal value (Gourdel 2024) ───────────────────────────
-  # Three tiers instead of one perpetuity for every asset:
+  # Two tiers instead of one perpetuity for every asset:
   #   1. STRANDED — FCFF <= 0 for the last N years: TV = 0. A rational owner
   #      exercises the abandonment option rather than funding perpetual losses.
-  #   2. DECLINING BUT PROFITABLE CARBONTECH — TV = a finite annuity over
-  #      brown_remaining_life_years, reflecting a fossil asset's finite remaining
-  #      economic life in a transition, rather than a growing perpetuity.
-  #      Selects on the same brown carrier as the spread and the growth rate
-  #      (technology list, owner ruling 2026-09-05; alignment only under the
-  #      legacy carrier). OFF by default (`carbontech_annuity: False`): a
-  #      profitable brown asset takes the perpetuity at its 0% growth.
-  #   3. EVERYTHING ELSE — standard Gordon Growth perpetuity, unchanged.
+  #   2. EVERYTHING ELSE — standard Gordon Growth perpetuity (a brown asset at
+  #      its 0% growth), with a negative anchor bounded by `negative_tv_method`.
+  # A third tier — a finite annuity for a still-profitable fossil asset — was
+  # REMOVED on 2026-09-05 (owner ruling): it moved the signal by 1.1% (R20 vs
+  # R19) and few brown assets are profitable at the horizon anyway.
   stranding_aware_tv: True
   stranding_consecutive_years: 3   # a company weathers 1-2 bad years, not N in a row
-  brown_remaining_life_years: 10   # annuity horizon for tier 2
-  # DEFAULT False by owner ruling (2026-09-05): dropping the tier costs 1.1% of
-  # the signal and adds 43 bn to the baseline (R20 vs R19) — few brown assets are
-  # still profitable at the horizon, and for those the 10-year annuity and the
-  # 0%-growth perpetuity are close. True restores the three-tier structure.
-  carbontech_annuity: False        # True = tier-2 annuity on (measured as R19)
+  brown_remaining_life_years: 10   # fallback remaining life for the bounded negative TV where an asset carries none
 
   # ── Bounded negative terminal value (decision D3) ───────────────────────────
   # What a NON-stranded group losing money at the horizon is worth. Tier 3 above

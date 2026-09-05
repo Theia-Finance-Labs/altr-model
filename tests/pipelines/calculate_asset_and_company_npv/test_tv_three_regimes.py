@@ -243,45 +243,6 @@ def test_stranding_is_what_zeroes_it_not_the_missing_terminal_fcff_gate():
 # ---------------------------------------------------------------------------
 
 
-def test_declining_but_profitable_carbontech_takes_the_finite_annuity():
-    """Tier 2 fires, and pays exactly the 10-year annuity, not a perpetuity.
-
-    FCFF declines 500 -> 100 but never turns negative, so the group is not
-    stranded; it is carbontech with a positive normalised terminal FCFF, which
-    is precisely the annuity tier's condition.
-
-    The annuity factor discounts t = 1..10 back to the FINAL year, so the
-    outer discounting runs from the final year (2050 - 2046 = 4 periods), not
-    from the terminal year - one period fewer than the perpetuity below.
-    """
-    out = _run(_frame([500.0, 400.0, 300.0, 200.0, 100.0], CARBONTECH))
-
-    normalised_fcff = (300.0 + 200.0 + 100.0) / 3.0
-    expected = (
-        normalised_fcff  # x (1 + g_brown), and g_brown is 0
-        * _annuity_factor(R_BROWN, SHIPPED["brown_remaining_life_years"])
-        * (1.0 + R_BROWN) ** -4
-    )
-
-    assert _terminal_value(out) == pytest.approx(expected)
-    assert len(_terminal_rows(out)) == 1
-
-
-def test_the_annuity_is_strictly_smaller_than_the_perpetuity_it_replaces():
-    """Hand-off proof for tier 2: it is a discount, not a relabelling.
-
-    A finite 10-year annuity on the same cash flow must be worth less than the
-    growing perpetuity the group would otherwise receive. If the tier were
-    quietly falling through to tier 3, these two would be equal.
-    """
-    frame = _frame([500.0, 400.0, 300.0, 200.0, 100.0], CARBONTECH)
-
-    annuity = _terminal_value(_run(frame))
-    perpetuity = _terminal_value(_run(frame, stranding_aware_tv=False))
-
-    assert NO_TERMINAL_VALUE < annuity < perpetuity
-
-
 # ---------------------------------------------------------------------------
 # Tier 3 - PERPETUITY, and the growth rate it uses
 # ---------------------------------------------------------------------------
@@ -298,34 +259,6 @@ def test_healthy_greentech_takes_the_perpetuity_at_the_green_growth_rate():
 
     assert _terminal_value(out) == pytest.approx(expected)
     assert _terminal_rows(out)["terminal_growth_rate"].eq(green_growth).all()
-
-
-def test_healthy_carbontech_never_reaches_the_perpetuity_tier():
-    """`g_real_brown` is unreachable for a profitable carbontech asset.
-
-    Tier 2 catches it first. This is not a defect - the tiers are ordered
-    deliberately - but it does mean `g_real_brown: 0.0` is close to inert
-    under the shipped configuration, since inside the annuity it appears only
-    as `x (1 + 0)`. Recorded so a future change to `g_real_brown` is not
-    expected to move a healthy fossil asset's valuation: it will not.
-    """
-    frame = _frame([100.0, 110.0, 120.0], CARBONTECH)
-
-    at_zero_growth = _terminal_value(_run(frame))
-    at_five_percent_growth = _terminal_value(
-        _run(frame, terminal_growth_rate_brown=0.05)
-    )
-
-    normalised_fcff = (100.0 + 110.0 + 120.0) / 3.0
-    annuity = (
-        normalised_fcff
-        * _annuity_factor(R_BROWN, SHIPPED["brown_remaining_life_years"])
-        * (1.0 + R_BROWN) ** -2
-    )
-    assert at_zero_growth == pytest.approx(annuity)
-    # Not equal, because g still scales terminal_cf - but it is the ANNUITY
-    # that moved, at 1.05x, not a Gordon denominator at 1 / (r - g).
-    assert at_five_percent_growth == pytest.approx(annuity * 1.05)
 
 
 def test_carbontech_takes_the_brown_growth_rate_once_the_tiers_are_off():
@@ -508,11 +441,10 @@ def test_negative_terminal_fcff_without_stranding_takes_a_bounded_negative():
     ), "D3 resolved: bounded above the unbounded perpetuity it replaces"
 
 
-# ── tier 2 on the brown carrier, and its off-switch (owner ruling 2026-09-05) ─
+# ── no tier-2 annuity: a profitable brown asset takes its 0%-growth perpetuity ─
 
 
 def _profitable_group(technology, alignment_type):
-    """A single asset with positive, flat FCFF to the horizon: tier 2 or tier 3."""
     years = list(range(2025, 2031))
     return pd.DataFrame(
         {
@@ -553,40 +485,17 @@ def _tv(frame, **overrides):
         tv_anchor_policy="raw",
     )
     kwargs.update(overrides)
-    out = compute_yearly_npv_trajectories(frame, None, **kwargs)
-    return float(out["terminal_value"].sum())
+    return float(
+        compute_yearly_npv_trajectories(frame, None, **kwargs)["terminal_value"].sum()
+    )
 
 
-def test_a_brown_technology_takes_the_annuity_whatever_its_alignment_label():
+def test_a_profitable_brown_asset_takes_the_zero_growth_perpetuity_whatever_its_label():
     coal_aligned = _tv(_profitable_group("CoalCap - w/o CCS", "aligned_low_carbon"))
     coal_misaligned = _tv(
         _profitable_group("CoalCap - w/o CCS", "misaligned_high_carbon")
     )
-    assert coal_aligned == pytest.approx(coal_misaligned)
-    # a 10-year annuity at 7% is worth less than the 0%-growth perpetuity (1/0.07)
-    perpetuity = _tv(
-        _profitable_group("CoalCap - w/o CCS", "aligned_low_carbon"),
-        carbontech_annuity=False,
-    )
-    assert coal_aligned < perpetuity
-
-
-def test_a_green_technology_with_a_high_carbon_alignment_label_is_not_annuitised():
-    """Offshore wind classed misaligned_high_carbon used to take the fossil annuity."""
     wind = _tv(_profitable_group("WindCap - Offshore", "misaligned_high_carbon"))
-    wind_off = _tv(
-        _profitable_group("WindCap - Offshore", "misaligned_high_carbon"),
-        carbontech_annuity=False,
-    )
-    assert wind == pytest.approx(wind_off)  # the switch cannot touch a non-brown asset
-    coal = _tv(_profitable_group("CoalCap - w/o CCS", "misaligned_high_carbon"))
-    assert wind > coal  # 2% growth perpetuity vs 10-year annuity
-
-
-def test_the_legacy_alignment_carrier_still_selects_tier_two_on_alignment():
-    wind_legacy = _tv(
-        _profitable_group("WindCap - Offshore", "misaligned_high_carbon"),
-        spread_carrier="alignment_type",
-    )
-    wind_tech = _tv(_profitable_group("WindCap - Offshore", "misaligned_high_carbon"))
-    assert wind_legacy < wind_tech
+    assert coal_aligned == pytest.approx(coal_misaligned)
+    # same anchor, brown at 0% growth vs green at 2%: (1/0.07) vs (1.02/0.05)
+    assert wind / coal_aligned == pytest.approx((1.02 / 0.05) / (1.0 / 0.07), rel=1e-9)
