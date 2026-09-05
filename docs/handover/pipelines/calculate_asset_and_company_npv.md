@@ -25,9 +25,9 @@ switched off (`terminal_value.method: "none"`) or computed from a **normalized**
 terminal FCFF — the mean of the last `terminal_value.normalization_window` years
 rather than the final year alone, so that one transition-period CapEx spike
 cannot decide an asset's entire terminal value. Switching the method to
-`"none"` disables the **whole** three-tier structure below - the stranding
-zero and the carbontech annuity included, not just the perpetuity - because
-the tier split lives inside the perpetuity method.
+`"none"` disables the **whole** tier structure below - the stranding zero
+included, not just the perpetuity - because the tier split lives inside the
+perpetuity method.
 
 With `dcf.stranding_aware_tv` on (the default), that terminal FCFF is routed
 through a tiered split rather than a single perpetuity. The tiers are checked in
@@ -36,7 +36,6 @@ order and the first match wins:
 | Tier | Condition | Terminal value |
 | --- | --- | --- |
 | Stranded | FCFF <= 0 for the last `stranding_consecutive_years` years | **Zero.** A rational owner exercises the abandonment option rather than funding perpetual losses |
-| Declining carbontech | Still profitable, technology in `dcf.brown_technologies` (alignment only under the legacy carrier); **off by default** (`dcf.carbontech_annuity: False`, owner ruling 2026-09-05 — measured at 1.1% of the signal); `True` restores it | A **finite annuity** over `brown_remaining_life_years`, reflecting a fossil asset's finite remaining economic life in a transition |
 | Bounded negative | Terminal FCFF negative, not stranded | Under `negative_tv_method: "bounded_annuity"` (shipped), the **least bad of two exits**; see below |
 | Everything else | — | The standard Gordon-growth **perpetuity** |
 
@@ -110,17 +109,18 @@ both directions — 30 offshore-wind, 21 nuclear and 7 biomass assets paid the
 fossil penalty and grew at the fossil rate, while 3 oil assets collected the
 greenium.
 
-The tier-2 carbontech annuity rides the same carrier since the 2026-09-05
-ruling (`dcf.carbontech_annuity` switches that tier off); no consumer of
-`alignment_type` remains in this stage under the shipped carrier.
+No consumer of `alignment_type` remains in this stage under the shipped
+carrier: the former tier-2 carbontech annuity (a finite annuity for a fossil
+asset still profitable at the horizon) was removed on 2026-09-05, having
+measured at 1.1% of the signal.
 
 !!! note "Tier census — check it on your own run"
 
     The tiers are mutually exclusive and their counts sum to the group total,
     and the first node logs the census at `INFO` on every run, so the split is
     checkable rather than assumed. On the committed fixture slice, of 1,442
-    asset-trajectory groups: **80 stranded, 33 carbontech annuity, 2 bounded
-    negative, 625 perpetuity, and 702 with no terminal anchor at all** (a
+    asset-trajectory groups: **80 stranded, 2 bounded negative, 658 perpetuity,
+    and 702 with no terminal anchor at all** (a
     terminal FCFF of exactly zero). Separately, 804 of the 1,442 stand at zero
     capacity at the horizon and are zeroed by `tv_anchor_policy: "operating"`
     ahead of whatever tier claimed them.

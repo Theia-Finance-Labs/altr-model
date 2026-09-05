@@ -199,8 +199,8 @@ def test_positive_fcff_keeps_todays_perpetuity_exactly():
     assert bounded == pytest.approx(today)
 
 
-def test_positive_carbontech_keeps_todays_annuity_exactly():
-    """The tier-2 carbontech annuity is untouched too."""
+def test_positive_carbontech_keeps_todays_perpetuity_exactly():
+    """A profitable brown asset is untouched by the bounded-negative method."""
     frame = _frame_with_exit_data([5.0, 5.0, 5.0], CARBONTECH)
 
     bounded = _terminal_value(_run(frame, **BOUNDED))

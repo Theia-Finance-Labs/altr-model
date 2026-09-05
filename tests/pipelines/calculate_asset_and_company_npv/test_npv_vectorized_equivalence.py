@@ -157,7 +157,6 @@ def _reference_compute(
             final_year = int(g["year"].iloc[-1])
             final_discount_rate = g.iloc[-1]["discount_rate"]
 
-            is_carbontech = first_row.get("technology", "") in brown_set
             if first_row.get("technology", "") in brown_set:
                 g_effective = g_brown
             else:
@@ -181,21 +180,6 @@ def _reference_compute(
                 if is_stranded:
                     tv_tier = "stranded"
                     terminal_value = 0.0
-                elif is_carbontech and final_fcff > 0:
-                    tv_tier = "finite_annuity"
-                    annuity_factor = sum(
-                        1 / (1 + final_discount_rate) ** t
-                        for t in range(1, brown_remaining_life_years + 1)
-                    )
-                    terminal_cf = final_fcff * (1 + g_effective)
-                    terminal_value_nominal = terminal_cf * annuity_factor
-                    years_from_base_to_final = final_year - base_year
-                    terminal_discount_factor = (1 + final_discount_rate) ** (
-                        -years_from_base_to_final
-                    )
-                    terminal_value = float(
-                        terminal_value_nominal * terminal_discount_factor
-                    )
                 else:
                     tv_tier = "perpetuity"
             elif not stranding_aware_tv:
