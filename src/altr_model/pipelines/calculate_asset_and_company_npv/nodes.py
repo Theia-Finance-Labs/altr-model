@@ -26,6 +26,11 @@ NEGATIVE_TV_METHODS = ("perpetuity", "bounded_annuity")
 #: What the terminal anchor is allowed to see.
 TV_ANCHOR_POLICIES = ("raw", "operating")
 
+#: How the terminal value is computed. "none" writes no terminal value at all;
+#: "perpetuity" is the Gordon-growth tier split below. A typo used to take the
+#: "none" arm silently, collapsing every NPV to its forecast-window sum.
+TERMINAL_METHODS = ("none", "perpetuity")
+
 #: The asset-series grain `asset_horizon_attributes` is keyed on — the same
 #: `ASSET_SERIES_KEYS` the earnings stage writes it at. The valuation group keys
 #: add name and classification columns, all functionally dependent on these six,
@@ -244,6 +249,7 @@ def compute_yearly_npv_trajectories(
     # each was reached by an `if x == "a": ... else: ...`, so a misspelling did
     # not raise — it silently took the other arm. Reject at the top of the node
     # instead, naming the conf key and every legal value.
+    validate_choice("dcf.terminal_value.method", terminal_method, TERMINAL_METHODS)
     validate_choice("dcf.negative_tv_method", negative_tv_method, NEGATIVE_TV_METHODS)
     validate_choice("dcf.tv_anchor_policy", tv_anchor_policy, TV_ANCHOR_POLICIES)
     validate_choice("dcf.spread_carrier", spread_carrier, SPREAD_CARRIERS)

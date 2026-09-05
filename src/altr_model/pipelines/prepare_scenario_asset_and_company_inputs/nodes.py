@@ -45,6 +45,13 @@ FINANCIAL_SURFACE_COLUMNS = [
     "price_floor_lrmc",
 ]
 
+#: The plant's physical constants, not part of the market environment. Under the
+#: price ramp these hard-switch baseline->target at the shock year rather than
+#: taking a fractional interim value (owner ruling 2026-09-05): a lifetime and a
+#: scrap-per-MW (which feeds decom_cost) are properties of the asset, not prices
+#: that transition. Everything else in FINANCIAL_SURFACE_COLUMNS blends.
+STRUCTURAL_SURFACE_COLUMNS = frozenset({"lifetime_years", "scrap_usd_per_mw"})
+
 
 def prepare_scenario_pathways(
     downloaded_scenarios: pd.DataFrame,

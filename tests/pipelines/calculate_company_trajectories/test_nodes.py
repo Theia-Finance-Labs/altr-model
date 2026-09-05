@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pytest
 from altr_model.pipelines.calculate_company_trajectories.nodes import (
     calculate_aligned_decreasing_technology_transition,
     calculate_aligned_increasing_technology_transition,
@@ -132,3 +133,38 @@ def test_explicit_alignment_case_nodes_switch_financial_surface_at_shock():
     assert set(from_shock["scenario_type"]) == {"target"}
     assert set(from_shock["scenario"]) == {"Target"}
     assert set(from_shock["capacity_factor"]) == {2.0}
+
+
+def test_price_ramp_nullified_by_equal_years_warns():
+    """price_ramp=True with alignment_year == shock_year silently disables the ramp.
+
+    `ramping = price_ramp and alignment_year > shock_year` is False when the two
+    years are equal, so the surfaces hard-switch at the shock year and reinstate
+    the near-term price windfall the ramp exists to remove. The operator asked
+    for a ramp and got the hard switch; that has to be said out loud.
+    """
+    with pytest.warns(UserWarning, match="price_ramp"):
+        _combined(price_ramp=True, alignment_year=2033)  # shock_year is 2033
+
+
+def test_price_ramp_hard_switches_structural_columns_but_blends_the_market():
+    """The plant's physics switch at the shock year even under the ramp.
+
+    Owner ruling 2026-09-05: `price_ramp` blends the market environment (prices,
+    costs, capacity factor, capture) linearly across [shock, alignment], but the
+    structural constants -- `lifetime_years` and `scrap_usd_per_mw` (which feeds
+    `decom_cost`) -- take no fractional interim value; they hard-switch
+    baseline->target at the shock year, exactly as they do with the ramp off.
+    """
+    output = _combined(price_ramp=True, alignment_year=2037)
+    requested = output[output["trajectory_type"].eq("late_sudden_requested")]
+
+    for column in ("scrap_usd_per_mw", "lifetime_years"):
+        by_year = requested.groupby("year")[column].apply(set)
+        assert by_year[2032] == {1.0}, f"{column} baseline before shock"
+        assert by_year[2033] == {2.0}, f"{column} target from shock (no blend)"
+        assert by_year[2035] == {2.0}, f"{column} still target mid-window (would be 1.5 if blended)"
+
+    # the market surface still blends: capacity_factor moves 1.0 -> 2.0 over the window
+    cf = requested.groupby("year")["capacity_factor"].apply(set)
+    assert cf[2035] == {1.5}

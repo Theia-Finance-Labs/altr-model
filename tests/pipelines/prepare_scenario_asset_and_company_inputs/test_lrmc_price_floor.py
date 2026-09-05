@@ -674,3 +674,34 @@ def test_the_price_setter_is_the_largest_generator_not_the_largest_fleet():
     )
     out = apply_lrmc_price_floor(frame, LRMC, "S")
     assert (out["price_setter_technology"] == "GasCap - w/o CCS").all()
+
+
+def test_missing_prices_lifted_to_the_floor_are_counted_in_the_log(caplog):
+    """A NaN delivered price silently becomes the floor -- the count must be logged.
+
+    `np.fmax(NaN, floor) == floor`, so a row the IAM gave no price for is turned
+    into a revenue-bearing plant at the floor. That is the documented behaviour
+    ("a missing price takes the floor"), but unlike the dispatch floor and the
+    carbon charge it left no trace. The lift now reports how many rows it
+    fabricated a price for, so a run cannot silently manufacture revenue.
+    """
+    import logging
+
+    frame = pd.DataFrame(
+        [
+            _row("CoalCap - w/o CCS", 25.3, 70.0, **COAL),  # sets the EU-2030 floor
+            _row("WindCap - Onshore", float("nan"), 30.0),  # no delivered price
+        ]
+    )
+    with caplog.at_level(logging.INFO):
+        out = apply_lrmc_price_floor(frame, LRMC, "S")
+
+    # the NaN price was replaced by the positive floor ...
+    lifted = out.set_index("technology").loc["WindCap - Onshore"]
+    assert lifted["power_price_excarbon_usd_per_mwh"] == pytest.approx(
+        lifted["price_floor_lrmc"]
+    )
+    assert lifted["price_floor_lrmc"] > 0
+    # ... and the lift was counted in the log (1 of the 2 floored rows).
+    assert "missing delivered price" in caplog.text.lower()
+    assert "1 of 2" in caplog.text

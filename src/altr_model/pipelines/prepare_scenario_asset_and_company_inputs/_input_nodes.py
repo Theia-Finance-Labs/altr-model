@@ -1027,6 +1027,18 @@ def apply_lrmc_price_floor(
     )
     has_floor = out["price_floor_lrmc"] > 0
     price = out["power_price_excarbon_usd_per_mwh"]
+    # `np.fmax(NaN, floor) == floor`: a row the IAM gave no price for is lifted
+    # to the floor and becomes revenue-bearing. That is intended ("a missing
+    # price takes the floor"), but unlike the dispatch floor and the carbon
+    # charge it left no trace, so a run could silently manufacture revenue.
+    # Count the fabricated prices so the lift is visible.
+    lifted_from_missing = int((has_floor & price.isna()).sum())
+    logger.info(
+        "LRMC price floor: %d of %d floored rows had a missing delivered price "
+        "lifted to the floor",
+        lifted_from_missing,
+        int(has_floor.sum()),
+    )
     out["power_price_excarbon_usd_per_mwh"] = price.where(
         ~has_floor, np.fmax(price, out["price_floor_lrmc"])
     )
