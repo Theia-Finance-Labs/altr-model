@@ -1463,6 +1463,70 @@ Disk after R21: 2.3 GB free — below the runner's guard; clear
 `data/07_model_output` before the next arm.
 
 ---
+## F′ — adversarial review of the fuel-price finding (2026-09-06)
+
+Two isolated reviewers (opus, codex) were asked to break section F. Verdicts:
+opus **ESTABLISHED**, codex **PLAUSIBLE, UNPROVEN** — split on wording, agreed on
+substance. What both reproduced and neither could refute:
+
+- The gap between target and baseline `fuel_price` is a **constant multiple of
+  the carbon price**: WITCH gas (target − baseline) / carbon price = 0.2240 to
+  three decimals across all 20 regions × 26 years (sd 0.016, n = 520); WITCH coal
+  0.3523 through 2035; coal:gas ratio 1.5732 in 16 of 20 regions; the regional
+  scaling is identical for coal and gas. IPCC fuel emission factors are 0.202
+  (gas) and 0.341 (coal) tCO₂ per MWh of fuel — the same order, but the
+  coefficients are provider-specific, not IPCC defaults. An equilibrium price
+  path cannot track an exogenous tax with zero residual; a variable switch or a
+  reporting convention can.
+- **A vintage comparison is the smoking gun for the pipeline.** The older
+  extract committed in crispy-kedro (`git show 08b0ad9:6_final_AR6_viable_scenarios.csv`)
+  differs from the current one for WITCH CHN targets by exactly carbon price ×
+  0.223952 (gas, every year) and × 0.352324 (coal, 2025–2035 only). Something
+  carbon-shaped changed between pipeline vintages. Which vintage is the correct
+  ex-carbon series is not established from the flattened CSVs.
+- WITCH coal carries the term to a **region-specific AR6 node year** (2040 for
+  BRA/CHN/EU/MEX, 2045 for CAN/Global/IDN/IND/USA, never for Middle East and
+  Reforming Economies), then loses it entirely, with 2036–2039 a straight-line
+  interpolation between nodes. IMAGE 3.0 carries it at exactly half the physical
+  factor for both fuels. REMIND carries it on gas only. Oil is never
+  carbon-inclusive. There is no uniform convention across providers or fuels.
+- IAMC common definitions: `Price|Primary Energy|*` = spot-market price, no
+  carbon note; `Price|Secondary Energy|*` and `Price|Final Energy|*` "should
+  include the effect of carbon prices". A correctly sourced primary-energy price
+  should be ex-carbon.
+- Model side reproduced independently by both: 7.21–7.27 tn of fossil fuel cost
+  above the baseline unit cost in the shock pathway, 9.84 tn explicit carbon,
+  headline −3.98 tn; discounted, the fuel-price excess is **≈ 3.0 tn against the
+  3.98 tn headline** (codex). Efficiency differences explain 0.02 tn of it. Per
+  MWh, a median gas asset in 2040 pays $236 of fuel-price differential and $256 of
+  explicit carbon — two charges of the same size for the same tonne. Nothing in
+  the model nets the embedded component out (`full_ef`, passthrough 0).
+- 7.3 tn is an **upper bound** on the duplicated tax, not an estimate: it
+  includes any genuine ex-carbon fuel-price movement (small and mostly
+  negative — oil, coal after 2040). Total embedded coal carbon at shock volumes
+  is 65.7 tn, 45 of it in 2025–2035 before the shock window; the exposure is
+  timing-dependent.
+
+**Second finding (opus):** `power_price_excarbon_usd_per_mwh` is
+`scenario_price` verbatim, i.e. AR6 `Price|Secondary Energy|Electricity`, which
+by definition includes carbon. The revenue side is carbon-inclusive too (a
+partial offset; WITCH's electricity price spread is small). The contract's
+"ex-carbon" declaration is wrong for that column as well.
+
+**Refuted alternatives:** a scenario-dependent unit-conversion error (the term is
+additive and carbon-proportional, not multiplicative); a genuine 4–7× real gas
+price rise (shape and zero residual forbid it).
+
+**Surviving unknown — Bertrand's question:** whether the carbon-shaped term
+enters in the workflow (variable switch, fallback, or the vintage change) or is
+the providers' own reporting. Either way the model double-charges it.
+Settling check: for WITCH 5.0, R10CHINA+/CHN, 2035 and 2040, pull
+`Price|Primary Energy|Gas`, `Price|Primary Energy|Coal`, `Price|Secondary
+Energy|Gases` and `Price|Final Energy|Industry|Gases` from the IIASA AR6
+explorer (× 3.6) and see which matches `fuel_price`; and diff the two pipeline
+vintages on those four rows. Ledger: `altr-fuel-price-carbon-review`.
+
+---
 ## December table completion
 
 > **Scope note on the row numbering.** The brief asked for rows **1–15**. The
