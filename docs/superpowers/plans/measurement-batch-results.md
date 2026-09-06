@@ -1527,6 +1527,36 @@ explorer (× 3.6) and see which matches `fuel_price`; and diff the two pipeline
 vintages on those four rows. Ledger: `altr-fuel-price-carbon-review`.
 
 ---
+## F″ — cause settled: the carbon term was added by the pipeline after April 2026
+
+The April vintage of the workflow output exists only in a local, never-pushed
+commit of crispy-kedro (`08b0ad9` on `auto-fix/ci-2026-04-20-1630`; the file is
+529 MB, above GitHub's limit, which is why it never went up). Its WITCH / CHN
+sentinel rows, EN_NPi2020_500 (target), `fuel_price` USD per MWh of fuel:
+
+| Technology | 2030 | 2035 | 2040 | 2050 | Baseline (same years) |
+| --- | --- | --- | --- | --- | --- |
+| Gas w/o CCS, April vintage | 23.62 | 23.87 | 24.07 | 24.46 | 23.76 / 24.25 / 24.76 / 25.77 |
+| Gas w/o CCS, Sept vintage | 99.61 | — | 151.39 | 186.07 | same |
+| Coal w/o CCS, April vintage | 6.55 | 6.64 | 6.71 | 6.85 | 6.76 / 7.02 / 7.24 / 7.63 |
+| Coal w/o CCS, Sept vintage | 126.09 | 162.13 | 6.03 | 6.26 | same |
+
+**In April the target fuel prices were ex-carbon and within 2% of the baseline.
+The carbon-proportional term is introduced by a change in `ar6_scenario_workflow`
+between the April and September runs** — not a provider reporting convention.
+That closes the open question of sections F and F′ on the pipeline side; what
+remains for Bertrand is *which* change (the April output also carried
+`fuel_for_price`, `fuel_intensity`, `gap_filled_columns`, `EBITDA_check` and
+`scenario_viable` columns that the September extract no longer has, so the
+fuel-price path was reworked in between).
+
+Files for the pipeline owner, in the shared drop:
+`ALTR deliverables/scenario_vintage_2026-04_for_fuel_price_trace/` —
+`sentinel_rows_WITCH_CHN_2026-04-20.csv`, the seven-provider slice of the April
+output (843,124 rows), and `downloaded_scenarios_2026-04-20.csv` (the raw AR6
+download of that vintage, 55k rows).
+
+---
 ## December table completion
 
 > **Scope note on the row numbering.** The brief asked for rows **1–15**. The
