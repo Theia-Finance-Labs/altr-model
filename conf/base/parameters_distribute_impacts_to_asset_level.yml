@@ -1,14 +1,43 @@
-# This is a boilerplate parameters config generated for pipeline 'distribute_impacts_to_asset_level'
-# using Kedro 0.19.12.
-#
-# Documentation for this file format can be found in "Parameters"
-# Link: https://docs.kedro.org/en/0.19.12/configuration/parameters.html
+# =============================================================================
+# Advanced — distribute_impacts_to_asset_level. Leave alone unless you know why.
+# User-facing knobs are in conf/base/parameters.yml.
+# =============================================================================
 
+# meaning:  zero baseline activity once an asset passes its technology
+#           lifetime (retirement year = build year + lifetime, floored at
+#           alignment_year + 1)
+# unit:     bool
+# default:  True
+# source:   —
+# status:   advanced
+apply_retirement_baseline: True
 
-apply_retirement_baseline: True  # Apply retirement to baseline trajectories
-apply_retirement_shock: True     # Apply retirement to shock (late sudden) trajectories
+# meaning:  same retirement rule on the shock (late-sudden) trajectories
+# unit:     bool
+# default:  True
+# source:   —
+# status:   advanced
+apply_retirement_shock: True
+
+# meaning:  allocate the company-level cut to assets in staggered quantile
+#           waves (oldest first) instead of proportional scaling
+# unit:     bool
+# default:  False (proportional scaling)
+# source:   —
+# status:   advanced
 apply_decreasing_staggered_shock: False
 
 staggered_shock:
+  # meaning:  steepness of the logistic weight that orders assets for the cut
+  # unit:     positive float
+  # default:  6.0
+  # source:   —
+  # status:   gated-by:apply_decreasing_staggered_shock
   g_k: 6.0
+
+  # meaning:  number of age quantiles (waves) the cut is spread over
+  # unit:     integer >= 1
+  # default:  3
+  # source:   —
+  # status:   gated-by:apply_decreasing_staggered_shock
   n_quantiles: 3

@@ -1,9 +1,22 @@
-# This is a boilerplate parameters config generated for pipeline 'inputs_postproc'
-# using Kedro 0.19.12.
-#
-# Documentation for this file format can be found in "Parameters"
-# Link: https://docs.kedro.org/en/0.19.12/configuration/parameters.html
+# =============================================================================
+# Advanced — inputs_postproc. Leave alone unless you know why.
+# User-facing knobs are in conf/base/parameters.yml.
+# =============================================================================
 
+# meaning:  collapse the asset panel to one synthetic row per company ×
+#           technology before modelling
+# unit:     bool
+# default:  False (asset-level)
+# source:   —
+# status:   advanced
 reduce_granularity_from_asset_to_company_level: False
 
+# meaning:  θ in the (disabled) electricity-price scaling
+#           SRMC + θ·(FOM/MWh + α·CapAnn/MWh)
+# unit:     float
+# default:  1
+# source:   —
+# status:   dead — scale_electricity_price (inputs_processing/nodes.py) has
+#           its body commented out and returns the input unchanged. Read by
+#           the inputs_processing pipeline, not inputs_postproc.
 theta_capex_recovery: 1

@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 def compute_yearly_npv_trajectories(
     asset_earnings: pd.DataFrame,
     discount_rate_baseline: float = 0.07,
-    discount_rate_shock: float = 0.08,
+    discount_rate_shock: float = 0.07,
     terminal_growth_rate: float = 0.02,
     terminal_growth_rate_brown: float = None,
     terminal_growth_rate_green: float = None,
@@ -32,35 +32,59 @@ def compute_yearly_npv_trajectories(
     - All financial components (FCFF, EBITDA, revenue, costs)
     - Terminal value calculation in final year
 
-    Args:
-        terminal_normalization_window: Number of final years to average for terminal
-            FCFF. Default 1 (last year only). Set to 3-5 for normalized terminal value
-            per Damodaran/McKinsey/CFA best practice. Prevents single-year CapEx spikes
-            from eliminating terminal value.
-        brown_discount_spread: Additional discount rate for carbontech (default 0).
-            Reflects the carbon risk premium per Bolton & Kacperczyk (2021, 2023).
-            Shell 2024 uses +150bps for O&G vs renewables.
-        green_discount_spread: Discount rate reduction for greentech (default 0).
-            Reflects lower cost of capital for zero-emission assets.
-        stranding_aware_tv: If True, apply three-tier terminal value logic (D2 fix):
-            - Stranded assets (loss-making for N consecutive years at terminal): TV = 0
-              Based on Gourdel (2024) real options / abandonment logic: max(profit - carbon_cost, 0).
-            - Declining carbontech (still profitable): TV = finite annuity (N years)
-              instead of perpetuity. Reflects finite remaining economic life.
-            - Greentech / growing: TV = Gordon Growth perpetuity (standard).
-        stranding_consecutive_years: Number of consecutive loss-making years at
-            the end of the horizon to trigger stranding (TV=0). Default 3.
-            A company can weather 1-2 bad years but not sustained losses.
-        brown_remaining_life_years: For non-stranded carbontech, compute TV as a
-            finite annuity over this many years instead of perpetuity. Default 10.
-            Reflects that declining fossil assets have finite remaining economic life
-            beyond the model horizon.
-        terminal_growth_rate_brown: Terminal growth rate for carbontech (high_carbon
-            alignment types). If None, uses terminal_growth_rate. Set to 0 or negative
-            to reflect declining fossil asset cash flows beyond the model horizon.
-        terminal_growth_rate_green: Terminal growth rate for greentech (low_carbon
-            alignment types). If None, uses terminal_growth_rate. Typically >= terminal_growth_rate
-            to reflect growing clean energy cash flows.
+    Parameters
+    ----------
+    asset_earnings : pd.DataFrame
+        Asset x year x trajectory_type earnings panel from the earnings model
+        (catalog input, not a conf key).
+    discount_rate_baseline : float
+        Real discount rate for baseline pathways, fraction [0, 1).
+        Conf key `params:dcf.discount_rate_baseline` (conf/base/parameters.yml).
+    discount_rate_shock : float
+        Real discount rate for shock (late-sudden) pathways, fraction [0, 1).
+        Conf key `params:dcf.discount_rate_shock` (conf/base/parameters.yml).
+    terminal_growth_rate : float
+        Fallback real terminal growth used when a tech-specific rate is None, fraction.
+        Conf key `params:dcf.terminal_value.g_real_default` (conf/base/parameters.yml);
+        marked dead in conf because brown/green rates are always set.
+    terminal_growth_rate_brown : float or None
+        Real terminal growth for carbontech (high_carbon alignment types), fraction;
+        0.0 = declining assets, no perpetual growth. None falls back to
+        terminal_growth_rate. Conf key `params:dcf.terminal_value.g_real_brown`
+        (conf/base/parameters.yml).
+    terminal_growth_rate_green : float or None
+        Real terminal growth for greentech (low_carbon alignment types), fraction.
+        None falls back to terminal_growth_rate. Conf key
+        `params:dcf.terminal_value.g_real_green` (conf/base/parameters.yml).
+    terminal_method : str
+        Terminal value method after the last modelled year: "perpetuity" | "none";
+        any other string silently gives TV = 0. Conf key
+        `params:dcf.terminal_value.method` (conf/base/parameters.yml).
+    terminal_normalization_window : int
+        Number of final years averaged to form the terminal FCFF, integer >= 1
+        (1 = last year only, 3 = recommended, 5 = heavy smoothing); smooths
+        transition capex spikes per Damodaran / McKinsey / CFA practice. Conf key
+        `params:dcf.terminal_value.normalization_window` (conf/base/parameters.yml).
+    brown_discount_spread : float
+        Extra discount spread on carbontech assets (both legs), fraction; carbon risk
+        premium per Bolton & Kacperczyk (2021, 2023). Conf key
+        `params:dcf.brown_discount_spread` (conf/base/parameters.yml).
+    green_discount_spread : float
+        Discount reduction on non-carbontech assets (greenium), fraction. Conf key
+        `params:dcf.green_discount_spread` (conf/base/parameters.yml).
+    stranding_aware_tv : bool
+        Enable three-tier terminal value: stranded (TV = 0 after N loss-making years,
+        Gourdel 2024 real-options logic), declining carbontech (finite annuity),
+        greentech (Gordon Growth perpetuity). Conf key `params:dcf.stranding_aware_tv`
+        (conf/base/parameters.yml).
+    stranding_consecutive_years : int
+        Consecutive loss-making terminal years that mark an asset stranded, integer >= 1.
+        Conf key `params:dcf.stranding_consecutive_years` (conf/base/parameters.yml);
+        gated by stranding_aware_tv.
+    brown_remaining_life_years : int
+        Annuity horizon for still-profitable carbontech, integer years >= 1. Conf key
+        `params:dcf.brown_remaining_life_years` (conf/base/parameters.yml); gated by
+        stranding_aware_tv.
     """
 
     logger.info("Computing yearly NPV trajectories...")

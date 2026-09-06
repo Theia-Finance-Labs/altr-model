@@ -14,6 +14,24 @@ def apply_reduce_granularity_from_asset_to_company_level(
     assets_forecasts: pd.DataFrame,
     reduce_granularity_from_asset_to_company_level: bool,
 ) -> pd.DataFrame:
+    """
+    Optionally collapse the asset panel to one synthetic row per company x technology.
+
+    Parameters
+    ----------
+    assets_forecasts : pd.DataFrame
+        Asset-level forecast panel allocated to companies (catalog input, not a conf key).
+    reduce_granularity_from_asset_to_company_level : bool
+        True collapses the panel to one synthetic row per company x technology before
+        modelling; False keeps asset-level rows. Conf key
+        `params:reduce_granularity_from_asset_to_company_level`
+        (conf/base/parameters_inputs_postproc.yml).
+
+    Returns
+    -------
+    pd.DataFrame
+        The aggregated panel, or `assets_forecasts` unchanged when the flag is False.
+    """
     if reduce_granularity_from_asset_to_company_level:
         # Determine ownership column name (schema-dependent)
         ownership_col = (

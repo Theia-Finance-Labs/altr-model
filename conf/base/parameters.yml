@@ -1,0 +1,258 @@
+# =============================================================================
+# ALTR — user-facing parameters
+# =============================================================================
+# This is the file to edit for a normal run. Everything a study typically
+# changes lives here. Per-pipeline files (parameters_<pipeline>.yml) hold
+# advanced knobs — leave those alone unless you know why.
+#
+# Each key carries a comment block in a fixed schema; docs/parameters.md is
+# generated from these blocks, so keep the schema:
+#   # meaning:  what the parameter does
+#   # unit:     unit and valid range / allowed values
+#   # default:  the shipped value and why
+#   # source:   citation or "—"
+#   # status:   live | advanced | dead | gated-by:<key>
+#
+# Environment note: settings.py sets default_run_env=local. Kedro merges
+# conf/local/ over conf/base/ per TOP-LEVEL KEY across all files (not per
+# file). Prefer one-off overrides on the command line:
+#   kedro run --tags=altrisk --params="shock_year=2030,carbon_cost_method=full_ef"
+# Keys must be unique across the files of one environment — move, never copy.
+# =============================================================================
+
+# ----------------------------------------------------------------- Scenarios
+# meaning:  IAM scenario used as the no-transition reference pathway
+# unit:     exact scenario name as "AR6_<provider>_<scenario>"; filter_scenarios
+#           prepends "AR6_<provider>_" if missing; no match raises
+# default:  REMIND-MAgPIE 2.1-4.2 NPi2020 3000 GtCO2 budget
+# source:   IPCC AR6 scenario database
+# status:   live
+baseline_scenario: "AR6_REMIND-MAgPIE 2.1-4.2_EN_NPi2020_3000"
+
+# meaning:  IAM scenario the late-sudden shock converges to
+# unit:     as baseline_scenario; must share provider, geographies and
+#           sector/technology coverage with the baseline (mismatches are
+#           dropped with a warning)
+# default:  same model, 500 GtCO2 budget
+# source:   IPCC AR6 scenario database; docs/handover/scenario_catalog.md
+#           lists other pairs that have been run
+# status:   live
+target_scenario: "AR6_REMIND-MAgPIE 2.1-4.2_EN_NPi2020_500"
+
+# ------------------------------------------------------------------ Universe
+# meaning:  restrict the run to these company ids
+# unit:     list of company_id strings; empty list = all companies
+# default:  [] (no filter)
+# source:   —
+# status:   live
+company_ids: []
+
+# meaning:  which ownership links attach assets to companies
+# unit:     "direct" (ownership_level 1) | "indirect" (level >= 2); anything
+#           else silently yields an empty universe
+# default:  direct
+# source:   docs/presentations/altr_ownership-attribution_Brief_v1.md
+# status:   live
+ownership_type: "direct"
+
+# meaning:  which CCS variant of coal/gas/biomass/oil scenarios to use
+# unit:     True = "w/ CCS" scenarios | False = "w/o CCS" | null = no
+#           distinction
+# default:  False
+# source:   —
+# status:   live
+ccs_on: False
+
+# meaning:  years of asset-level GEM forecast kept before scenario pathways
+#           take over
+# unit:     integer years >= 1
+# default:  5
+# source:   —
+# status:   live
+max_forecast_horizon: 5
+
+# ---------------------------------------------------------- Shock timing
+# meaning:  first year of the late-sudden transition shock
+# unit:     calendar year; must be < alignment_year (checked at run start)
+# default:  2033
+# source:   —
+# status:   live
+shock_year: 2033
+
+# meaning:  year by which company production reaches the target pathway
+# unit:     calendar year > shock_year; also floors asset retirement at
+#           alignment_year + 1
+# default:  2038 (extended from 2035: 5-year window is more realistic yet
+#           abrupt enough for meaningful fossil value destruction)
+# source:   —
+# status:   live
+alignment_year: 2038
+
+# ---------------------------------------------------------- Earnings model
+# meaning:  turn the marginal-cost price ratio (MCPR) adjustment on/off:
+#           derive a market clearing price from the marginal dispatchable
+#           technology and apply value factors to VRE
+# unit:     bool; when False all mcpr_* keys are inert and
+#           marginal_emission_factor is forced to 0
+# default:  True
+# source:   Hirth 2013 Energy Econ 38:218; Halttunen et al. 2022 Nat Energy
+#           7:1154; Ueckerdt et al. 2013 Energy 63:61
+# status:   live
+enable_mcpr: True
+
+# meaning:  how MCPR treats carbon: "carbon_explicit" (asymmetric fossil
+#           penalty; pair with carbon_cost_method=full_ef) or
+#           "merit_order_decline" (clearing price falls with VRE share;
+#           paper-track only)
+# unit:     "auto" | "carbon_explicit" | "merit_order_decline". NOTE: "auto"
+#           always resolves to carbon_explicit (OP9, 2026-08-20)
+# default:  auto
+# source:   docs/superpowers/specs/2026-04-14-mcpr-v2-redesign.md
+# status:   gated-by:enable_mcpr
+mcpr_mode: "auto"
+
+# meaning:  how emission factors enter carbon cost.
+#           full_ef:         Q × cp × EF × (1 − passthrough)
+#           differential_ef: Q × cp × max(EF − marginal_EF, 0) × (1 − passthrough)
+# unit:     "full_ef" | "differential_ef"; any other string silently falls
+#           through to differential_ef
+# default:  full_ef — use for IAMs whose prices barely embed carbon (WITCH:
+#           $9/MWh C1→C7 spread at $722/tCO2); use differential_ef where prices
+#           already carry carbon (AIM/CGE: $64/MWh spread)
+# source:   docs/research/ (full_ef comparison notes)
+# status:   live
+carbon_cost_method: "full_ef"
+
+# meaning:  share of carbon cost passed through to customers
+# unit:     fraction [0, 1]
+# default:  0 — firm absorbs all (conservative stress-test convention)
+# source:   —
+# status:   live
+market_passthrough: 0
+
+# meaning:  blend baseline→target prices linearly over
+#           [shock_year, alignment_year] instead of a hard switch
+# unit:     bool
+# default:  True (RC4 fix: removes the 30-50% near-term price windfall)
+# source:   —
+# status:   live
+price_ramp: True
+
+# meaning:  charge capex for capacity additions
+# unit:     bool
+# default:  False — IAM O&M already bundles annualised capital cost
+#           (REMIND/WITCH/POLES)
+# source:   —
+# status:   live
+include_growth_capex: False
+
+# meaning:  charge routine replacement capex on operating capacity
+# unit:     bool; the rate itself is replacement_capex_rate
+#           (parameters_earnings_model.yml)
+# default:  True
+# source:   EPRI / Lazard LCOE methodology (1-3% of replacement cost p.a.)
+# status:   live
+include_replacement_capex: True
+
+# meaning:  charge decommissioning cost on retired capacity
+# unit:     bool; the size is decom_cost_share_of_capex
+#           (parameters_earnings_model.yml)
+# default:  True
+# source:   —
+# status:   live
+include_decom_costs: True
+
+# --------------------------------------------------------------- Valuation
+# The whole dcf block lives here because Kedro forbids splitting a top-level
+# key across files. Headline knobs: the two discount rates and the spreads.
+dcf:
+  # meaning:  real discount rate for baseline pathways
+  # unit:     fraction [0, 1)
+  # default:  0.07
+  # source:   —
+  # status:   live
+  discount_rate_baseline: 0.07
+
+  # meaning:  real discount rate for shock pathways
+  # unit:     fraction [0, 1)
+  # default:  0.07 — equal to baseline; transition risk is carried by the
+  #           technology spreads below, not by a scenario-level uplift
+  # source:   —
+  # status:   live
+  discount_rate_shock: 0.07
+
+  # meaning:  extra discount spread on carbontech assets (both legs)
+  # unit:     fraction; set both spreads to 0 for uniform rates
+  # default:  0.01 (+100 bps carbon risk premium)
+  # source:   Bolton & Kacperczyk 2021, 2023; Shell 2024 AR (7.5% O&G vs
+  #           6.0% renewables)
+  # status:   live
+  brown_discount_spread: 0.01
+
+  # meaning:  discount reduction on non-carbontech assets (greenium)
+  # unit:     fraction
+  # default:  0.005 (−50 bps)
+  # source:   as brown_discount_spread
+  # status:   live
+  green_discount_spread: 0.005
+
+  terminal_value:
+    # meaning:  terminal value method after the last modelled year
+    # unit:     "perpetuity" | "none"; any other string silently gives TV = 0
+    # default:  perpetuity
+    # source:   —
+    # status:   live
+    method: "perpetuity"
+
+    # meaning:  fallback real terminal growth when a tech-specific rate is null
+    # unit:     fraction
+    # default:  0.02
+    # source:   —
+    # status:   dead — brown/green rates are always set, so never used
+    g_real_default: 0.02
+
+    # meaning:  real terminal growth for carbontech
+    # unit:     fraction
+    # default:  0.0 — declining assets, no perpetual growth
+    # source:   —
+    # status:   live
+    g_real_brown: 0.0
+
+    # meaning:  real terminal growth for greentech
+    # unit:     fraction
+    # default:  0.02
+    # source:   —
+    # status:   live
+    g_real_green: 0.02
+
+    # meaning:  years averaged to form the terminal FCFF
+    # unit:     integer >= 1; 1 = last year only, 3 = recommended, 5 = heavy
+    #           smoothing
+    # default:  3 — normalised steady-state cash flow, smooths transition
+    #           capex spikes
+    # source:   Damodaran; McKinsey Valuation; CFA curriculum
+    # status:   live
+    normalization_window: 3
+
+  # meaning:  three-tier terminal value: stranded (TV = 0 after N loss years),
+  #           declining carbontech (finite annuity), greentech (perpetuity)
+  # unit:     bool
+  # default:  True (D2 fix)
+  # source:   Gourdel 2024, real-options max(profit − carbon_cost, 0)
+  # status:   live
+  stranding_aware_tv: True
+
+  # meaning:  consecutive loss-making terminal years that mark an asset
+  #           stranded
+  # unit:     integer >= 1
+  # default:  3
+  # source:   Gourdel 2024
+  # status:   gated-by:stranding_aware_tv
+  stranding_consecutive_years: 3
+
+  # meaning:  annuity horizon for still-profitable carbontech
+  # unit:     integer years >= 1
+  # default:  10
+  # source:   —
+  # status:   gated-by:stranding_aware_tv
+  brown_remaining_life_years: 10

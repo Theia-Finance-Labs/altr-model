@@ -123,7 +123,7 @@ So a 40%-owned plant contributes 40% of its cash flows to that company, never th
 
 The IAM price is an annual regional average, paid to every technology alike. Two optional corrections to it were added on 2026-09-04 and both ship at `method: none`, so the validated behaviour is unchanged; they exist so the owner can rule on them with measurements in hand.
 
-**Capture-price factor** (`capture_price.method: hirth2013`). Onshore wind, offshore wind and solar PV earn less than the average price as their market share grows (Hirth 2013 measures the value factor falling from about 1.1 at zero share to 0.5-0.8 at 30%). The factor is linear in the technology's generation share of the region-year, floored at 0.4. Every other technology, CSP included, takes the dispatchable residual that keeps the generation-weighted average equal to the system price, capped at 2.0; where a region-year is entirely wind and PV the residual is set to 1. Shares come from each scenario's own leaf-technology pathways, so the factor follows the transition and differs between the two pathways.
+**Capture-price factor** (`capture_price.method: hirth2013`). Onshore wind, offshore wind and solar PV earn less than the average price as their market share grows (Hirth 2013 measures the value factor falling from about 1.1 at zero share to 0.5-0.8 at 30%). The factor is linear in the share of region-year generation held by wind (onshore and offshore together) or by solar PV, floored at 0.4. Every other technology, CSP included, takes the dispatchable residual that keeps the generation-weighted average equal to the system price, capped at 2.0; where a region-year is entirely wind and PV the residual is set to 1. Shares come from each scenario's own leaf-technology pathways, so the factor follows the transition and differs between the two pathways.
 
 ```
 f_wind  = max(1.1 − 1.5 × share_wind, 0.4)          f_pv = max(1.1 − 3.5 × share_pv, 0.4)
@@ -187,7 +187,7 @@ Two dates control the shock: `shock_year: 2033` (the year the policy becomes kno
 | Phase | Years | Value |
 | --- | --- | --- |
 | `forecast` | up to the last observed year | observed capacity (baseline where a year is missing) |
-| `bau` | after that, up to the year before the shock year | baseline |
+| `bau` | after that, up to the year before the shock year (through the shock year where no transition follows) | baseline |
 | `transition` | `shock_year` … `alignment_year` | straight line from baseline at `shock_year − 1` to target at `alignment_year` |
 | `aligned` | after `alignment_year` | target |
 | `aligned_compensation` | after `alignment_year`, misaligned high-carbon only | target minus the compensation |
@@ -372,7 +372,7 @@ bounded neg:  TV = max( anchor × annuity_factor(r, lifetime − age),  −|scra
 
 The bounded-negative tier (`negative_tv_method: "bounded_annuity"`) replaces an unbounded negative perpetuity - a plant worth less than nothing forever - with the two choices an owner has: run the remaining life out at a loss, or pay to decommission now. Both are negative; the larger is the smaller loss.
 
-The tier census is logged on every run, as assignments made *before* the zero-capacity override; the override then zeroes whatever a retired group was assigned. On the committed fixture slice (decision note D3 addendum), of 1,442 asset-trajectory groups: 80 stranded, 33 carbontech annuity, 2 bounded negative, 625 perpetuity, 702 with no terminal anchor. On the candidate full-universe run (R1), of 52,066 groups: 8,242 stranded, 1,100 annuity, 115 bounded negative, 16,128 perpetuity, 26,481 no anchor; the override then zeroes 30,709 groups standing at zero capacity at the horizon, leaving 14,745 with a terminal-value row.
+The tier census is logged on every run, as assignments made *before* the zero-capacity override; the override then zeroes whatever a retired group was assigned. On the committed fixture slice (decision note D3 addendum), of 1,442 asset-trajectory groups: 80 stranded, 33 carbontech annuity, 2 bounded negative, 625 perpetuity, 702 with no terminal anchor. On the candidate full-universe run (R1 census, measurement batch), of 52,066 groups: 8,242 stranded, 1,100 annuity, 115 bounded negative, 16,128 perpetuity, 26,481 no anchor; the override then zeroes 30,709 groups standing at zero capacity at the horizon, leaving 14,745 with a terminal-value row.
 
 ### Roll-ups and the headline ratio
 
@@ -512,6 +512,8 @@ Oil and biomass companies are negative under every provider; gas is out of merit
 
 ## Appendix A - parameter defaults cited in this document
 
+> Scope note (2026-09-06): this appendix documents the `altr-model-migration` repository (`conf/full`, `parameters_prepare_scenario_asset_and_company_inputs.yml`, etc.). The `crispy-kedro` working repo uses different file names and does not implement several keys listed here (`ownership_aggregation`, `decom_cost_fraction_of_capex`, `capture_price.*`, `price_floor.*`, `retirement_timing`, `dcf.spread_carrier`, `dcf.negative_tv_method`, `dcf.tv_anchor_policy`). For crispy-kedro, the generated reference `docs/parameters.md` (and the explorer `docs/parameters.html`) is authoritative.
+
 | File | Key | Default |
 | --- | --- | --- |
 | `parameters_prepare_scenario_asset_and_company_inputs.yml` | `baseline_scenario` / `target_scenario` | `AR6_AIM/CGE 2.2_EN_NPi2020_1200f` / `AR6_AIM/CGE 2.2_EN_NPi2020_900f` (absent from the 2026-09-01 extract; `conf/full` uses the WITCH pair) |
@@ -546,7 +548,7 @@ Oil and biomass companies are negative under every provider; gas is out of merit
 
 ## Appendix B - sources
 
-- Code: `altr-model-migration` @ `79731a3`, `src/altr_model/pipelines/*/nodes.py` and private helpers; `conf/base/parameters_*.yml`.
+- Code: `altr-model-migration` @ `79731a3`, `src/altr_model/pipelines/*/nodes.py` and private helpers; `conf/base/parameters_*.yml`. Where each formula box lives: market-share rate and price adjustments in `prepare_scenario_asset_and_company_inputs/_input_nodes.py` and `calculate_company_trajectories/_baseline_nodes.py`; shock shapes in `calculate_company_trajectories/_late_sudden_nodes.py`; price ramp in `calculate_company_trajectories/nodes.py`; retirement dating in `prepare_scenario_asset_and_company_inputs/_asset_preparation.py`; both allocation modes and the synthetic top-up in `allocate_company_trajectories_to_assets/_allocation_nodes.py`; earnings in `calculate_asset_earnings/nodes.py`; valuation in `calculate_asset_and_company_npv/nodes.py`.
 - Handover site: `docs/handover/` (index, user guide, methodology notes, per-stage pages). The stage-3 page, the methodology notes and the architecture page still describe the alignment-year retirement floor as unconditional; the shipped `retirement_timing: "natural"` supersedes them.
 - Pre-change state: `crispy-kedro/docs/presentations/altr_updates_Brief_v1.md` (2026-07-08), for the "July brief" cells in §8.
 - Measured numbers: `docs/superpowers/plans/decision-ablations.md` (A1-A6, D1-D5, golden `015a861`), `measurement-batch-results.md` (R0-R16, provider batch P, capture-price sample S, price-floor batch L), `adjustments-vs-december-2025.md`.
