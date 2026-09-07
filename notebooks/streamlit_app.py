@@ -386,6 +386,7 @@ def render_step_parameters() -> None:
 # ---------------------------------------------------------------------------
 def render_results(run_dir: Path) -> None:
     npv_path = run_dir / "company_npv.csv"
+    tech_npv_path = run_dir / "company_technology_npv.csv"
     if npv_path.exists():
         npv_df = pd.read_csv(npv_path)
 
@@ -394,11 +395,17 @@ def render_results(run_dir: Path) -> None:
         col2.metric("Avg NPV change", f"{npv_df['npv_change'].mean():.1%}")
         col3.metric("Assets covered", int(npv_df["asset_count"].sum()))
 
-        st.subheader("Company NPV impact")
+        st.subheader("Company × technology NPV impact")
         st.caption("baseline_npv / latesudden_npv are discounted cash flows; npv_change is the % difference.")
-        display_df = npv_df.sort_values("npv_change").reset_index(drop=True)
-        st.dataframe(display_df, width="stretch", height=320)
+        table_df = pd.read_csv(tech_npv_path) if tech_npv_path.exists() else npv_df
+        table_df = table_df.drop(
+            columns=["baseline_discount_rate", "latesudden_discount_rate", "run_id"],
+            errors="ignore",
+        )
+        table_df = table_df.sort_values("npv_change").reset_index(drop=True)
+        st.dataframe(table_df, width="stretch", height=320)
 
+        display_df = npv_df.sort_values("npv_change").reset_index(drop=True)
         most_affected = display_df.reindex(
             display_df["npv_change"].abs().sort_values(ascending=False).index
         ).head(25)
