@@ -48,4 +48,4 @@ ENV STREAMLIT_BROWSER_GATHER_USAGE_STATS="false"
 EXPOSE 8501
 
 # Launch the Streamlit app
-ENTRYPOINT ["streamlit", "run", "notebooks/streamlit_app.py", "--server.address=0.0.0.0", "--server.port=8501", "--server.headless=true"]
+ENTRYPOINT ["streamlit", "run", "notebooks/streamlit/app.py", "--server.address=0.0.0.0", "--server.port=8501", "--server.headless=true"]

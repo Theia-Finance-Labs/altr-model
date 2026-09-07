@@ -41,7 +41,7 @@ bigquery = [
     "google-cloud-bigquery-storage>=2.39.0,<3.0.0",
     "python-dotenv>=1.0.0,<2.0.0",
 ]
-# Only needed for the batch-run Streamlit app under notebooks/. Not a
+# Only needed for the app under notebooks/streamlit/. Not a
 # default group: `uv sync` skips it unless explicitly requested with
 # `uv sync --group streamlit`.
 streamlit = [
