@@ -5,7 +5,6 @@ generated using Kedro 0.19.12
 
 from kedro.pipeline import node, Pipeline, pipeline  # noqa
 from .nodes import (
-    check_input_parameters,
     filter_scenarios,
     apply_ccs_suffix,
     filter_assets,
@@ -25,14 +24,6 @@ def create_pipeline(**kwargs) -> Pipeline:
     return pipeline(
         [
             node(
-                func=check_input_parameters,
-                inputs=dict(
-                    shock_year="params:shock_year",
-                    alignment_year="params:alignment_year",
-                ),
-                outputs=None,
-            ),
-            node(
                 func=filter_scenarios,
                 inputs=dict(
                     scenarios_pathways="downloaded_scenarios",
@@ -48,10 +39,7 @@ def create_pipeline(**kwargs) -> Pipeline:
             ),
             node(
                 func=scale_electricity_price,
-                inputs=dict(
-                    scenarios_pathways="scenarios_pathways_interpolated",
-                    theta="params:theta_capex_recovery",
-                ),
+                inputs="scenarios_pathways_interpolated",  # no-op node; theta_capex_recovery retired 2026-09-06
                 outputs="scenarios_pathways_scaled",
             ),
             # Inject carbon prices from the AR6 scenario database.
@@ -92,6 +80,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                     companies_ownership_tree="companies_ownership_tree_ccs",
                     scenarios_pathways="scenarios_pathways",
                     max_forecast_horizon="params:max_forecast_horizon",
+                    excluded_country_iso2="params:excluded_country_iso2",
                 ),
                 outputs="assets_forecasts",
             ),

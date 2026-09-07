@@ -1,3 +1,4 @@
 # Valuation model parameters — all moved to conf/base/parameters.yml
-# (the `dcf` block). Kedro forbids duplicate top-level keys within an
-# environment, so nothing may be declared here while `dcf` lives there.
+# (the `dcf` block). Kedro forbids a leaf key in two files of one environment
+# and an env override replaces the block whole, so the block is kept together
+# there and nothing is declared here.

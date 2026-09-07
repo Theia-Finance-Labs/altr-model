@@ -5,3 +5,38 @@
 # The scenario pairs previously commented out here, and the ~12,000-line
 # commented-out company_ids roster, now live in
 # docs/handover/scenario_catalog.md.
+
+# =============================================================================
+# Advanced — inputs_processing. Leave alone unless you know why.
+# =============================================================================
+
+# meaning:  assets whose country_iso2 is in this list are dropped before
+#           modelling (also assets with no country)
+# unit:     list of ISO 3166-1 alpha-2 codes; [] disables the filter
+# default:  22 small territories, the historical "NGFS hard-fix" that was
+#           hardcoded in filter_assets until 2026-09-06
+# source:   —
+# status:   advanced
+excluded_country_iso2:
+  - AS
+  - BM
+  - AW
+  - SZ
+  - FO
+  - CW
+  - DM
+  - GF
+  - PS
+  - KN
+  - MK
+  - IM
+  - PM
+  - XK
+  - SC
+  - SS
+  - AX
+  - KY
+  - BQ
+  - GG
+  - MS
+  - JE

@@ -2,7 +2,8 @@
 Batch runner for ALTR model: all IAM scenario pairs x parameter configurations.
 
 Reads a scenario manifest (JSON), iterates over each scenario pair and each
-config variant, writes temporary overrides to conf/local/, shells out to Kedro,
+config variant, writes temporary overrides to conf/study/ (a dedicated Kedro env,
+never conf/local/), shells out to `kedro run --env study`,
 and collects results into workspace/comparison_results/.
 
 Usage:
@@ -27,6 +28,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import shutil
@@ -425,16 +427,37 @@ def _deep_merge(base: dict, override: dict) -> dict:
     return result
 
 
+STUDY_PARAMS_FILE = "parameters.yml"
+
+
+def _load_base_params(conf_base_dir: Path) -> dict:
+    """Load every conf/base/parameters*.yml into one dict (Kedro semantics:
+    filenames are irrelevant, top-level keys must be unique across files)."""
+    merged: dict = {}
+    for path in sorted(conf_base_dir.glob("parameters*.yml")):
+        with open(path) as f:
+            content = yaml.safe_load(f) or {}
+        dup = set(merged) & set(content)
+        if dup:
+            raise ValueError(f"Duplicate top-level keys across base files: {sorted(dup)} in {path.name}")
+        merged.update(content)
+    return merged
+
+
 def write_param_overrides(
     config: ConfigVariant,
     conf_local_dir: Path,
     conf_base_dir: Path | None = None,
 ) -> list[Path]:
-    """Write YAML override files to conf/local/ by deep-merging config params
-    into the full base parameter files.
+    """Write YAML override files to the study env (conf/study/) by deep-merging
+    config params into the full base parameter files.
 
-    Kedro's conf/local/ completely replaces conf/base/ for the same filename,
-    so we must include ALL parameters — not just the ones we're changing.
+    Kedro (0.19, OmegaConfigLoader) merges the run env over conf/base per
+    TOP-LEVEL KEY across all files, not per filename. Deep-merging the whole
+    base file is therefore not strictly required, but it keeps nested blocks
+    (e.g. `dcf`) complete so a partial override can never drop a sibling key.
+    Base files are now split into parameters.yml (user tier) and per-pipeline
+    files, so every base parameters*.yml is loaded and merged.
 
     Returns list of paths written (for cleanup).
     """
@@ -442,39 +465,17 @@ def write_param_overrides(
         conf_base_dir = conf_local_dir.parent / "base"
 
     conf_local_dir.mkdir(parents=True, exist_ok=True)
-    written: list[Path] = []
 
-    # Earnings model: load base, merge overrides
-    earnings_base_path = conf_base_dir / "parameters_earnings_model.yml"
-    with open(earnings_base_path) as f:
-        earnings_base = yaml.safe_load(f) or {}
-    earnings_merged = _deep_merge(earnings_base, config.earnings_params)
-    earnings_path = conf_local_dir / "parameters_earnings_model.yml"
-    with open(earnings_path, "w") as f:
-        yaml.dump(earnings_merged, f, default_flow_style=False)
-    written.append(earnings_path)
-
-    # Valuation model: load base, merge overrides
-    valuation_base_path = conf_base_dir / "parameters_valuation_model.yml"
-    with open(valuation_base_path) as f:
-        valuation_base = yaml.safe_load(f) or {}
-    valuation_merged = _deep_merge(valuation_base, config.valuation_params)
-    valuation_path = conf_local_dir / "parameters_valuation_model.yml"
-    with open(valuation_path, "w") as f:
-        yaml.dump(valuation_merged, f, default_flow_style=False)
-    written.append(valuation_path)
-
-    # Late-sudden trajectory params (shock/alignment year sensitivity):
-    # only written when the config overrides them.
+    merged = _load_base_params(conf_base_dir)
+    merged = _deep_merge(merged, config.earnings_params)
+    merged = _deep_merge(merged, config.valuation_params)
     if config.trajectory_params:
-        traj_base_path = conf_base_dir / "parameters_create_late_sudden_trajectories.yml"
-        with open(traj_base_path) as f:
-            traj_base = yaml.safe_load(f) or {}
-        traj_merged = _deep_merge(traj_base, config.trajectory_params)
-        traj_path = conf_local_dir / "parameters_create_late_sudden_trajectories.yml"
-        with open(traj_path, "w") as f:
-            yaml.dump(traj_merged, f, default_flow_style=False)
-        written.append(traj_path)
+        merged = _deep_merge(merged, config.trajectory_params)
+
+    out_path = conf_local_dir / STUDY_PARAMS_FILE
+    with open(out_path, "w") as f:
+        yaml.dump(merged, f, default_flow_style=False)
+    written = [out_path]
 
     log.info("Wrote param overrides for config '%s' to %s", config.name, conf_local_dir)
     return written
@@ -504,16 +505,18 @@ def write_catalog_override(
     with open(catalog_path, "w") as f:
         yaml.dump(catalog_override, f, default_flow_style=False)
 
-    # Inputs processing parameter override — deep merge scenario names into base
-    conf_base_dir = conf_local_dir.parent / "base"
-    inputs_base_path = conf_base_dir / "parameters_inputs_processing.yml"
-    with open(inputs_base_path) as f:
-        inputs_base = yaml.safe_load(f) or {}
-    inputs_base["baseline_scenario"] = baseline_scenario
-    inputs_base["target_scenario"] = target_scenario
-    inputs_params_path = conf_local_dir / "parameters_inputs_processing.yml"
-    with open(inputs_params_path, "w") as f:
-        yaml.dump(inputs_base, f, default_flow_style=False)
+    # Scenario names go into the study parameters file (created by
+    # write_param_overrides; fall back to the merged base if called alone).
+    params_path = conf_local_dir / STUDY_PARAMS_FILE
+    if params_path.exists():
+        with open(params_path) as f:
+            params = yaml.safe_load(f) or {}
+    else:
+        params = _load_base_params(conf_local_dir.parent / "base")
+    params["baseline_scenario"] = baseline_scenario
+    params["target_scenario"] = target_scenario
+    with open(params_path, "w") as f:
+        yaml.dump(params, f, default_flow_style=False)
 
     log.info(
         "Wrote catalog override: downloaded_scenarios -> %s",
@@ -534,7 +537,7 @@ def run_kedro_pipeline(
     if not kedro_bin.exists():
         return False, "", f"Kedro binary not found at {kedro_bin}"
 
-    cmd = [str(kedro_bin), "run", "--tags", "altrisk"]
+    cmd = [str(kedro_bin), "run", "--env", "study", "--tags", "altrisk"]
     log.info("Running: %s", " ".join(cmd))
 
     try:
@@ -644,17 +647,19 @@ def validate_run(output_dir: Path) -> tuple[bool, dict[str, Any]]:
 
 
 def cleanup_overrides(conf_local_dir: Path) -> None:
-    """Remove all override files written to conf/local/.
+    """Remove all override files written to conf/study/.
 
     Only removes files we know we wrote — does not delete the directory
     or any pre-existing files.
     """
     override_files = [
+        STUDY_PARAMS_FILE,
+        "catalog.yml",
+        # legacy per-file overrides from before 2026-09-06
         "parameters_earnings_model.yml",
         "parameters_valuation_model.yml",
         "parameters_inputs_processing.yml",
         "parameters_create_late_sudden_trajectories.yml",
-        "catalog.yml",
     ]
     for filename in override_files:
         fpath = conf_local_dir / filename
@@ -714,7 +719,7 @@ def main(
     ar6_path = ar6_path.resolve()
     project_dir = project_dir.resolve()
     output_dir = output_dir.resolve()
-    conf_local_dir = project_dir / "conf" / "local"
+    conf_local_dir = project_dir / "conf" / "study"  # dedicated env; never conf/local
     temp_scenarios_dir = project_dir / "workspace" / "_temp_scenario_csvs"
 
     # Validate inputs
@@ -772,6 +777,18 @@ def main(
 
     # Execute runs
     results: list[RunResult] = []
+    # Fingerprint the AR6 source once: "<resolved path>:<sha256>". None when the
+    # file is missing or empty, which preserves the original tolerance for a
+    # 0-byte AR6 file (cached extracts are then reused as-is).
+    ar6_fingerprint = None
+    if ar6_path.exists() and ar6_path.stat().st_size > 0:
+        _h = hashlib.sha256()
+        with open(ar6_path, "rb") as _f:
+            for _chunk in iter(lambda: _f.read(1 << 20), b""):
+                _h.update(_chunk)
+        ar6_fingerprint = f"{ar6_path.resolve()}:{_h.hexdigest()}"
+        log.info("AR6 source fingerprint: %s", ar6_fingerprint[-16:])
+
     run_num = 0
     batch_start = time.time()
 
@@ -781,12 +798,20 @@ def main(
         scenario_csv_path = temp_scenarios_dir / f"{safe_provider}_scenarios.csv"
 
         try:
-            cache_ok = scenario_csv_path.exists() and scenario_csv_path.stat().st_size > 0
             # A cached extract from a DIFFERENT AR6 source must not be reused:
             # the cache key is the manifest pair only, so without this the runner
             # silently ignores --ar6-path and re-runs the previous vintage.
-            if cache_ok and ar6_path.exists():
-                cache_ok = ar6_path.stat().st_mtime <= scenario_csv_path.stat().st_mtime
+            # Keyed on the SOURCE CONTENT HASH, not mtime -- an AR6 file with an
+            # older mtime can still be a different source, and an mtime check let
+            # exactly that happen twice on 2026-08-31 (a frozen-carbon-price file
+            # was silently served from a cache built from the corrected file).
+            sidecar = scenario_csv_path.with_suffix(".csv.src")
+            cache_ok = scenario_csv_path.exists() and scenario_csv_path.stat().st_size > 0
+            if cache_ok and ar6_fingerprint is not None:
+                cache_ok = (
+                    sidecar.exists()
+                    and sidecar.read_text().strip() == ar6_fingerprint
+                )
             if cache_ok:
                 # Reuse cached extract (same manifest pair, source no newer) —
                 # keeps inputs byte-identical with earlier batches and tolerates
@@ -805,6 +830,8 @@ def main(
                     target_scenario=pair.target_scenario,
                     output_path=scenario_csv_path,
                 )
+                if ar6_fingerprint is not None:
+                    sidecar.write_text(ar6_fingerprint)
                 log.info("Extracted %d scenario rows for %s", row_count, pair.provider)
         except Exception as e:
             log.error("Failed to extract scenarios for %s: %s", pair.provider, e)
@@ -828,7 +855,8 @@ def main(
             run_start = time.time()
 
             try:
-                # 1. Write parameter overrides to conf/local/
+                # 1. Write parameter overrides to conf/study/
+                cleanup_overrides(conf_local_dir)  # sanitize leftovers from an interrupted run
                 write_param_overrides(config, conf_local_dir)
 
                 # 2. Write catalog override pointing at extracted scenario CSV

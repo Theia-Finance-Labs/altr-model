@@ -299,6 +299,7 @@ def compute_asset_baseline_trajectories(
     assets_retirement_dates: pd.DataFrame = None,
     apply_retirement_baseline: bool = False,
     alignment_year: int = None,
+    retirement_floor_offset_years: int = 1,
 ) -> pd.DataFrame:
     """
     Compute asset-level baseline trajectories over the full time horizon (melted input).
@@ -326,11 +327,21 @@ def compute_asset_baseline_trajectories(
         - company_id, scenario_geography, sector, technology, asset_id, year
         - asset_activity, asset_age
     assets_retirement_dates : pd.DataFrame, optional
-        Retirement dates for assets
+        Retirement year per asset (catalog input, not a conf key)
     apply_retirement_baseline : bool, optional
-        Whether to apply retirement zeroing to baseline trajectories
+        Zero baseline activity once an asset passes its technology lifetime. Conf key
+        `params:apply_retirement_baseline`
+        (conf/base/parameters_distribute_impacts_to_asset_level.yml).
     alignment_year : int, optional
-        Alignment year for retirement (retirement cannot occur before alignment_year + 1)
+        Year by which company production reaches the target pathway; calendar year
+        > shock_year, and floors asset retirement at alignment_year +
+        retirement_floor_offset_years. Conf key `params:alignment_year`
+        (conf/base/parameters.yml).
+    retirement_floor_offset_years : int, optional
+        No asset may retire before alignment_year + this offset; integer years
+        (0 allows retirement in alignment_year itself). Conf key
+        `params:retirement_floor_offset_years`
+        (conf/base/parameters_distribute_impacts_to_asset_level.yml).
 
     Returns
     -------
@@ -493,7 +504,7 @@ def compute_asset_baseline_trajectories(
         if alignment_year is not None:
             retirement_df["eff_retirement_year"] = retirement_df[
                 "eff_retirement_year"
-            ].clip(lower=int(alignment_year) + 1)
+            ].clip(lower=int(alignment_year) + int(retirement_floor_offset_years))
 
         # Merge retirement info into `out` itself: the merge result carries a
         # fresh RangeIndex while `out` still holds the permuted labels from the
@@ -637,6 +648,7 @@ def _stagger_decreasing_fast(
     g_k: float,
     n_quantiles: int,
     logger=None,
+    retirement_floor_offset_years: int = 1,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Vectorized staggered allocation for decreasing technologies, with retirement-compensation:
@@ -749,7 +761,9 @@ def _stagger_decreasing_fast(
             for j, aid in enumerate(asset_ids):
                 y_r = raw_ret.get(str(aid))
                 if y_r is not None and pd.notna(y_r):
-                    eff_ret_year[j] = max(int(y_r), int(alignment_year) + 1)
+                    eff_ret_year[j] = max(
+                        int(y_r), int(alignment_year) + int(retirement_floor_offset_years)
+                    )
 
         T = years.shape[0]
         before_mat = np.zeros((T, A), dtype=np.float64)
@@ -909,6 +923,7 @@ def _prop_scale_decreasing_fast(
     alignment_year: int = None,
     apply_retirement: bool = False,
     logger=None,
+    retirement_floor_offset_years: int = 1,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Proportional-scaling for decreasing techs (fast), with retirement applied once:
@@ -1078,7 +1093,8 @@ def _prop_scale_decreasing_fast(
                         eff_ret_year[j] = int(yr)
                         if alignment_year is not None:
                             eff_ret_year[j] = max(
-                                eff_ret_year[j], int(alignment_year) + 1
+                                eff_ret_year[j],
+                                int(alignment_year) + int(retirement_floor_offset_years),
                             )
 
                 for j in range(A):
@@ -1185,6 +1201,7 @@ def stagger_decreasing_technologies(
     apply_decreasing_staggered_shock: bool,
     g_k: float = 6.0,
     n_quantiles: int = 3,
+    retirement_floor_offset_years: int = 1,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Decreasing techs.
@@ -1193,6 +1210,46 @@ def stagger_decreasing_technologies(
         → proportional scaling with retirement-compensation uplift.
     If True:
         → staggered allocation with retirement-compensation uplift.
+
+    Parameters
+    ----------
+    late_sudden_trajectories : pd.DataFrame
+        Melted company late-sudden trajectories for decreasing technologies
+        (catalog input, not a conf key).
+    assets_with_baseline_trajectory : pd.DataFrame
+        Asset panel carrying 'asset_baseline_trajectory' (catalog input, not a conf key).
+    assets_retirement_dates : pd.DataFrame
+        Retirement year per asset (catalog input, not a conf key).
+    shock_year : int
+        First year of the late-sudden transition shock; calendar year, must be
+        < alignment_year. Conf key `params:shock_year` (conf/base/parameters.yml).
+    alignment_year : int
+        Year by which company production reaches the target pathway; calendar year
+        > shock_year. Conf key `params:alignment_year` (conf/base/parameters.yml).
+    apply_retirement_shock : bool
+        Apply the lifetime-retirement rule to the shock (late-sudden) trajectories.
+        Conf key `params:apply_retirement_shock`
+        (conf/base/parameters_distribute_impacts_to_asset_level.yml).
+    apply_decreasing_staggered_shock : bool
+        Allocate the company-level cut in staggered quantile waves (oldest first)
+        instead of proportional scaling. Conf key
+        `params:apply_decreasing_staggered_shock`
+        (conf/base/parameters_distribute_impacts_to_asset_level.yml).
+    g_k : float
+        Steepness of the logistic weight that orders assets for the cut; positive float.
+        Conf key `params:staggered_shock.g_k`
+        (conf/base/parameters_distribute_impacts_to_asset_level.yml); gated by
+        apply_decreasing_staggered_shock.
+    n_quantiles : int
+        Number of age quantiles (waves) the cut is spread over; integer >= 1. Conf key
+        `params:staggered_shock.n_quantiles`
+        (conf/base/parameters_distribute_impacts_to_asset_level.yml); gated by
+        apply_decreasing_staggered_shock.
+    retirement_floor_offset_years : int
+        No asset may retire before alignment_year + this offset; integer years
+        (0 allows retirement in alignment_year itself). Conf key
+        `params:retirement_floor_offset_years`
+        (conf/base/parameters_distribute_impacts_to_asset_level.yml).
 
     RETURNS
     -------
@@ -1237,6 +1294,7 @@ def stagger_decreasing_technologies(
             alignment_year=int(alignment_year),
             apply_retirement=bool(apply_retirement_shock),
             logger=logger,
+            retirement_floor_offset_years=retirement_floor_offset_years,
         )
         return assets_df, corrections_df
 
@@ -1257,6 +1315,7 @@ def stagger_decreasing_technologies(
         g_k=float(g_k),
         n_quantiles=int(n_quantiles),
         logger=logger,
+        retirement_floor_offset_years=retirement_floor_offset_years,
     )
     return assets_df, corrections_df
 
@@ -1277,6 +1336,17 @@ def stagger_increasing_technologies(
       - Synthetic: for each year t >= shock_year, take max(0, company[t] - sum_real[t]).
         This guarantees sum(real + synthetic) matches the company L&S each year
         even when real BAU grows after the shock.
+
+    Parameters
+    ----------
+    late_sudden_trajectories : pd.DataFrame
+        Melted company late-sudden trajectories for increasing technologies
+        (catalog input, not a conf key).
+    assets_with_baseline_trajectory : pd.DataFrame
+        Asset panel carrying 'asset_baseline_trajectory' (catalog input, not a conf key).
+    shock_year : int
+        First year of the late-sudden transition shock; calendar year, must be
+        < alignment_year. Conf key `params:shock_year` (conf/base/parameters.yml).
 
     Returns:
         Tuple[pd.DataFrame, pd.DataFrame]: (asset_level_results, company_level_trajectories)

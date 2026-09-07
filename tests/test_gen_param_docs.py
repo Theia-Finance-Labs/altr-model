@@ -58,7 +58,8 @@ def test_blocks_attach_to_keys(tmp_path):
     assert params["top_key"].line == 8
 
 
-def test_every_shipped_key_is_documented():
+def test_every_shipped_key_is_documented_individually_or_as_a_table():
+    """Value-factor tables and the plots block are documented as one block each."""
     def leaves(d, pre=""):
         for k, v in d.items():
             if isinstance(v, dict) and k not in ("mcpr_value_factors", "mcpr_regional_value_factors", "plots"):

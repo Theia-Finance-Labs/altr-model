@@ -430,6 +430,32 @@ def plot_staggered_shock(
       the threshold max_individual_postshock_assets to keep figure saving fast.
     - Residual annotations are also capped via max_residual_annotations to avoid thousands of text artists.
     - Axis scale can be toggled with `use_log_scale`.
+
+    Parameters
+    ----------
+    late_sudden_trajectories : pd.DataFrame
+        Melted company late-sudden trajectories, corrected (catalog input, not a
+        conf key).
+    asset_level_df : pd.DataFrame
+        Melted asset-level staggered-shock panel (catalog input, not a conf key).
+    output_dir : str
+        Directory the figures are written to; filesystem path (not conf-bound —
+        the node uses the default).
+    include_synthetic : bool
+        Include synthetic assets (is_synthetic == True) in the plots (not conf-bound).
+    min_points_for_asset : int
+        Minimum number of points, integer >= 1, before an asset is drawn
+        (not conf-bound).
+    max_individual_postshock_assets : int
+        Performance guard: above this asset count, integer >= 1, per-asset lines are
+        skipped (not conf-bound).
+    annotate_asset_ages : bool
+        Annotate asset lines with their age (not conf-bound).
+    max_residual_annotations : int
+        Cap on residual text annotations, integer >= 1 (not conf-bound).
+    use_log_scale : bool
+        Log-scale y axis on the staggered-shock plots. Conf key
+        `params:plot_staggered_shock_use_log_scale` (conf/base/parameters_reporting.yml).
     """
 
     # Clean up existing directory if it exists
@@ -1138,6 +1164,21 @@ def reporting_validate_inputs(
 
     Validates tax-neutral DCF outputs: FCFF = EBITDA - CapEx (no taxes/depreciation).
     RFC: When enabling taxes, expect EBIT-based earnings with depreciation tax shields.
+
+    Parameters
+    ----------
+    asset_earnings : pd.DataFrame
+        Asset-year earnings panel (catalog input, not a conf key).
+    asset_npv : pd.DataFrame
+        Asset-level NPVs (catalog input, not a conf key).
+    company_npv : pd.DataFrame
+        Company-level NPVs (catalog input, not a conf key).
+    reporting_params : Dict
+        Opaque reporting configuration; conf key `params:reporting`
+        (conf/base/parameters_reporting.yml). Presentation only, never affects model
+        results. Keys read here:
+        - `basis`: "real" | "nominal", label for the monetary basis (default "real";
+          no conversion is performed, it must match the earnings/DCF inputs).
     """
 
     logger.info("Validating reporting inputs...")
@@ -1254,6 +1295,19 @@ def build_reporting_views(
     Node 2: Pre-compute tidy tables used by both plotting nodes.
 
     Build asset explainability view, NPV decomposition, company tech stacks, and deltas.
+
+    Parameters
+    ----------
+    asset_earnings_validated : pd.DataFrame
+        Validated asset-year earnings panel (catalog input, not a conf key).
+    asset_npv_validated : pd.DataFrame
+        Validated asset-level NPVs (catalog input, not a conf key).
+    company_npv_validated : pd.DataFrame
+        Validated company-level NPVs (catalog input, not a conf key).
+    reporting_params : Dict
+        Opaque reporting configuration; conf key `params:reporting`
+        (conf/base/parameters_reporting.yml). Accepted for signature uniformity across
+        the reporting nodes — this node reads no key from it.
     """
 
     logger.info("Building reporting views...")
@@ -1459,6 +1513,22 @@ def plot_earnings_inner_workings(
     Node 3: Plot earnings model inner workings for engineering/explainability.
 
     Goal: Show NPVs in a way that reveals the inner workings of the earnings model nodes.
+
+    Parameters
+    ----------
+    view_asset_explain : pd.DataFrame
+        Asset explainability view (catalog input, not a conf key).
+    view_asset_npv_decomp : pd.DataFrame
+        Asset NPV decomposition view (catalog input, not a conf key).
+    reporting_params : Dict
+        Opaque reporting configuration; conf key `params:reporting`
+        (conf/base/parameters_reporting.yml). Presentation only, never affects model
+        results. Keys read here:
+        - `plots.save_png` / `plots.save_pdf`: bool, write PNG / PDF per figure.
+        - `plots.dpi`: int dots per inch; `plots.width_in` / `plots.height_in`: inches.
+        - `materiality_threshold_usd`: USD below which NPV deltas are immaterial.
+        - `top_n_assets_per_company`: int >= 1, assets per company shown (some plots
+          use 10x this as a pre-filter).
     """
 
     logger.info("Generating earnings inner workings plots...")
@@ -1471,7 +1541,7 @@ def plot_earnings_inner_workings(
     # Plot settings
     plots_config = reporting_params.get("plots", {})
     save_png = plots_config.get("save_png", True)
-    save_pdf = plots_config.get("save_pdf", False)
+    save_pdf = plots_config.get("save_pdf", True)
     dpi = plots_config.get("dpi", 160)
     width = plots_config.get("width_in", 10)
     height = plots_config.get("height_in", 6)
@@ -1711,6 +1781,23 @@ def plot_valuation_authority_pack(
     Node 4: Generate authority-ready valuation plots and reports.
 
     Goal: Clean, regulator-friendly visuals for asset managers to report to authorities.
+
+    Parameters
+    ----------
+    asset_npv_validated : pd.DataFrame
+        Validated asset-level NPVs (catalog input, not a conf key).
+    company_npv_validated : pd.DataFrame
+        Validated company-level NPVs (catalog input, not a conf key).
+    view_company_tech : pd.DataFrame
+        Company x technology NPV stack view (catalog input, not a conf key).
+    view_deltas : pd.DataFrame
+        Baseline-vs-shock NPV delta view (catalog input, not a conf key).
+    reporting_params : Dict
+        Opaque reporting configuration; conf key `params:reporting`
+        (conf/base/parameters_reporting.yml). Presentation only, never affects model
+        results. Keys read here:
+        - `plots.save_png` / `plots.save_pdf`: bool, write PNG / PDF per figure.
+        - `plots.dpi`: int dots per inch; `plots.width_in` / `plots.height_in`: inches.
     """
 
     logger.info("Generating valuation authority pack...")
@@ -1723,7 +1810,7 @@ def plot_valuation_authority_pack(
     # Plot settings
     plots_config = reporting_params.get("plots", {})
     save_png = plots_config.get("save_png", True)
-    save_pdf = plots_config.get("save_pdf", False)
+    save_pdf = plots_config.get("save_pdf", True)
     dpi = plots_config.get("dpi", 160)
     width = plots_config.get("width_in", 10)
     height = plots_config.get("height_in", 6)
@@ -1859,15 +1946,60 @@ def plot_valuation_authority_pack(
     return str(output_dir)
 
 
+def _flatten_parameters(parameters: Dict, prefix: str = "") -> pd.DataFrame:
+    """Flatten a nested parameter dict to a two-column (parameter, value) frame."""
+    rows = []
+    for key, value in sorted(parameters.items()):
+        dotted = f"{prefix}{key}"
+        if isinstance(value, dict) and value:
+            rows.extend(_flatten_parameters(value, dotted + ".").itertuples(index=False))
+        elif isinstance(value, dict):
+            rows.append((dotted, "{}"))
+        else:
+            rows.append((dotted, repr(value) if isinstance(value, (list, tuple)) else value))
+    return pd.DataFrame(rows, columns=["parameter", "value"])
+
+
 def export_reporting_tables(
     company_npv_validated: pd.DataFrame,
     view_company_tech: pd.DataFrame,
     view_asset_npv_decomp: pd.DataFrame,
     reporting_params: Dict,
+    parameters: Dict | None = None,
 ) -> Dict[str, pd.DataFrame]:
     """
     Node 5: Export compliance-ready tables for regulators and QC.
+
+    `parameters` is the full resolved Kedro parameter dict; it is flattened to
+    tables/run_parameters.csv so every output folder carries the configuration
+    that produced it, and the methodology table reads the real DCF rates.
+
+    Parameters
+    ----------
+    company_npv_validated : pd.DataFrame
+        Validated company-level NPVs (catalog input, not a conf key).
+    view_company_tech : pd.DataFrame
+        Company x technology NPV stack view (catalog input, not a conf key).
+    view_asset_npv_decomp : pd.DataFrame
+        Asset NPV decomposition view (catalog input, not a conf key).
+    reporting_params : Dict
+        Opaque reporting configuration; conf key `params:reporting`
+        (conf/base/parameters_reporting.yml). Presentation only, never affects model
+        results. Keys read here:
+        - `basis`: "real" | "nominal" label for the monetary basis.
+        - `base_year`: calendar year shown in the methodology table (label only).
+        - `top_n_assets_per_company`: int >= 1; the table takes 10x this many rows.
+        - `materiality_threshold_usd`: USD immateriality threshold, reported in the
+          methodology table.
+    parameters : Dict or None
+        The full resolved Kedro parameter dict, bound to the whole `parameters` entry
+        (conf/base/parameters.yml plus every parameters_<pipeline>.yml). Flattened to
+        tables/run_parameters.csv; `dcf.discount_rate_baseline` and
+        `dcf.discount_rate_shock` (fractions [0, 1)) also feed the methodology table.
+        None is treated as an empty dict.
     """
+    parameters = parameters or {}
+    dcf = parameters.get("dcf", {})
 
     logger.info("Exporting reporting tables...")
 
@@ -1953,8 +2085,8 @@ def export_reporting_tables(
             "value": [
                 reporting_params.get("basis", "real"),
                 reporting_params.get("base_year", 2010),
-                "7%",  # From valuation model
-                "8%",  # From valuation model
+                dcf.get("discount_rate_baseline", "n/a"),
+                dcf.get("discount_rate_shock", "n/a"),
                 reporting_params.get("materiality_threshold_usd", 1_000_000),
             ],
         }
@@ -1976,6 +2108,12 @@ def export_reporting_tables(
     methodology_path = tables_dir / "methodology_parameters.csv"
     methodology_table.to_csv(methodology_path, index=False)
     logger.info(f"Saved methodology parameters table: {methodology_path}")
+
+    # Run stamp: the full resolved parameter set, one row per leaf key.
+    run_params_table = _flatten_parameters(parameters)
+    run_params_path = tables_dir / "run_parameters.csv"
+    run_params_table.to_csv(run_params_path, index=False)
+    logger.info(f"Saved run parameter stamp ({len(run_params_table)} keys): {run_params_path}")
 
     logger.info(
         f"Exported {len(company_summary_final)} company summaries, {len(technology_summary)} tech records, {len(top_assets_table)} top assets"
@@ -2005,9 +2143,14 @@ def plot_asset_financial_trajectories(
     ----------
     yearly_npv_trajectories : pd.DataFrame
         DataFrame with yearly trajectories containing financial components
-        and trajectory_type column
+        and trajectory_type column (catalog input, not a conf key)
+    asset_level_staggered_shock_melted : pd.DataFrame
+        Melted asset-level staggered-shock panel (catalog input, not a conf key)
     reporting_params : Dict
-        Reporting configuration parameters
+        Opaque reporting configuration; conf key `params:reporting`
+        (conf/base/parameters_reporting.yml). Presentation only, never affects model
+        results. Keys read here:
+        - `plots.dpi`: int dots per inch for the saved figures.
 
     Returns
     -------
@@ -2328,6 +2471,21 @@ def reporting_qc_summary(
 ) -> pd.DataFrame:
     """
     Node 7: Quality control checks and reporting diagnostics.
+
+    Parameters
+    ----------
+    view_asset_npv_decomp : pd.DataFrame
+        Asset NPV decomposition view (catalog input, not a conf key).
+    view_asset_explain : pd.DataFrame
+        Asset explainability view (catalog input, not a conf key).
+    reporting_params : Dict
+        Opaque reporting configuration; conf key `params:reporting`
+        (conf/base/parameters_reporting.yml). Presentation only, never affects model
+        results. Keys read here:
+        - `basis`: "real" | "nominal" label for the monetary basis.
+        - `small_numbers_rounding`: float QC threshold, multiplied by 1_000_000 USD,
+          for flagging tiny residuals (nothing is rounded).
+        - `materiality_threshold_usd`: USD below which NPV deltas are immaterial.
     """
 
     logger.info("Running reporting QC checks...")

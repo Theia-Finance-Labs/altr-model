@@ -5,7 +5,7 @@
 
 # meaning:  zero baseline activity once an asset passes its technology
 #           lifetime (retirement year = build year + lifetime, floored at
-#           alignment_year + 1)
+#           alignment_year + retirement_floor_offset_years)
 # unit:     bool
 # default:  True
 # source:   —
@@ -41,3 +41,12 @@ staggered_shock:
   # source:   —
   # status:   gated-by:apply_decreasing_staggered_shock
   n_quantiles: 3
+
+# meaning:  no asset may retire before alignment_year + this offset; lifetime
+#           retirements falling earlier are deferred to that year
+# unit:     integer years (0 allows retirement in alignment_year itself)
+# default:  1 — previously hardcoded in three places in
+#           distribute_impacts_to_asset_level/nodes.py
+# source:   —
+# status:   advanced
+retirement_floor_offset_years: 1

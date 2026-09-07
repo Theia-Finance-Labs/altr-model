@@ -13,11 +13,13 @@
 #   # source:   citation or "—"
 #   # status:   live | advanced | dead | gated-by:<key>
 #
-# Environment note: settings.py sets default_run_env=local. Kedro merges
-# conf/local/ over conf/base/ per TOP-LEVEL KEY across all files (not per
-# file). Prefer one-off overrides on the command line:
+# Environment note: settings.py sets default_run_env=local. Within an env all
+# parameters*.yml deep-merge into one dict; conf/local/ then overrides
+# conf/base/ destructively per TOP-LEVEL KEY (a nested block is replaced
+# whole). Prefer one-off overrides on the command line:
 #   kedro run --tags=altrisk --params="shock_year=2030,carbon_cost_method=full_ef"
-# Keys must be unique across the files of one environment — move, never copy.
+# A leaf key may appear in only one file of an environment — move, never copy.
+# Every run validates these values before the first node (src/crispy_kedro/hooks.py).
 # =============================================================================
 
 # ----------------------------------------------------------------- Scenarios
@@ -81,7 +83,7 @@ shock_year: 2033
 
 # meaning:  year by which company production reaches the target pathway
 # unit:     calendar year > shock_year; also floors asset retirement at
-#           alignment_year + 1
+#           alignment_year + retirement_floor_offset_years (default 1)
 # default:  2038 (extended from 2035: 5-year window is more realistic yet
 #           abrupt enough for meaningful fossil value destruction)
 # source:   —
@@ -163,8 +165,10 @@ include_replacement_capex: True
 include_decom_costs: True
 
 # --------------------------------------------------------------- Valuation
-# The whole dcf block lives here because Kedro forbids splitting a top-level
-# key across files. Headline knobs: the two discount rates and the spreads.
+# The whole dcf block lives here (Kedro would allow splitting disjoint leaves
+# across files) so that a local override, which replaces the block whole, has
+# one place to copy from. Headline knobs: the
+# two discount rates and the spreads.
 dcf:
   # meaning:  real discount rate for baseline pathways
   # unit:     fraction [0, 1)

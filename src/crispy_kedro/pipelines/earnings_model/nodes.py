@@ -337,11 +337,28 @@ def compute_scenario_vre_share(scenarios_validated: pd.DataFrame) -> pd.DataFram
     return merged[group_cols + ["vre_share"]]
 
 
-def build_scenario_surfaces(scenarios_validated: pd.DataFrame) -> pd.DataFrame:
+def build_scenario_surfaces(
+    scenarios_validated: pd.DataFrame,
+    default_capacity_factor: float | None = 1.0,
+    decom_cost_share_of_capex: float = 0.5,
+) -> pd.DataFrame:
     """
     Node 2: Build tidy per-(geo, sector, technology, year) surfaces.
 
     Creates standardized scenario surfaces with proper naming and units.
+
+    Parameters
+    ----------
+    scenarios_validated : pd.DataFrame
+        Validated scenario pathways (catalog input, not a conf key).
+    default_capacity_factor : float or None
+        Capacity factor used when the scenario reports none; fraction (0, 1], or None
+        to fail the run on any missing value. Conf key `params:default_capacity_factor`
+        (conf/base/parameters_earnings_model.yml).
+    decom_cost_share_of_capex : float
+        Decommissioning cost per retired MW as a share of capex_usd_per_mw;
+        fraction >= 0. Conf key `params:decom_cost_share_of_capex`
+        (conf/base/parameters_earnings_model.yml); gated by include_decom_costs.
     """
 
     logger.info("Building scenario surfaces...")
@@ -384,7 +401,18 @@ def build_scenario_surfaces(scenarios_validated: pd.DataFrame) -> pd.DataFrame:
     surfaces.loc[~fuel_mask, "fuel_price_usd_per_mwh_fuel"] = 0.0
 
     # Capacity factor
-    surfaces["capacity_factor"] = scenarios["scenario_capacity_factor"].fillna(1.0)
+    # Missing capacity factor: fill with default_capacity_factor, or fail when
+    # the parameter is null (a NaN here silently means 100% utilisation).
+    cf = scenarios["scenario_capacity_factor"]
+    if default_capacity_factor is None:
+        if cf.isna().any():
+            raise ValueError(
+                f"{int(cf.isna().sum())} scenario rows have no capacity factor and "
+                "default_capacity_factor is null"
+            )
+        surfaces["capacity_factor"] = cf
+    else:
+        surfaces["capacity_factor"] = cf.fillna(default_capacity_factor)
 
     # CapEx
     surfaces["capex_usd_per_mw"] = scenarios["capital_cost_usd_per_mw"]
@@ -405,9 +433,10 @@ def build_scenario_surfaces(scenarios_validated: pd.DataFrame) -> pd.DataFrame:
     surfaces["lifetime_years"] = scenarios["lifetime_years"]
 
     # Decommissioning cost per MW (negative sign = cost, not salvage value)
-    # Estimated at 50% of original CapEx per MW. The abs() is taken downstream
-    # in compute_flow_based_capex to ensure it enters capex_total as a positive outflow.
-    surfaces["scrap_usd_per_mw"] = -surfaces["capex_usd_per_mw"] / 2
+    # decom_cost_share_of_capex of original CapEx per MW (conf default 0.5). The
+    # abs() is taken downstream in compute_flow_based_capex so it enters
+    # capex_total as a positive outflow.
+    surfaces["scrap_usd_per_mw"] = -surfaces["capex_usd_per_mw"] * decom_cost_share_of_capex
 
     logger.info("Built scenario surfaces with %s rows", len(surfaces))
 
@@ -461,26 +490,69 @@ def apply_mcpr_adjustment(
             market clearing price. All technologies then receive this price
             multiplied by their value factor.
 
-    Args:
-        scenario_surfaces: DataFrame with scenario surfaces including
-            power_price_usd_per_mwh per technology.
-        enable_mcpr: If False, return surfaces unchanged (default True).
-        mcpr_method: Adjustment method. Currently "marginal_technology".
-        mcpr_markup_factor: Additional markup over marginal cost to capture
-            market power effects (Lerner index). Default 1.0 (no additional
-            markup). A value of 1.10 implies a 10% markup, consistent with
-            competitive electricity markets (Lerner index L ≈ 0.09).
-        mcpr_value_factors: Dict mapping technology names to value/capture
-            factors. VRE technologies receive less than the full market price
-            due to temporal correlation effects (Hirth, 2013). Defaults are
-            calibrated to moderate VRE penetration (10–20%):
-            - Wind Onshore: 0.90 (Hirth 2013, Table 1, ~15% penetration)
-            - Wind Offshore: 0.92 (slightly higher due to better load profile)
-            - Solar PV: 0.85 (Hirth 2013, Table 1, ~10% penetration)
-            - Solar CSP: 0.95 (dispatchable with storage)
-            - Dispatchable technologies: 1.0
-        mcpr_marginal_technologies: List of technology name prefixes used to
-            determine the marginal price. Defaults to fossil fuel technologies.
+    Parameters
+    ----------
+    scenario_surfaces : pd.DataFrame
+        Scenario surfaces including power_price_usd_per_mwh per technology
+        (catalog input, not a conf key).
+    enable_mcpr : bool
+        Turn the MCPR adjustment on/off; when False the surfaces are returned unchanged
+        and marginal_emission_factor is forced to 0, making every other mcpr_* argument
+        inert. Conf key `params:enable_mcpr` (conf/base/parameters.yml).
+    mcpr_method : str
+        How the clearing price is derived: "marginal_technology" (max price among
+        dispatchables) is the only implemented value, anything else raises. Conf key
+        `params:mcpr_method` (conf/base/parameters_earnings_model.yml).
+    mcpr_markup_factor : float
+        Multiplier on the marginal cost to form the clearing price; float > 0,
+        1.0 = no extra markup (1.10 implies a 10 % Lerner-index markup). Conf key
+        `params:mcpr_markup_factor` (conf/base/parameters_earnings_model.yml).
+    mcpr_value_factors : Dict[str, float]
+        Uniform value/capture factors applied to the clearing price per technology;
+        fraction (0, 1] per technology, defaults from Hirth 2013 table 1 at 10-20 %
+        penetration. Conf key `params:mcpr_value_factors`
+        (conf/base/parameters_earnings_model.yml).
+    mcpr_marginal_technologies : list
+        Technologies eligible to set the clearing price and the marginal emission
+        factor; list of technology names as in the scenario data. Conf key
+        `params:mcpr_marginal_technologies` (conf/base/parameters_earnings_model.yml).
+    enable_regional_mcpr_vf : bool
+        Use geography-specific VRE value factors instead of the uniform defaults.
+        Conf key `params:enable_regional_mcpr_vf`
+        (conf/base/parameters_earnings_model.yml).
+    mcpr_regional_value_factors : Dict[str, Dict[str, float]]
+        Regional VRE value factors, fraction (0, 1] per geography x technology, in
+        three penetration tiers. Conf key `params:mcpr_regional_value_factors`
+        (conf/base/parameters_earnings_model.yml); gated by enable_regional_mcpr_vf.
+    assets_data : pd.DataFrame
+        Company/asset forecasts used to weight geographies (catalog input
+        `companies_forecasts`, not a conf key).
+    enable_dynamic_capture_ratios : bool
+        Compute VRE value factors from the VRE capacity share per (geography, year,
+        scenario_type) instead of static defaults; overrides both static and regional
+        value factors. Conf key `params:enable_dynamic_capture_ratios`
+        (conf/base/parameters_earnings_model.yml).
+    scenario_vre_share : pd.DataFrame
+        VRE capacity share per geography/year/scenario_type (catalog input
+        `_temp_scenario_vre_share`, not a conf key).
+    mcpr_floor_at_iam_price : bool
+        True lets MCPR only LIFT prices toward the clearing price (floor at the IAM
+        price); False lets it lower VRE prices too. Conf key
+        `params:mcpr_floor_at_iam_price` (conf/base/parameters_earnings_model.yml).
+    mcpr_mode : str
+        How MCPR treats carbon: "auto" | "carbon_explicit" | "merit_order_decline";
+        "auto" always resolves to carbon_explicit. Conf key `params:mcpr_mode`
+        (conf/base/parameters.yml).
+    mcpr_merit_order_alpha : float
+        Merit-order price elasticity: the clearing price falls by alpha per 1 pp of
+        VRE share; fraction per percentage point. Conf key
+        `params:mcpr_merit_order_alpha` (conf/base/parameters_earnings_model.yml);
+        gated by mcpr_mode="merit_order_decline".
+    mcpr_merit_order_floor : float
+        Floor on the merit-order clearing price as a share of the original price
+        (scarcity rents); fraction [0, 1]. Conf key `params:mcpr_merit_order_floor`
+        (conf/base/parameters_earnings_model.yml); gated by
+        mcpr_mode="merit_order_decline".
 
     Returns:
         DataFrame with adjusted power_price_usd_per_mwh.
@@ -925,6 +997,24 @@ def assemble_asset_panel(
     [shock_year, alignment_year) instead of hard-switching at shock_year.
     This eliminates the near-term price windfall (RC4) where target prices
     are 30-50% higher than baseline at the shock year.
+
+    Parameters
+    ----------
+    assets_adjusted : pd.DataFrame
+        Validated asset panel (catalog input, not a conf key).
+    scenario_surfaces : pd.DataFrame
+        MCPR-adjusted scenario surfaces (catalog input, not a conf key).
+    shock_year : int
+        First year of the late-sudden transition shock; calendar year, must be
+        < alignment_year. Conf key `params:shock_year` (conf/base/parameters.yml).
+    alignment_year : int, optional
+        Year by which company production reaches the target pathway; calendar year
+        > shock_year, and the end of the price-ramp window. Conf key
+        `params:alignment_year` (conf/base/parameters.yml).
+    price_ramp : bool
+        Blend baseline->target prices linearly over [shock_year, alignment_year)
+        instead of a hard switch. Conf key `params:price_ramp`
+        (conf/base/parameters.yml).
     """
 
     logger.info("Assembling full asset panel...")
@@ -1179,7 +1269,9 @@ def validate_capacity_flow_identity(
                 )
 
 
-def compute_capacity_flows(asset_panel: pd.DataFrame) -> pd.DataFrame:
+def compute_capacity_flows(
+    asset_panel: pd.DataFrame, replacement_capex_rate: float = 0.02
+) -> pd.DataFrame:
     """
     Compute capacity flows from capacity changes in the asset panel (vectorized).
 
@@ -1254,7 +1346,9 @@ def compute_capacity_flows(asset_panel: pd.DataFrame) -> pd.DataFrame:
     if replacement_mask.any():
         replacement_data = data[replacement_mask].copy()
         replacement_data["capex_indicator"] = "roll_over_cap"
-        replacement_data["capex_capacity"] = replacement_data["asset_trajectory"] * 0.02
+        replacement_data["capex_capacity"] = (
+            replacement_data["asset_trajectory"] * replacement_capex_rate
+        )
         flow_records.append(replacement_data)
 
     # 4. No-flow records (synthetic assets with no capacity events need placeholder records)
@@ -1299,6 +1393,7 @@ def compute_flow_based_capex(
     include_growth_capex: bool,
     include_replacement_capex: bool,
     include_decom_costs: bool,
+    replacement_capex_rate: float = 0.02,
 ) -> pd.DataFrame:
     """
     Node 5: Compute CapEx using flow-based approach.
@@ -1307,12 +1402,34 @@ def compute_flow_based_capex(
     - GrowthCapEx_t = κ_t * new_buildout_cap
     - ReplaceCapEx_t = κ_t * roll_over_cap
     - DecomCost_t = δ_decom * retired_max_cap
+
+    Parameters
+    ----------
+    asset_panel_enriched : pd.DataFrame
+        Asset-year panel with capacity and unit-cost columns (catalog input, not a
+        conf key).
+    include_growth_capex : bool
+        Charge capex for capacity additions. Conf key `params:include_growth_capex`
+        (conf/base/parameters.yml).
+    include_replacement_capex : bool
+        Charge routine replacement capex on operating capacity. Conf key
+        `params:include_replacement_capex` (conf/base/parameters.yml).
+    include_decom_costs : bool
+        Charge decommissioning cost on retired capacity. Conf key
+        `params:include_decom_costs` (conf/base/parameters.yml).
+    replacement_capex_rate : float
+        Replacement capex charged each year as a share of operating capacity
+        (x capex_usd_per_mw); fraction per year, utility benchmark 0.01-0.03. Conf key
+        `params:replacement_capex_rate` (conf/base/parameters_earnings_model.yml);
+        gated by include_replacement_capex.
     """
 
     logger.info("Computing flow-based CapEx...")
 
     # Compute capacity flows from the data
-    capex_data = compute_capacity_flows(asset_panel_enriched)
+    capex_data = compute_capacity_flows(
+        asset_panel_enriched, replacement_capex_rate=replacement_capex_rate
+    )
 
     # NOTE: Flow identity validation disabled because it's based on flawed assumptions:
     # - Roll-over flows are 2% of installed capacity annually (EPRI/Lazard benchmark)
@@ -1405,7 +1522,7 @@ def compute_flow_based_capex(
 
 def compute_ops_block(
     asset_capex_block: pd.DataFrame,
-    market_passthrough: float = 0.5,
+    market_passthrough: float = 0.0,
     apply_continued_om_baseline: bool = False,
     apply_continued_om_shock: bool = True,
     dynamic_marginal_ef: bool = False,
@@ -1419,24 +1536,41 @@ def compute_ops_block(
     Note: No depreciation is considered here. EBITDA is a cash operating measure.
     RFC: Corporate tax and depreciation tax shield are currently disabled; see compute_fcff().
 
-    Args:
-        asset_capex_block: Asset data with capacity and cost information
-        market_passthrough: Fraction of carbon price passed through to market (default 0.5)
-        apply_continued_om_baseline: If True, apply continued O&M costs (frozen capacity) to baseline trajectories
-        apply_continued_om_shock: If True, apply continued O&M costs (frozen capacity) to shock trajectories
-        dynamic_marginal_ef: If True, make marginal_emission_factor decline over
-            time proportional to VRE capacity share. This models the merit order
-            evolution: as renewables displace fossils from the marginal position,
-            the carbon rent that gas/coal enjoy disappears, and their differential
-            carbon cost rises. When False, uses the static marginal_EF from MCPR.
-        carbon_cost_method: How to compute carbon cost. Options:
-            - "differential_ef" (default): carbon cost = Q × cp × max(EF - marginal_EF, 0).
-              Assumes IAM electricity prices embed marginal generator's carbon cost.
-              Appropriate for IAMs where prices fully reflect carbon (e.g., AIM/CGE).
-            - "full_ef": carbon cost = Q × cp × EF.
-              Uses the technology's full emission factor. Appropriate for IAMs where
-              prices minimally embed carbon cost (e.g., WITCH, where C1→C7 price
-              spread is only $9/MWh despite $722/tCO2 carbon price difference).
+    Parameters
+    ----------
+    asset_capex_block : pd.DataFrame
+        Asset data with capacity and cost information (catalog input, not a conf key).
+    market_passthrough : float
+        Share of carbon cost passed through to customers; fraction [0, 1]
+        (0 = firm absorbs all). Conf key `params:market_passthrough`
+        (conf/base/parameters.yml).
+    apply_continued_om_baseline : bool
+        Keep charging fixed O&M on capacity frozen at retirement in the baseline leg.
+        Conf key `params:apply_continued_om_baseline`
+        (conf/base/parameters_earnings_model.yml).
+    apply_continued_om_shock : bool
+        Keep charging fixed O&M on stranded (frozen) capacity in the shock leg. Conf key
+        `params:apply_continued_om_shock` (conf/base/parameters_earnings_model.yml).
+    dynamic_marginal_ef : bool
+        If True, marginal_emission_factor declines with VRE share,
+        marginal_ef(t) = marginal_ef_static * (1 - vre_share(t))**2; when False the
+        static marginal_EF from MCPR is used. Only active under enable_mcpr=True AND
+        carbon_cost_method="differential_ef". Conf key `params:dynamic_marginal_ef`
+        (conf/base/parameters_earnings_model.yml).
+    scenario_vre_share : pd.DataFrame
+        VRE capacity share per geography/year/scenario_type (catalog input
+        `_temp_scenario_vre_share`, not a conf key).
+    carbon_cost_method : str
+        How emission factors enter carbon cost; "full_ef" | "differential_ef" (any
+        other string silently falls through to differential_ef). Conf key
+        `params:carbon_cost_method` (conf/base/parameters.yml). Options:
+        - "differential_ef": carbon cost = Q × cp × max(EF - marginal_EF, 0).
+          Assumes IAM electricity prices embed marginal generator's carbon cost.
+          Appropriate for IAMs where prices fully reflect carbon (e.g., AIM/CGE).
+        - "full_ef": carbon cost = Q × cp × EF.
+          Uses the technology's full emission factor. Appropriate for IAMs where
+          prices minimally embed carbon cost (e.g., WITCH, where C1→C7 price
+          spread is only $9/MWh despite $722/tCO2 carbon price difference).
     """
 
     logger.info("Computing operations block...")

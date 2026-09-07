@@ -1,56 +1,11 @@
-# ================================================
-# ================== INPUTS ======================
-# ================================================
-
-
-assets_forecasts:
-  type: ibis.TableDataset
-  table_name: assets_forecasts
-  database: prod_marts
-  connection:
-    backend: bigquery
-    project_id: cloud-1in1000
-
-
-plant_ownerships:
-  type: ibis.TableDataset
-  table_name: int_ast_power_gem_plant_ownerships
-  database: prod_int_assets
-  connection:
-    backend: bigquery
-    project_id: cloud-1in1000
-
-
-scenarios:
-  type: ibis.TableDataset
-  table_name: scenarios
-  database: prod_marts
-  connection:
-    backend: bigquery
-    project_id: cloud-1in1000
-
-financial_averages:
-  type: ibis.TableDataset
-  table_name: financial_averages
-  database: prod_marts
-  connection:
-    backend: bigquery
-    project_id: cloud-1in1000
-
-# ================================================
-# ================== OUTPUTS =====================
-# ================================================
-
-
-scenarios_data:
-  type: pandas.CSVDataset
-  filepath: data/08_reporting/scenarios_data.csv
-
-financial_data:
-  type: pandas.CSVDataset
-  filepath: data/08_reporting/financial_data.csv
-
-
-companies_npvs_excel:
-  type: pandas.ExcelDataset
-  filepath: data/08_reporting/companies_npvs.xlsx
+# conf/prod is NOT a working environment and `kedro run --env prod` must not
+# be used. Neutralised on 2026-09-06 (previous content preserved in
+# workspace/conf_local_leftover_20260901_iso_d1/prod_catalog.before-20260906.yml):
+#   - its input names (assets_forecasts, scenarios) did not match the
+#     download_inputs pipeline inputs (db_assets_forecasts, db_scenarios_pathways),
+#     so base BigQuery tables would still have been read;
+#   - `assets_forecasts` is a NODE OUTPUT of inputs_processing.filter_assets;
+#     declaring it as an ibis BigQuery table here would have made a prod run
+#     write a filtered pandas frame over the prod_marts source table;
+#   - its four output datasets were produced by no node.
+# Rebuild it from conf/base/catalog.yml if a prod environment is ever needed.

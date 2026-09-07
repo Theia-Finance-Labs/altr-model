@@ -40,7 +40,11 @@ def create_pipeline(**kwargs) -> Pipeline:
             # Node 2: Build scenario surfaces
             node(
                 func=build_scenario_surfaces,
-                inputs="_temp_scenarios_validated",
+                inputs=dict(
+                    scenarios_validated="_temp_scenarios_validated",
+                    default_capacity_factor="params:default_capacity_factor",
+                    decom_cost_share_of_capex="params:decom_cost_share_of_capex",
+                ),
                 outputs="_temp_scenario_surfaces",
             ),
             # Node 2b: Compute VRE share from scenario data (for dynamic marginal EF)
@@ -57,6 +61,9 @@ def create_pipeline(**kwargs) -> Pipeline:
                     enable_mcpr="params:enable_mcpr",
                     mcpr_method="params:mcpr_method",
                     mcpr_markup_factor="params:mcpr_markup_factor",
+                    mcpr_value_factors="params:mcpr_value_factors",
+                    mcpr_marginal_technologies="params:mcpr_marginal_technologies",
+                    mcpr_floor_at_iam_price="params:mcpr_floor_at_iam_price",
                     enable_regional_mcpr_vf="params:enable_regional_mcpr_vf",
                     mcpr_regional_value_factors="params:mcpr_regional_value_factors",
                     assets_data="companies_forecasts",
@@ -88,6 +95,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                     include_growth_capex="params:include_growth_capex",
                     include_replacement_capex="params:include_replacement_capex",
                     include_decom_costs="params:include_decom_costs",
+                    replacement_capex_rate="params:replacement_capex_rate",
                 ),
                 outputs="_temp_asset_capex_block",
             ),

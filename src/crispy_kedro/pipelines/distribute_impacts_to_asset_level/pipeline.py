@@ -27,6 +27,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                     assets_retirement_dates="assets_retirement_dates",
                     apply_retirement_baseline="params:apply_retirement_baseline",
                     alignment_year="params:alignment_year",
+                    retirement_floor_offset_years="params:retirement_floor_offset_years",
                 ),
                 outputs="assets_with_baseline_trajectory",
                 name="compute_asset_baselines",
@@ -54,6 +55,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                     apply_decreasing_staggered_shock="params:apply_decreasing_staggered_shock",
                     g_k="params:staggered_shock.g_k",
                     n_quantiles="params:staggered_shock.n_quantiles",
+                    retirement_floor_offset_years="params:retirement_floor_offset_years",
                 ),
                 outputs=[
                     "decreasing_tech_staggered_shock",

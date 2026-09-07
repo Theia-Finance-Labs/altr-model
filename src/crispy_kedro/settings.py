@@ -8,7 +8,9 @@ import os
 # For example, after creating a hooks.py and defining a ProjectHooks class there, do
 # from crispy_kedro.hooks import ProjectHooks
 # Hooks are executed in a Last-In-First-Out (LIFO) order.
-# HOOKS = []
+from crispy_kedro.hooks import ParameterValidationHooks
+
+HOOKS = (ParameterValidationHooks(),)
 
 # Installed plugins for which to disable hook auto-registration.
 # DISABLE_HOOKS_FOR_PLUGINS = ("kedro-viz",)

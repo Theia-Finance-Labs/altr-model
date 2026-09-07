@@ -11,12 +11,7 @@
 # status:   advanced
 reduce_granularity_from_asset_to_company_level: False
 
-# meaning:  θ in the (disabled) electricity-price scaling
-#           SRMC + θ·(FOM/MWh + α·CapAnn/MWh)
-# unit:     float
-# default:  1
-# source:   —
-# status:   dead — scale_electricity_price (inputs_processing/nodes.py) has
-#           its body commented out and returns the input unchanged. Read by
-#           the inputs_processing pipeline, not inputs_postproc.
-theta_capex_recovery: 1
+# theta_capex_recovery was retired on 2026-09-06: its consumer
+# scale_electricity_price has its body commented out and returns the input
+# unchanged, so the key had no effect. Re-add it here and in
+# inputs_processing/pipeline.py if the scaling is ever reinstated.

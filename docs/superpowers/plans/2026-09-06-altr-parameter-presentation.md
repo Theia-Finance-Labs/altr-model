@@ -61,6 +61,20 @@ Gate: suite 64 passed; export node inputs verified to include `parameters`.
 13. [x] Scope note added at the top of methodology brief Appendix A pointing to `docs/parameters.md` for this repo.
 Regenerate after any conf change: `uv run python scripts/gen_param_docs.py`.
 
+## Santa review (2026-09-06, three context-isolated reviewers, same rubric)
+
+Round 1: Opus PASS, Fable PASS, Codex FAIL → fixed: element-level validation of the MCPR dicts and lists, open lower bounds, null allowed for `g_real_*` and `company_ids`; validation moved from a dependency-free node to `ParameterValidationHooks.before_pipeline_run` (`src/crispy_kedro/hooks.py`); README/conf wording on Kedro merge semantics corrected; `conf/local/README.md` un-ignored; sweep sanitises `conf/study` before each run.
+Round 2 (fresh reviewers): Opus PASS, Fable PASS, Codex unavailable (usage limit). Non-blocking items applied: value-factor cap widened to (0, 1.5]; duplicate-key rule stated at leaf level; stale hook comments.
+
+Logged with `santa-log.sh`. Left open, all pre-existing or out of scope:
+- Sweep extract cache keyed by provider only, not by scenario pair (`run_all_scenarios_comparison.py` ~795-814; includes Jakub's uncommitted AR6 sha256 sidecar change).
+- `create_frozen_capacity_at_retirement` does not apply the alignment floor; unchanged at default offset.
+- `validate_capacity_flow_identity` still has a `/ 0.05`; the function is dead (call site commented out).
+- Nineteen other function defaults still differ from the conf value they are wired to (all dormant); only the three headline ones were aligned.
+- `run_parameters.csv` is written next to the other tables but is not a catalog dataset, so bundling scripts will not pick it up.
+- `SKIP_FIX.txt` is staged for deletion in the working tree; it predates this work and violates the never-delete rule if committed as is.
+- The exported `altr_model` copy in `.claude/worktrees/*` still hardcodes `"7%"/"8%"` in its methodology export.
+
 Mechanical last: mkdocs nav, commit per phase, Bertrand review before merge (AGENTS.md rule).
 
 ## Approve or pick before starting

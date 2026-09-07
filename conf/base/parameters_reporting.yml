@@ -1,29 +1,67 @@
+# =============================================================================
+# Reporting parameters — presentation only, never affect model results.
+# =============================================================================
+# Removed 2026-09-06 because no node reads them: reporting.baseline_filter,
+# reporting.top_n_companies, reporting.show_synthetic_assets,
+# reporting.show_sensitivity_tornado, reporting.sensitivity_params.
+
+# meaning:  log-scale y axis on the staggered-shock plots
+# unit:     bool
+# default:  False
+# source:   —
+# status:   reporting
 plot_staggered_shock_use_log_scale: False
 
-# Reporting pipeline parameters
 reporting:
-  basis: "real"            # must match earnings/DCF
+  # meaning:  label for the monetary basis of the report; no conversion is
+  #           performed, it must match the earnings/DCF inputs
+  # unit:     "real" | "nominal" (label only)
+  # default:  real
+  # source:   —
+  # status:   reporting
+  basis: "real"
+
+  # meaning:  price base year shown in subtitles and the methodology table;
+  #           unrelated to the valuation's discounting base year
+  # unit:     calendar year (label only)
+  # default:  2010
+  # source:   —
+  # status:   reporting
   base_year: 2010
-  baseline_filter:
-    scenario_provider: "AR6_WITCH 5.0"  # Match your existing naming convention
-    scenario: "AR6_WITCH 5.0_EN_INDCi2030_1000_NDCp"  # Your baseline scenario name
-    scenario_type: "baseline"
+
+  # meaning:  assets per company shown in asset-level plots (some plots use
+  #           10× this as a pre-filter)
+  # unit:     integer >= 1
+  # default:  10
+  # source:   —
+  # status:   reporting
   top_n_assets_per_company: 10
-  top_n_companies: 50
-  show_synthetic_assets: false
-  
-  # plotting toggles
+
+  # meaning:  write PNG / PDF versions of each figure at the given size
+  #           (save_png, save_pdf, dpi, width_in, height_in)
+  # unit:     bool, bool, dpi, inches, inches
+  # default:  true, true, 160, 10, 6
+  # source:   —
+  # status:   reporting
   plots:
     save_png: true
     save_pdf: true
     dpi: 160
     width_in: 10
     height_in: 6
-  
-  # thresholds & styles
+
+  # meaning:  USD threshold below which NPV deltas are treated as immaterial
+  #           in QC tables
+  # unit:     USD
+  # default:  1_000_000
+  # source:   —
+  # status:   reporting
   materiality_threshold_usd: 1_000_000
+
+  # meaning:  QC threshold (× 1_000_000 USD) for flagging tiny residuals;
+  #           despite the name nothing is rounded
+  # unit:     float
+  # default:  0.001
+  # source:   —
+  # status:   reporting
   small_numbers_rounding: 0.001
-  
-  # sensitivity (optional)
-  show_sensitivity_tornado: true
-  sensitivity_params: ["power_price_excarbon_usd_per_mwh", "carbon_price_usd_per_tco2", "capex_usd_per_mw", "capacity_factor"]

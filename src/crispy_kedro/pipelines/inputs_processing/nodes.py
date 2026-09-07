@@ -11,10 +11,167 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Parameter validation (run by ParameterValidationHooks.before_pipeline_run in
+# src/crispy_kedro/hooks.py, i.e. before any node under any runner).
+# One entry per parameter that has a constrained domain. Allowed is either a
+# set of legal values, a (lo, hi) inclusive numeric range (None = unbounded),
+# or None (type check only). Dotted keys address nested blocks.
+# ---------------------------------------------------------------------------
+_NUM = (int, float)
+# Static VRE value factors above 1 are legitimate at low penetration (Hirth 2013;
+# the dynamic formula itself starts at 1.10), so the cap is loose, not 1.0.
+VALUE_FACTOR_MAX = 1.5
+PARAMETER_SPEC: dict[str, tuple[type | tuple[type, ...], object]] = {
+    "baseline_scenario": (str, None),
+    "target_scenario": (str, None),
+    "company_ids": ((list, type(None)), None),
+    "ownership_type": (str, {"direct", "indirect"}),
+    "ccs_on": ((bool, type(None)), None),
+    "max_forecast_horizon": (int, (1, None)),
+    "shock_year": (int, (2000, 2100)),
+    "alignment_year": (int, (2000, 2100)),
+    "enable_mcpr": (bool, None),
+    "mcpr_mode": (str, {"auto", "carbon_explicit", "merit_order_decline"}),
+    "mcpr_method": (str, {"marginal_technology"}),
+    "mcpr_markup_factor": (_NUM, (0, None, "open")),
+    "mcpr_merit_order_alpha": (_NUM, (0, 1)),
+    "mcpr_merit_order_floor": (_NUM, (0, 1)),
+    "mcpr_floor_at_iam_price": (bool, None),
+    "mcpr_marginal_technologies": (list, None),
+    "mcpr_value_factors": (dict, None),
+    "enable_dynamic_capture_ratios": (bool, None),
+    "enable_regional_mcpr_vf": (bool, None),
+    "carbon_cost_method": (str, {"full_ef", "differential_ef"}),
+    "market_passthrough": (_NUM, (0, 1)),
+    "price_ramp": (bool, None),
+    "include_growth_capex": (bool, None),
+    "include_replacement_capex": (bool, None),
+    "include_decom_costs": (bool, None),
+    "replacement_capex_rate": (_NUM, (0, 1)),
+    "decom_cost_share_of_capex": (_NUM, (0, None)),
+    "default_capacity_factor": ((float, int, type(None)), (0, 1, "open")),
+    "apply_continued_om_baseline": (bool, None),
+    "apply_continued_om_shock": (bool, None),
+    "dynamic_marginal_ef": (bool, None),
+    "excluded_country_iso2": (list, None),
+    "apply_retirement_baseline": (bool, None),
+    "apply_retirement_shock": (bool, None),
+    "apply_decreasing_staggered_shock": (bool, None),
+    "staggered_shock.g_k": (_NUM, (0, None)),
+    "staggered_shock.n_quantiles": (int, (1, None)),
+    "retirement_floor_offset_years": (int, (0, None)),
+    "reduce_granularity_from_asset_to_company_level": (bool, None),
+    "dcf.discount_rate_baseline": (_NUM, (0, 1)),
+    "dcf.discount_rate_shock": (_NUM, (0, 1)),
+    "dcf.brown_discount_spread": (_NUM, (-1, 1)),
+    "dcf.green_discount_spread": (_NUM, (-1, 1)),
+    "dcf.terminal_value.method": (str, {"perpetuity", "none"}),
+    "dcf.terminal_value.g_real_default": (_NUM, (-1, 1)),
+    "dcf.terminal_value.g_real_brown": ((*_NUM, type(None)), (-1, 1)),
+    "dcf.terminal_value.g_real_green": ((*_NUM, type(None)), (-1, 1)),
+    "dcf.terminal_value.normalization_window": (int, (1, None)),
+    "dcf.stranding_aware_tv": (bool, None),
+    "dcf.stranding_consecutive_years": (int, (1, None)),
+    "dcf.brown_remaining_life_years": (int, (1, None)),
+}
+
+
+def _lookup(params: dict, dotted: str):
+    cur = params
+    for part in dotted.split("."):
+        if not isinstance(cur, dict) or part not in cur:
+            raise KeyError(dotted)
+        cur = cur[part]
+    return cur
+
+
+def _range_errors(key: str, value, allowed: tuple) -> list[str]:
+    """Range check; a third element "open" makes the lower bound exclusive."""
+    lo, hi = allowed[0], allowed[1]
+    open_lo = len(allowed) > 2 and allowed[2] == "open"
+    bad_lo = lo is not None and (value <= lo if open_lo else value < lo)
+    bad_hi = hi is not None and value > hi
+    if bad_lo or bad_hi:
+        return [f"{key}: {value!r} outside {'(' if open_lo else '['}{lo}, {hi}]"]
+    return []
+
+
+def _collection_errors(parameters: dict) -> list[str]:
+    """Element-level checks for the list/dict parameters (type checks alone
+    would let mcpr_value_factors.X = 2.0 or a non-string country code through)."""
+    errors: list[str] = []
+    for key in ("mcpr_marginal_technologies", "excluded_country_iso2"):
+        for i, item in enumerate(parameters.get(key) or []):
+            if not isinstance(item, str) or not item:
+                errors.append(f"{key}[{i}]: expected a non-empty string, got {item!r}")
+    if not parameters.get("mcpr_marginal_technologies"):
+        errors.append("mcpr_marginal_technologies: must name at least one technology")
+    for tech, vf in (parameters.get("mcpr_value_factors") or {}).items():
+        if isinstance(vf, bool) or not isinstance(vf, _NUM):
+            errors.append(f"mcpr_value_factors.{tech}: expected a number, got {vf!r}")
+        else:
+            errors.extend(_range_errors(f"mcpr_value_factors.{tech}", vf, (0, VALUE_FACTOR_MAX, "open")))
+    for geo, techs in (parameters.get("mcpr_regional_value_factors") or {}).items():
+        if not isinstance(techs, dict):
+            errors.append(f"mcpr_regional_value_factors.{geo}: expected a mapping, got {techs!r}")
+            continue
+        for tech, vf in techs.items():
+            if isinstance(vf, bool) or not isinstance(vf, _NUM):
+                errors.append(f"mcpr_regional_value_factors.{geo}.{tech}: expected a number, got {vf!r}")
+            else:
+                errors.extend(_range_errors(f"mcpr_regional_value_factors.{geo}.{tech}", vf, (0, VALUE_FACTOR_MAX, "open")))
+    ids = parameters.get("company_ids")
+    if ids and any(not isinstance(c, str) for c in ids):
+        errors.append("company_ids: every entry must be a string")
+    return errors
+
+
+def validate_parameters(parameters: dict) -> None:
+    """Fail fast on a missing, mistyped or out-of-range parameter.
+
+    Every enum in the model otherwise falls through silently (a typo in
+    carbon_cost_method selects the other methodology; a typo in
+    terminal_value.method zeroes terminal value; a typo in ownership_type
+    empties the universe), so this is the only place a bad value is caught.
+    """
+    errors: list[str] = []
+    for key, (typ, allowed) in PARAMETER_SPEC.items():
+        try:
+            value = _lookup(parameters, key)
+        except KeyError:
+            errors.append(f"{key}: missing")
+            continue
+        if isinstance(value, bool) and bool not in (typ if isinstance(typ, tuple) else (typ,)):
+            errors.append(f"{key}: expected a number, got bool {value!r}")
+            continue
+        if not isinstance(value, typ):
+            errors.append(f"{key}: expected {typ}, got {type(value).__name__} {value!r}")
+            continue
+        if allowed is None or value is None:
+            continue
+        if isinstance(allowed, set):
+            if value not in allowed:
+                errors.append(f"{key}: {value!r} not in {sorted(allowed)}")
+        else:
+            errors.extend(_range_errors(key, value, allowed))
+    errors.extend(_collection_errors(parameters))
+    if not errors and parameters["alignment_year"] <= parameters["shock_year"]:
+        errors.append(
+            f"alignment_year ({parameters['alignment_year']}) must be greater than "
+            f"shock_year ({parameters['shock_year']})"
+        )
+    if errors:
+        raise ValueError("Invalid parameters:\n  " + "\n  ".join(errors))
+    logger.info("Parameters validated: %d keys checked", len(PARAMETER_SPEC))
+
+
 def check_input_parameters(
     shock_year: int,
     alignment_year: int,
 ) -> None:
+    """Superseded by validate_parameters (run via ParameterValidationHooks.before_pipeline_run
+    since 2026-09-06); kept for direct callers, no longer wired in any pipeline."""
 
     if alignment_year < shock_year:
         raise ValueError("Alignment year must be greater than shock year")
@@ -23,6 +180,28 @@ def check_input_parameters(
 def filter_scenarios(
     scenarios_pathways: pd.DataFrame, target_scenario: str, baseline_scenario: str
 ) -> pd.DataFrame:
+    """
+    Keep only the baseline and target scenario rows, tagging each as its trajectory type.
+
+    Parameters
+    ----------
+    scenarios_pathways : pd.DataFrame
+        Raw downloaded AR6 scenario pathways (catalog input, not a conf key).
+    target_scenario : str
+        IAM scenario the late-sudden shock converges to; exact scenario name as
+        "AR6_<provider>_<scenario>" (the "AR6_<provider>_" prefix is prepended if
+        missing, no match raises). Must share provider, geographies and
+        sector/technology coverage with the baseline. Conf key
+        `params:target_scenario` (conf/base/parameters.yml).
+    baseline_scenario : str
+        IAM scenario used as the no-transition reference pathway; same naming rule as
+        target_scenario. Conf key `params:baseline_scenario` (conf/base/parameters.yml).
+
+    Returns
+    -------
+    pd.DataFrame
+        The two selected scenarios with harmonised names.
+    """
 
     # Standardize scenario naming
     # TODO: remove after integration of scenario data in DBT
@@ -144,6 +323,26 @@ def filter_companies(
     company_ids: List[str],
     ownership_type: str,
 ) -> pd.DataFrame:
+    """
+    Restrict the ownership tree to the requested companies and ownership links.
+
+    Parameters
+    ----------
+    companies_ownership_tree : pd.DataFrame
+        Raw downloaded plant-ownership links (catalog input, not a conf key).
+    company_ids : List[str]
+        Restrict the run to these company ids; list of company_id strings, empty list
+        = all companies. Conf key `params:company_ids` (conf/base/parameters.yml).
+    ownership_type : str
+        Which ownership links attach assets to companies: "direct" (ownership_level 1)
+        or "indirect" (level >= 2); anything else silently yields an empty universe.
+        Conf key `params:ownership_type` (conf/base/parameters.yml).
+
+    Returns
+    -------
+    pd.DataFrame
+        The filtered ownership tree.
+    """
 
     # Filter by ownership type/level.
     # The BigQuery schema changed: 'ownership_type' (str: "direct"/"indirect")
@@ -220,6 +419,28 @@ def apply_ccs_suffix(
     scenarios_pathways: pd.DataFrame,
     ccs_on: bool | None,
 ) -> pd.DataFrame:
+    """
+    Suffix asset and ownership technologies with the requested CCS variant.
+
+    Parameters
+    ----------
+    assets_forecasts : pd.DataFrame
+        Raw downloaded asset-level forecasts (catalog input, not a conf key).
+    companies_ownership_tree : pd.DataFrame
+        Filtered ownership tree (catalog input, not a conf key).
+    scenarios_pathways : pd.DataFrame
+        Filtered scenario pathways, used to detect whether CCS variants exist
+        (catalog input, not a conf key).
+    ccs_on : bool or None
+        Which CCS variant of coal/gas/biomass/oil scenarios to use: True = "w/ CCS",
+        False = "w/o CCS", None = no distinction (returns the inputs unchanged).
+        Conf key `params:ccs_on` (conf/base/parameters.yml).
+
+    Returns
+    -------
+    tuple of pd.DataFrame
+        (assets_forecasts, companies_ownership_tree) with CCS suffixes applied.
+    """
     if (
         not any(
             " - w/ CCS" in tech for tech in scenarios_pathways["technology"].unique()
@@ -273,42 +494,51 @@ def apply_ccs_suffix(
     return assets_forecasts, companies_ownership_tree
 
 
+DEFAULT_EXCLUDED_COUNTRY_ISO2 = ['AS', 'BM', 'AW', 'SZ', 'FO', 'CW', 'DM', 'GF', 'PS', 'KN', 'MK', 'IM', 'PM', 'XK', 'SC', 'SS', 'AX', 'KY', 'BQ', 'GG', 'MS', 'JE']
+
+
 def filter_assets(
     assets_forecasts: pd.DataFrame,
     companies_ownership_tree: pd.DataFrame,
     scenarios_pathways: pd.DataFrame,
     max_forecast_horizon: int,
+    excluded_country_iso2: list[str] | None = None,
 ) -> pd.DataFrame:
+    """
+    Drop assets outside the modelled universe, horizon and country scope.
 
-    # TODO REMOVE HARDFIX FOR NGFS
+    Parameters
+    ----------
+    assets_forecasts : pd.DataFrame
+        Asset-level forecasts after the CCS suffixing (catalog input, not a conf key).
+    companies_ownership_tree : pd.DataFrame
+        Ownership tree defining which assets are owned (catalog input, not a conf key).
+    scenarios_pathways : pd.DataFrame
+        Filtered scenario pathways, used for the technology/geography scope
+        (catalog input, not a conf key).
+    max_forecast_horizon : int
+        Years of asset-level GEM forecast kept before scenario pathways take over;
+        integer years >= 1. Conf key `params:max_forecast_horizon`
+        (conf/base/parameters.yml).
+    excluded_country_iso2 : list[str] or None
+        Assets whose country_iso2 is in this list are dropped (as are assets with no
+        country); list of ISO 3166-1 alpha-2 codes, [] disables the filter. None falls
+        back to DEFAULT_EXCLUDED_COUNTRY_ISO2 (the historical NGFS hard-fix). Conf key
+        `params:excluded_country_iso2` (conf/base/parameters_inputs_processing.yml).
+
+    Returns
+    -------
+    pd.DataFrame
+        The filtered asset forecasts.
+    """
+
+    # Assets in excluded_country_iso2 are dropped (conf key; the default list
+    # is the historical NGFS hard-fix, kept for direct callers).
+    if excluded_country_iso2 is None:
+        excluded_country_iso2 = DEFAULT_EXCLUDED_COUNTRY_ISO2
     assets_forecasts = assets_forecasts.loc[
         ~assets_forecasts.country_iso2.isna()
-        & ~assets_forecasts.country_iso2.isin(
-            [
-                "AS",
-                "BM",
-                "AW",
-                "SZ",
-                "FO",
-                "CW",
-                "DM",
-                "GF",
-                "PS",
-                "KN",
-                "MK",
-                "IM",
-                "PM",
-                "XK",
-                "SC",
-                "SS",
-                "AX",
-                "KY",
-                "BQ",
-                "GG",
-                "MS",
-                "JE",
-            ]
-        ),
+        & ~assets_forecasts.country_iso2.isin(excluded_country_iso2),
         :,
     ]
 
@@ -743,28 +973,31 @@ def interpolate_scenarios_annually(scenarios_pathways: pd.DataFrame) -> pd.DataF
 def scale_electricity_price(
     scenarios_pathways: pd.DataFrame, theta: float = 1.0
 ) -> pd.DataFrame:
-    # """
-    # Adjust electricity prices per technology and year so that:
-    #   - each tech covers SRMC + θ*(FOM/MWh + α*CapAnn/MWh)
-    #   - energy-weighted mean price equals the original average price
+    """
+    Adjust electricity prices per technology and year so that:
+      - each tech covers SRMC + θ*(FOM/MWh + α*CapAnn/MWh)
+      - energy-weighted mean price equals the original average price
 
-    # Parameters
-    # ----------
-    # scenarios_pathways : pd.DataFrame
-    #     Must include:
-    #     ['scenario', 'year', 'scenario_geography',
-    #      'scenario_price', 'fuel_price', 'efficiency_decimal',
-    #      'om_cost_usd_per_mw_per_yr', 'capital_cost_usd_per_mw',
-    #      'scenario_capacity_factor', 'scenario_pathway',   # in MW!
-    #      'capacity_additions_mw_per_yr', 'lifetime_years']
-    # theta : float, optional
-    #     Fraction of fixed + capex recovery via energy (default = 1.0)
+    NOTE: the body below is commented out — this node is a pass-through and
+    returns `scenarios_pathways` unchanged (no `scenario_price_scaled` column).
 
-    # Returns
-    # -------
-    # pd.DataFrame
-    #     Same as input, with new column 'scenario_price_scaled'.
-    # """
+    Parameters
+    ----------
+    scenarios_pathways : pd.DataFrame
+        Must include:
+        ['scenario', 'year', 'scenario_geography',
+         'scenario_price', 'fuel_price', 'efficiency_decimal',
+         'om_cost_usd_per_mw_per_yr', 'capital_cost_usd_per_mw',
+         'scenario_capacity_factor', 'scenario_pathway',   # in MW!
+         'capacity_additions_mw_per_yr', 'lifetime_years']
+    theta : float, optional
+        Fraction of fixed + capex recovery via energy (default = 1.0)
+
+    Returns
+    -------
+    pd.DataFrame
+        Same as input, with new column 'scenario_price_scaled'.
+    """
 
     # df = scenarios_pathways.copy()
     # hours_per_year = 8760

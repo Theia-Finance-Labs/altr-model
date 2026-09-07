@@ -145,7 +145,13 @@ def late_sudden_misaligned_high_carbon_companies(
     ------
     misaligned_high_carbon_companies_trajectories : DataFrame
         Already filtered companies_trajectories for misaligned high-carbon companies
-    shock_year, alignment_year : int
+        (catalog input, not a conf key)
+    shock_year : int
+        First year of the late-sudden transition shock; calendar year, must be
+        < alignment_year. Conf key `params:shock_year` (conf/base/parameters.yml).
+    alignment_year : int
+        Year by which company production reaches the target pathway; calendar year
+        > shock_year. Conf key `params:alignment_year` (conf/base/parameters.yml).
 
     Returns
     -------
@@ -271,10 +277,13 @@ def late_sudden_misaligned_low_carbon_companies(
     ----------
     misaligned_low_carbon_companies_trajectories : DataFrame
         Already filtered companies_trajectories for misaligned low-carbon companies
+        (catalog input, not a conf key)
     shock_year : int
-        Year when the policy shock triggers the transition.
+        First year of the late-sudden transition shock; calendar year, must be
+        < alignment_year. Conf key `params:shock_year` (conf/base/parameters.yml).
     alignment_year : int
-        Year when the L&S path reaches the target level.
+        Year by which company production reaches the target pathway; calendar year
+        > shock_year. Conf key `params:alignment_year` (conf/base/parameters.yml).
 
     Returns
     -------
@@ -397,10 +406,13 @@ def late_sudden_aligned_high_carbon_companies(
     ----------
     aligned_high_carbon_companies_trajectories : DataFrame
         Already filtered companies_trajectories for aligned high-carbon companies
+        (catalog input, not a conf key)
     shock_year : int
-        Year when the policy shock triggers the transition.
+        First year of the late-sudden transition shock; calendar year, must be
+        < alignment_year. Conf key `params:shock_year` (conf/base/parameters.yml).
     alignment_year : int
-        Year when the L&S path reaches the target level.
+        Year by which company production reaches the target pathway; calendar year
+        > shock_year. Conf key `params:alignment_year` (conf/base/parameters.yml).
 
     Returns
     -------
@@ -534,10 +546,13 @@ def late_sudden_aligned_low_carbon_companies(
     ----------
     aligned_low_carbon_companies_trajectories : DataFrame
         Already filtered companies_trajectories for aligned low-carbon companies
+        (catalog input, not a conf key)
     shock_year : int
-        Year the policy shock begins.  Must exist in the horizon.
+        First year of the late-sudden transition shock; calendar year, must be
+        < alignment_year. Conf key `params:shock_year` (conf/base/parameters.yml).
     alignment_year : int | None
-        Unused for this case; kept to match the other function signatures.
+        Unused for this case (kept to match the other signatures); calendar year
+        > shock_year. Conf key `params:alignment_year` (conf/base/parameters.yml).
 
     Returns
     -------

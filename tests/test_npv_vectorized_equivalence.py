@@ -61,7 +61,7 @@ _NUMERIC = {
 def _reference_compute(
     asset_earnings: pd.DataFrame,
     discount_rate_baseline: float = 0.07,
-    discount_rate_shock: float = 0.08,
+    discount_rate_shock: float = 0.07,  # aligned with conf 2026-09-06
     terminal_growth_rate: float = 0.02,
     terminal_growth_rate_brown: float = None,
     terminal_growth_rate_green: float = None,

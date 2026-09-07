@@ -106,6 +106,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                     view_company_tech="view_company_tech",
                     view_asset_npv_decomp="view_asset_npv_decomp",
                     reporting_params="params:reporting",
+                    parameters="parameters",
                 ),
                 outputs={
                     "report_company_summary": "report_company_summary",

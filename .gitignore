@@ -6,6 +6,7 @@ credentials/
 # ignore all local configuration
 conf/local/**
 !conf/local/.gitkeep
+!conf/local/README.md
 .telemetry
 
 # ignore potentially sensitive credentials files
@@ -162,3 +163,6 @@ venv.bak/
 
 # mlflow local runs
 mlruns/*
+
+# kedro study env written by notebooks/run_all_scenarios_comparison.py
+conf/study/**

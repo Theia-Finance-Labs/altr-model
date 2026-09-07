@@ -1,52 +1,82 @@
-# Earnings model parameters
-market_passthrough: 0  # 0 => firm absorbs all differential carbon cost (conservative/stress test)
-
-# ==================================================================================
-# MCPR (Marginal Cost Price Ratio) Adjustment
-# ==================================================================================
-# In wholesale electricity markets, all generators receive the same clearing price
-# set by the marginal (most expensive dispatched) plant. IAM scenarios report
-# technology-specific "prices" approximating LCOE, not market clearing prices.
-# This adjustment derives a reference market clearing price and applies value factors.
+# =============================================================================
+# Advanced — earnings_model. Leave alone unless you know why.
+# User-facing knobs (enable_mcpr, mcpr_mode, carbon_cost_method,
+# market_passthrough, price_ramp, include_* capex switches) are in
+# conf/base/parameters.yml.
+# =============================================================================
 #
-# References:
-#   - Hirth (2013), "The Market Value of Variable Renewables," Energy Economics 38:218-236
-#   - Halttunen et al. (2022), "Global Assessment of the Merit-Order Effect," Nature Energy 7:1154-1164
-#   - Ueckerdt et al. (2013), "System LCOE," Energy 63:61-75
-#   - Borenstein, Bushnell & Wolak (2000), J. Industrial Economics 48(2):197-223
-# ==================================================================================
-enable_mcpr: True                    # Enable/disable the MCPR price adjustment
-mcpr_method: "marginal_technology"   # Method: "marginal_technology" (max price among dispatchables)
-mcpr_markup_factor: 1.0              # Additional markup over marginal cost (1.0 = no extra markup)
-mcpr_mode: "auto"                    # "auto" | "carbon_explicit" | "merit_order_decline"
-                                     #   auto: selects mode based on carbon price coverage in scenario data
-                                     #   carbon_explicit: forces full_ef carbon cost (for IAMs with carbon prices)
-                                     #   merit_order_decline: clearing price declines with VRE share (for IAMs without)
-mcpr_merit_order_alpha: 0.006        # Merit order price elasticity: -0.6% per 1pp VRE share (IMF WP 2022/220)
-mcpr_merit_order_floor: 0.5          # Min clearing price as fraction of original (scarcity rents floor)
+# MCPR background: in wholesale electricity markets every generator receives
+# the clearing price set by the marginal plant. IAM "prices" approximate LCOE.
+# MCPR derives a reference clearing price and applies value factors.
+# References: Hirth 2013 Energy Econ 38:218-236; Halttunen et al. 2022 Nat
+# Energy 7:1154-1164; Ueckerdt et al. 2013 Energy 63:61-75; Borenstein,
+# Bushnell & Wolak 2000 J Ind Econ 48(2):197-223.
 
-# Region-specific VRE value factors (Hirth 2013; Halttunen et al. 2022; S&P Global 2025)
-# Three tiers based on VRE penetration and market structure:
-#   Tier 1 (>20% VRE): EU, PAC_OECD — aggressive cannibalization, lower VF
-#   Tier 2 (8-20% VRE): USA, China, India, Japan, LatAm — moderate, current defaults
-#   Tier 3 (<8% VRE): Middle East, Africa, Indonesia, Ref Econ — near 1.0
-#
-# When enable_regional_mcpr_vf is False, uniform global defaults are used (backward-compatible).
-# When True, geography-specific value factors from mcpr_regional_value_factors are applied.
-# Dynamic capture ratios (Hirth 2013; Halttunen et al. 2022)
-# When True, VRE value factors are computed as a function of VRE capacity share
-# per (geography, year, scenario_type), replacing the static defaults above.
-# This is a universal market mechanism applied consistently across all IAMs:
-#   Solar PV:      VF = max(1.10 - 1.5 × vre_share, 0.40)
-#   Wind Onshore:  VF = max(1.05 - 0.8 × vre_share, 0.50)
-#   Wind Offshore: VF = max(1.07 - 0.7 × vre_share, 0.55)
-#   Solar CSP:     VF = max(1.05 - 0.3 × vre_share, 0.80)
-#   Dispatchable:  VF = 1.0
-# Overrides static VFs AND regional VFs when enabled.
+# meaning:  how the clearing price is derived
+# unit:     "marginal_technology" (max price among dispatchables); the only
+#           implemented value, anything else raises
+# default:  marginal_technology
+# source:   —
+# status:   gated-by:enable_mcpr
+mcpr_method: "marginal_technology"
+
+# meaning:  multiplier on the marginal cost to form the clearing price
+# unit:     float > 0; 1.0 = no extra markup
+# default:  1.0
+# source:   —
+# status:   gated-by:enable_mcpr
+mcpr_markup_factor: 1.0
+
+# meaning:  merit-order price elasticity: clearing price falls by alpha per
+#           1 pp of VRE share
+# unit:     fraction per percentage point
+# default:  0.006 (−0.6 % per pp)
+# source:   IMF WP 2022/220
+# status:   gated-by:mcpr_mode=merit_order_decline (paper-track only)
+mcpr_merit_order_alpha: 0.006
+
+# meaning:  floor on the merit-order clearing price as a share of the
+#           original price (scarcity rents)
+# unit:     fraction [0, 1]
+# default:  0.5
+# source:   —
+# status:   gated-by:mcpr_mode=merit_order_decline (paper-track only)
+mcpr_merit_order_floor: 0.5
+
+# meaning:  compute VRE value factors from VRE capacity share per
+#           (geography, year, scenario_type) instead of static defaults:
+#             Solar PV      VF = max(1.10 − 1.5·s, 0.40)
+#             Wind onshore  VF = max(1.05 − 0.8·s, 0.50)
+#             Wind offshore VF = max(1.07 − 0.7·s, 0.55)
+#             Solar CSP     VF = max(1.05 − 0.3·s, 0.80)
+#             Dispatchable  VF = 1.0
+#           The coefficients are hardcoded in earnings_model/nodes.py.
+#           Overrides static AND regional value factors when True.
+# unit:     bool
+# default:  False
+# source:   Hirth 2013; Halttunen et al. 2022
+# status:   gated-by:enable_mcpr
 enable_dynamic_capture_ratios: False
 
+# meaning:  use geography-specific VRE value factors from
+#           mcpr_regional_value_factors instead of the uniform defaults
+#           (Hirth 2013 table 1: PV 0.85, wind onshore 0.90, offshore 0.92,
+#           CSP 0.95, hardcoded in earnings_model/nodes.py)
+# unit:     bool
+# default:  False
+# source:   Hirth 2013; Halttunen et al. 2022; S&P Global 2025
+# status:   gated-by:enable_mcpr
 enable_regional_mcpr_vf: False
 
+# meaning:  regional VRE value factors, three tiers by VRE penetration:
+#           tier 1 (>20 %) EU, PAC_OECD — aggressive cannibalisation;
+#           tier 2 (8-20 %) USA, China, India, Japan, LatAm;
+#           tier 3 (<8 %) Middle East, Africa, Indonesia, Ref Econ — near 1.0
+# unit:     fraction (0, 1.5] per geography × technology (values above 1 are
+#           legitimate at low VRE penetration)
+# default:  see table
+# source:   Hirth 2013; Halttunen et al. 2022; S&P Global 2025
+# status:   gated-by:enable_regional_mcpr_vf
 mcpr_regional_value_factors:
   # Tier 1: High VRE (>20%) — strong cannibalization observed empirically
   R10EUROPE:
@@ -134,42 +164,105 @@ mcpr_regional_value_factors:
     "WindCap - Onshore": 0.98
     "WindCap - Offshore": 0.98
 
-# Price ramp (RC4 fix): blend baseline->target prices over [shock_year, alignment_year]
-# instead of hard-switching at shock_year. Eliminates near-term price windfall where
-# target prices are 30-50% higher than baseline at shock year.
-price_ramp: True  # RC4 fix: blend baseline->target prices over [shock_year, alignment_year]
+# meaning:  keep charging fixed O&M on capacity frozen at retirement in the
+#           baseline leg
+# unit:     bool
+# default:  False
+# source:   —
+# status:   advanced
+apply_continued_om_baseline: False
 
-# Cost element switches for earnings model
-include_growth_capex: False        # OFF: IAM O&M already bundles annualized capital costs (REMIND/WITCH/POLES)
-include_replacement_capex: True    # Include CapEx for replacing retired eligible assets
-include_decom_costs: True          # Include decommissioning costs for retired assets
+# meaning:  keep charging fixed O&M on stranded (frozen) capacity in the
+#           shock leg
+# unit:     bool
+# default:  True
+# source:   —
+# status:   advanced
+apply_continued_om_shock: True
 
-# Frozen capacity feature - continued O&M costs on stranded capacity
-apply_continued_om_baseline: False  # Apply continued O&M costs to baseline trajectories
-apply_continued_om_shock: True      # Apply continued O&M costs to shock trajectories
+# meaning:  marginal emission factor declines with VRE share,
+#           marginal_ef(t) = marginal_ef_static · (1 − vre_share(t))²
+#           (quadratic: gas starts paying at ~34 % VRE; linear would be 56 %)
+# unit:     bool
+# default:  True (RC5 fix)
+# source:   —
+# status:   advanced — only active under enable_mcpr=True AND
+#           carbon_cost_method=differential_ef (see earnings_model/nodes.py
+#           note); inert under the shipped full_ef configuration
+dynamic_marginal_ef: True
 
-# Dynamic marginal emission factor (RC5 fix)
-# When True, marginal_EF declines over time proportional to VRE capacity share,
-# modeling the merit order evolution where renewables displace fossils from the
-# marginal position. This causes gas/coal to face increasing differential carbon
-# costs as the carbon rent from high-EF marginal generators disappears.
-# Formula: marginal_ef(t) = marginal_ef_static * (1 - vre_share(t))^2
-# Quadratic decay: gas starts paying at ~34% VRE (linear would be 56%).
-dynamic_marginal_ef: True  # RC5 fix: marginal EF declines with VRE share, gas faces rising carbon costs
+# --------------------------------------------- promoted from code 2026-09-06
+# Defaults equal the constants previously hardcoded in earnings_model/nodes.py,
+# so results are unchanged unless you edit them.
 
-# Carbon cost method: how emission factors are applied to compute carbon costs.
-#
-#   "differential_ef" — carbon_cost = Q × cp × max(EF - marginal_EF, 0) × (1 - passthrough)
-#     Assumes IAM electricity prices embed the marginal generator's carbon cost.
-#     Appropriate for IAMs where prices reflect carbon (e.g., AIM/CGE: $64/MWh C1→C7 spread).
-#     Gas (as marginal generator) pays ~$0 differential carbon cost.
-#
-#   "full_ef" — carbon_cost = Q × cp × EF × (1 - passthrough)
-#     Uses each technology's full emission factor. Appropriate for IAMs where
-#     prices minimally embed carbon (e.g., WITCH: only $9/MWh C1→C7 spread
-#     despite $722/tCO2 carbon price difference). Eliminates the gas free-ride.
-#
-# For WITCH 5.0 scenarios: use "full_ef" (empirically justified — prices are near-flat
-# across stringencies, so there is no embedded carbon to double-count).
-# For AIM/CGE scenarios: use "differential_ef" (prices already capture carbon effects).
-carbon_cost_method: "full_ef"
+# meaning:  routine replacement capex charged each year as a share of
+#           operating capacity (× capex_usd_per_mw)
+# unit:     fraction per year; utility benchmark 0.01-0.03
+# default:  0.02
+# source:   EPRI; Lazard LCOE methodology
+# status:   gated-by:include_replacement_capex
+replacement_capex_rate: 0.02
+
+# meaning:  decommissioning cost per retired MW as a share of capex_usd_per_mw
+# unit:     fraction >= 0
+# default:  0.5
+# source:   —
+# status:   gated-by:include_decom_costs
+decom_cost_share_of_capex: 0.5
+
+# meaning:  capacity factor used when the scenario reports none
+# unit:     fraction (0, 1], or null to fail the run on any missing value
+# default:  1.0 — historical behaviour (missing = 100 % utilisation);
+#           null is recommended for new studies
+# source:   —
+# status:   advanced
+default_capacity_factor: 1.0
+
+# meaning:  technologies eligible to set the market clearing price (max
+#           price among them) and the marginal emission factor
+# unit:     list of technology names as in the scenario data
+# default:  dispatchable fossil and biomass
+# source:   —
+# status:   gated-by:enable_mcpr
+mcpr_marginal_technologies:
+  - GasCap
+  - CoalCap
+  - OilCap
+  - BiomassCap
+
+# meaning:  MCPR may only LIFT prices toward the clearing price (floor at the
+#           IAM price); False lets it lower VRE prices too
+# unit:     bool
+# default:  True
+# source:   —
+# status:   gated-by:enable_mcpr
+mcpr_floor_at_iam_price: True
+
+# meaning:  uniform value factors applied to the clearing price per technology
+#           (used unless enable_regional_mcpr_vf or
+#           enable_dynamic_capture_ratios is True)
+# unit:     fraction (0, 1.5] per technology (values above 1 are legitimate at
+#           low VRE penetration; validated in PARAMETER_SPEC)
+# default:  Hirth 2013 table 1, "Review" column, 10-20 % penetration
+# source:   Hirth 2013 Energy Econ 38:218-236
+# status:   gated-by:enable_mcpr
+mcpr_value_factors:
+  "WindCap - Onshore": 0.90
+  "WindCap - Offshore": 0.92
+  "SolarCap - PV": 0.85
+  "SolarCap - CSP": 0.95
+  GasCap: 1.0
+  GasCap_w/o CCS: 1.0
+  GasCap_w/ CCS: 1.0
+  CoalCap: 1.0
+  CoalCap_w/o CCS: 1.0
+  CoalCap_w/ CCS: 1.0
+  OilCap: 1.0
+  OilCap_w/o CCS: 1.0
+  OilCap_w/ CCS: 1.0
+  NuclearCap: 1.0
+  HydroCap: 1.0
+  GeothermalCap: 1.0
+  BiomassCap: 1.0
+  BiomassCap_w/o CCS: 1.0
+  BiomassCap_w/ CCS: 1.0
