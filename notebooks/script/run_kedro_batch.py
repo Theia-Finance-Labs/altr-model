@@ -1,6 +1,7 @@
 """Batch-run the ALTR model across named parameter configurations.
 
-This is the script form of the loop in ``notebooks/generate_results.ipynb``:
+This is the script form of the loop in
+``notebooks/notebook/generate_results.ipynb``:
 each entry of a "run configurations" mapping becomes one ``kedro run`` (via
 ``KedroSession.create(extra_params=...)``), optionally restricted to a fixed
 subset of companies, and each run's outputs are copied into
@@ -9,18 +10,20 @@ which parameters produced them) so runs never overwrite each other.
 
 CLI usage::
 
-    python notebooks/run_kedro_batch.py \\
-        --run-configurations notebooks/example_run_configurations.yml \\
-        --company-ids notebooks/example_company_selection.csv \\
+    uv run python notebooks/script/run_kedro_batch.py \\
+        --run-configurations notebooks/script/example_run_configurations.yml \\
+        --company-ids notebooks/streamlit/example_company_selection.csv \\
         --output-dir workspace/results_batch \\
         --tags altrisk
 
-Library usage (this is how ``notebooks/streamlit_app.py`` drives it, so
+Library usage (this is how ``notebooks/streamlit/app.py`` drives it, so
 progress can be streamed into the UI instead of only printed)::
 
     from run_kedro_batch import run_batch, load_run_configurations
 
-    run_configurations = load_run_configurations("notebooks/example_run_configurations.yml")
+    run_configurations = load_run_configurations(
+        "notebooks/script/example_run_configurations.yml"
+    )
     summary = run_batch(run_configurations, output_dir="workspace/results_batch")
 """
 
@@ -34,17 +37,17 @@ import sys
 import time
 import traceback
 import uuid
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from pathlib import Path
-from typing import Callable, Iterable, Mapping, Sequence
 
 import pandas as pd
 import yaml
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 MODEL_OUTPUT_DIR = PROJECT_ROOT / "data" / "07_model_output"
 REPORTING_DIR = PROJECT_ROOT / "data" / "08_reporting"
 
-# Mirrors the set of tables notebooks/generate_results.ipynb copies out of
+# Mirrors the tables notebooks/notebook/generate_results.ipynb copies out of
 # data/07_model_output/ after each run. asset_earnings.csv and
 # asset_trajectories.csv are deliberately excluded here too - at full
 # (non-company-restricted) scale they run into the hundreds of MB per run,
@@ -64,10 +67,6 @@ REPORTING_FOLDERS = [
     "companies_staggered_shock_plots",
     "asset_financial_trajectories",
 ]
-
-
-class ScenarioProviderMismatch(ValueError):
-    """Raised when a run's baseline/target scenarios come from different providers."""
 
 
 class _LogCallbackHandler(logging.Handler):
@@ -143,54 +142,11 @@ def _sanitize_run_name(run_name: str) -> str:
     return run_name.replace("/", "-")
 
 
-def _validate_scenario_pairing(
-    run_name: str,
-    run_params: Mapping,
-    scenarios_csv: Path | str | None,
-    allow_cross_provider: bool,
-    log: Callable[[str], None],
-) -> None:
-    # scenarios_csv is only used as an opt-in switch here (pass None to skip
-    # this check entirely) - the provider comparison itself is a pure string
-    # operation on the scenario names, see scenario_utils.scenario_provider.
-    baseline_scenario = run_params.get("baseline_scenario")
-    target_scenario = run_params.get("target_scenario")
-    if not baseline_scenario or not target_scenario or not scenarios_csv:
-        return
-
-    if str(Path(__file__).resolve().parent) not in sys.path:
-        sys.path.insert(0, str(Path(__file__).resolve().parent))
-    import scenario_utils
-
-    if scenario_utils.scenarios_share_a_provider(baseline_scenario, target_scenario):
-        return
-
-    baseline_provider = scenario_utils.scenario_provider(baseline_scenario)
-    target_provider = scenario_utils.scenario_provider(target_scenario)
-    message = (
-        f"[{run_name}] baseline_scenario provider '{baseline_provider}' "
-        f"({baseline_scenario!r}) does not match target_scenario provider "
-        f"'{target_provider}' ({target_scenario!r}). Mixing IAM providers "
-        f"between baseline and target is not enforced by the pipeline itself "
-        f"(it silently intersects geographies/technologies and warns), but "
-        f"it is almost never intentional."
-    )
-    if allow_cross_provider:
-        log(f"WARNING: {message} Proceeding because allow_cross_provider=True.")
-        return
-    raise ScenarioProviderMismatch(
-        f"{message} Pass allow_cross_provider=True (CLI: "
-        f"--allow-cross-provider-scenarios) to run it anyway."
-    )
-
-
 def run_batch(
     run_configurations: Mapping[str, Mapping],
     output_dir: Path | str,
     tags: Sequence[str] = ("altrisk",),
     company_ids: Iterable[str] | None = None,
-    scenarios_csv: Path | str | None = None,
-    allow_cross_provider: bool = False,
     project_path: Path | str | None = None,
     log: Callable[[str], None] = print,
 ) -> pd.DataFrame:
@@ -212,14 +168,6 @@ def run_batch(
         single uploaded company selection gets applied across all
         configurations). If omitted, each run's own ``company_ids`` (or the
         ``conf/base`` default - all companies) is used.
-    scenarios_csv:
-        Path to ``scenarios.csv``, used only to validate that each run's
-        baseline/target scenarios share a provider. Pass ``None`` to skip
-        this check entirely.
-    allow_cross_provider:
-        If False (default), a run whose baseline/target scenarios come from
-        different providers is skipped (recorded as ``failed``) instead of
-        executed.
     project_path:
         Kedro project root. Defaults to the repo this script lives in.
     log:
@@ -272,10 +220,6 @@ def run_batch(
 
             start = time.monotonic()
             try:
-                _validate_scenario_pairing(
-                    run_name, run_params, scenarios_csv, allow_cross_provider, log
-                )
-
                 with KedroSession.create(
                     project_path=project_path,
                     extra_params=run_params,
@@ -375,19 +319,6 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Comma-separated kedro tags to run (default: altrisk). "
         "Use 'altrisk,reporting' to also produce plots.",
     )
-    parser.add_argument(
-        "--scenarios-csv",
-        type=str,
-        default=str(PROJECT_ROOT / "data" / "05_model_input" / "scenarios.csv"),
-        help="Used to validate baseline/target scenarios share a provider "
-        "(default: %(default)s). Pass an empty string to skip the check.",
-    )
-    parser.add_argument(
-        "--allow-cross-provider-scenarios",
-        action="store_true",
-        help="Allow a run whose baseline/target scenarios come from different "
-        "IAM providers instead of skipping it.",
-    )
     return parser.parse_args(argv)
 
 
@@ -398,7 +329,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     company_ids = (
         load_company_ids(args.company_ids) if args.company_ids is not None else None
     )
-    scenarios_csv = args.scenarios_csv or None
     tags = [t.strip() for t in args.tags.split(",") if t.strip()]
 
     summary = run_batch(
@@ -406,8 +336,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         output_dir=args.output_dir,
         tags=tags,
         company_ids=company_ids,
-        scenarios_csv=scenarios_csv,
-        allow_cross_provider=args.allow_cross_provider_scenarios,
     )
     return 0 if (summary["status"] == "success").all() else 1
 

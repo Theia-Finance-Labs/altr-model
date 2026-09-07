@@ -6,7 +6,7 @@ selection), then run the model and download every output as one zip.
 
 Run with:
 
-    uv run --group streamlit streamlit run notebooks/streamlit_app.py
+    uv run --group streamlit streamlit run notebooks/streamlit/app.py
 """
 
 from __future__ import annotations
@@ -22,9 +22,11 @@ import streamlit as st
 import yaml
 
 APP_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = APP_DIR.parent
-if str(APP_DIR) not in sys.path:
-    sys.path.insert(0, str(APP_DIR))
+PROJECT_ROOT = APP_DIR.parents[1]
+SCRIPT_DIR = PROJECT_ROOT / "notebooks" / "script"
+for import_dir in (APP_DIR, SCRIPT_DIR):
+    if str(import_dir) not in sys.path:
+        sys.path.insert(0, str(import_dir))
 
 import scenario_utils  # noqa: E402
 from run_kedro_batch import run_batch  # noqa: E402
@@ -466,7 +468,6 @@ def render_step_run() -> None:
                     output_dir=workspace_dir,
                     tags=tags,
                     company_ids=st.session_state.company_ids,
-                    scenarios_csv=str(SCENARIOS_CSV),
                     log=log,
                 )
                 st.session_state.run_summary = summary

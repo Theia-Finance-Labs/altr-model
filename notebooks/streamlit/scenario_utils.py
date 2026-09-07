@@ -13,8 +13,8 @@ pair from two different providers - it silently intersects their
 geographies and sector/technology combinations and only *warns* about the
 mismatch. Mixing providers is almost never intentional (different IAMs
 disagree on units, geography splits, and technology coverage), so the
-run-config tooling in this folder treats "same provider" as a hard
-constraint by default and only relaxes it if explicitly overridden.
+Streamlit scenario picker only presents target scenarios from the same
+provider as the selected baseline.
 """
 
 from __future__ import annotations
@@ -24,15 +24,17 @@ from pathlib import Path
 
 import pandas as pd
 
+MIN_SCENARIO_NAME_PARTS = 2
+
 DEFAULT_SCENARIOS_CSV = (
-    Path(__file__).resolve().parents[1] / "data" / "05_model_input" / "scenarios.csv"
+    Path(__file__).resolve().parents[2] / "data" / "05_model_input" / "scenarios.csv"
 )
 
 
 def scenario_provider(scenario_name: str) -> str:
     """Return the IAM/provider token embedded in a scenario name."""
     parts = scenario_name.split("_")
-    if len(parts) < 2:
+    if len(parts) < MIN_SCENARIO_NAME_PARTS:
         return scenario_name
     return parts[1]
 
@@ -81,9 +83,3 @@ def list_matching_target_scenarios(
     provider = scenario_provider(baseline_scenario)
     same_provider = df.loc[df["provider"] == provider, "scenario"].unique()
     return sorted(s for s in same_provider if s != baseline_scenario)
-
-
-def scenarios_share_a_provider(
-    baseline_scenario: str, target_scenario: str
-) -> bool:
-    return scenario_provider(baseline_scenario) == scenario_provider(target_scenario)
