@@ -17,6 +17,17 @@ uv sync
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 ```
 
+## Quick Start
+
+Once installed, the fastest way to see it working is the Streamlit app:
+
+```bash
+uv run --group streamlit streamlit run notebooks/streamlit/app.py
+```
+
+Then open <http://localhost:8501>. For the notebook and batch-script
+alternatives, see [`notebooks/README.md`](notebooks/README.md).
+
 ## Code Structure
 
 Main pipeline code lives in `src/altr_model/pipelines/`, one folder per pipeline:
@@ -34,6 +45,12 @@ the standalone, maintainer-only `src/altr_model/bigquery_marts_downloader.py`
 script — see [docs/USAGE.md](docs/USAGE.md) for how to run it.
 
 For more on Kedro itself, see the [Kedro documentation](https://docs.kedro.org).
+
+## Running the model
+
+The interactive notebook, batch script, and Streamlit app are separated under
+`notebooks/`. See [`notebooks/README.md`](notebooks/README.md) for their entry
+points and copy-paste commands.
 
 ## Tests & Linting
 
