@@ -4,6 +4,24 @@
 
 A climate risk financial analysis pipeline that performs transition risk analysis by modeling the financial impact of climate scenarios on companies and their assets in the energy sector.
 
+## Documentation
+
+The handover documentation lives in [`docs/handover/`](docs/handover/) and reads
+either as plain markdown or as a site:
+
+```bash
+uv sync --group docs
+uv run mkdocs serve
+```
+
+- [Quickstart](docs/handover/quickstart.md) — first run, on your own inputs
+- [User guide](docs/handover/user_guide.md) — what each output column means
+- [Architecture](docs/handover/architecture.md) — the stage map
+- [Parameters reference](docs/handover/parameters.md) — generated from `conf/base/`
+- [Troubleshooting](docs/handover/troubleshooting.md)
+- [`notebooks/walkthrough.ipynb`](notebooks/walkthrough.ipynb) — an executed run
+  of the committed fixture slice, stage by stage
+
 ## Install
 
 Requires Python 3.10 (3.11+ is not supported due to dependency constraints).

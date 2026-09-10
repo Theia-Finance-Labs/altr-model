@@ -10,12 +10,23 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 
+CARBONTECH_ALIGNMENTS = {"misaligned_high_carbon", "aligned_high_carbon"}
+
+
 def compute_yearly_npv_trajectories(
     asset_earnings: pd.DataFrame,
     discount_rate_baseline: float = 0.07,
     discount_rate_shock: float = 0.08,
     terminal_growth_rate: float = 0.02,
     terminal_method: str = "perpetuity",
+    terminal_growth_rate_brown: float | None = None,
+    terminal_growth_rate_green: float | None = None,
+    terminal_normalization_window: int = 1,
+    brown_discount_spread: float = 0.0,
+    green_discount_spread: float = 0.0,
+    stranding_aware_tv: bool = False,
+    stranding_consecutive_years: int = 3,
+    brown_remaining_life_years: int = 10,
 ) -> pd.DataFrame:
     """
     Node 1: Compute yearly NPV trajectories with all financial components.
@@ -24,9 +35,58 @@ def compute_yearly_npv_trajectories(
     - Present value calculations for each year
     - All financial components (FCFF, EBITDA, revenue, costs)
     - Terminal value calculation in final year
+
+    Args:
+        terminal_growth_rate_brown / terminal_growth_rate_green: Terminal growth
+            rate for carbontech / greentech. Either falling back to
+            terminal_growth_rate when None. A declining fossil asset does not
+            grow into perpetuity, and a clean one may.
+        terminal_normalization_window: Number of final years averaged into the
+            terminal FCFF. 1 is the last year alone; 3-5 is the Damodaran /
+            McKinsey / CFA practice, and stops a single transition-period CapEx
+            spike from erasing an asset's whole terminal value.
+        brown_discount_spread / green_discount_spread: Carbon risk premium added
+            to carbontech and greenium subtracted from greentech. Bolton &
+            Kacperczyk (2021, 2023) measure ~1.5-2.5% higher equity returns for
+            high-emission firms; Shell's 2024 report uses 7.5% for O&G against
+            6.0% for renewables. Both 0 gives a uniform rate.
+        stranding_aware_tv: Three-tier terminal value instead of a single
+            perpetuity (Gourdel 2024):
+            1. STRANDED — FCFF <= 0 for the last N years: TV = 0. A rational
+               owner exercises the abandonment option rather than funding
+               perpetual losses.
+            2. DECLINING BUT PROFITABLE CARBONTECH — TV = a finite annuity over
+               brown_remaining_life_years, not a perpetuity, because a fossil
+               asset in transition has a finite remaining economic life.
+            3. EVERYTHING ELSE — the standard Gordon Growth perpetuity.
+        stranding_consecutive_years: How many consecutive loss-making years at
+            the end of the horizon count as stranded. A company can weather one
+            or two bad years; N in a row is a closure.
+        brown_remaining_life_years: Annuity horizon for tier 2.
     """
 
     logger.info("Computing yearly NPV trajectories...")
+
+    if stranding_aware_tv:
+        logger.info(
+            "Stranding-aware TV ENABLED (Gourdel 2024): "
+            "stranded (>=%d consecutive loss years) -> TV=0; "
+            "declining carbontech (profitable) -> %d-year finite annuity; "
+            "greentech -> standard Gordon Growth perpetuity",
+            stranding_consecutive_years,
+            brown_remaining_life_years,
+        )
+
+    g_brown = (
+        terminal_growth_rate_brown
+        if terminal_growth_rate_brown is not None
+        else terminal_growth_rate
+    )
+    g_green = (
+        terminal_growth_rate_green
+        if terminal_growth_rate_green is not None
+        else terminal_growth_rate
+    )
 
     npv_data = asset_earnings.copy()
 
@@ -49,7 +109,28 @@ def compute_yearly_npv_trajectories(
     # map() over the column instead of a row-wise apply: same per-value
     # semantics (including the raise above), one Python call per row instead
     # of one Series construction per row.
-    npv_data["discount_rate"] = npv_data["scenario_type"].map(get_discount_rate)
+    base_rate = npv_data["scenario_type"].map(get_discount_rate).to_numpy(dtype=float)
+
+    # Technology-differentiated discount rates on top of the scenario base rate.
+    if "alignment_type" in npv_data.columns:
+        is_carbontech_row = (
+            npv_data["alignment_type"].isin(CARBONTECH_ALIGNMENTS).to_numpy()
+        )
+    else:
+        is_carbontech_row = np.zeros(len(npv_data), dtype=bool)
+    if brown_discount_spread > 0 or green_discount_spread > 0:
+        logger.info(
+            "Technology-differentiated discount rates: brown +%.1f bps, "
+            "green -%.1f bps (Bolton & Kacperczyk 2021/2023; Shell 2024)",
+            brown_discount_spread * 10000,
+            green_discount_spread * 10000,
+        )
+    green_rate = (
+        base_rate - green_discount_spread if green_discount_spread > 0 else base_rate
+    )
+    npv_data["discount_rate"] = np.where(
+        is_carbontech_row, base_rate + brown_discount_spread, green_rate
+    )
 
     # Guard: need trajectory_type and FCFF
     need_cols = ["asset_id", "year", "FCFF", "trajectory_type"]
@@ -133,6 +214,8 @@ def compute_yearly_npv_trajectories(
     if n_groups:
         starts[1:] = np.cumsum(sizes)[:-1]
     last_idx = starts + sizes - 1
+    # Distance from the end of each group — the trailing windows below.
+    pos_from_end = sizes[gid] - 1 - (np.arange(n_rows) - starts[gid])
 
     # NaN years must fail loudly: the int casts below would silently wrap
     # NaN to INT64_MIN and produce astronomically wrong terminal values.
@@ -154,7 +237,6 @@ def compute_yearly_npv_trajectories(
 
     npv_data["base_year"] = base_year
     npv_data["terminal_method"] = terminal_method
-    npv_data["terminal_growth_rate"] = terminal_growth_rate
     npv_data["years_from_base"] = years_from_base
     npv_data["discount_factor"] = discount_factor
     npv_data["pv_fcff"] = fcff * discount_factor
@@ -163,24 +245,96 @@ def compute_yearly_npv_trajectories(
 
     # Per-group terminal anchors, all taken from the last (highest-year) row.
     final_year = years[last_idx].astype(np.int64)
-    final_fcff = fcff[last_idx]
     final_discount_rate = discount_rate[last_idx]
     years_to_terminal = (final_year + 1) - base_year_per_group
+    if "alignment_type" in npv_data.columns:
+        is_carbontech = (
+            npv_data["alignment_type"]
+            .iloc[last_idx]
+            .isin(CARBONTECH_ALIGNMENTS)
+            .to_numpy()
+        )
+    else:
+        is_carbontech = np.zeros(n_groups, dtype=bool)
 
-    # Gordon Growth perpetuity, only where the final FCFF is positive and the
-    # discount rate exceeds the growth rate.
+    # Normalized terminal FCFF: mean of the last min(window, group_size) rows.
+    # A single transition-period CapEx spike in the final year must not decide
+    # the whole terminal value.
+    if terminal_normalization_window > 1:
+        logger.info(
+            "Terminal FCFF normalization: averaging the last %s years "
+            "(Damodaran/McKinsey practice)",
+            terminal_normalization_window,
+        )
+    window_mask = pos_from_end < terminal_normalization_window
+    final_fcff = (
+        pd.Series(fcff[window_mask])
+        .groupby(gid[window_mask])
+        .mean()  # NaN-skipping
+        .reindex(np.arange(n_groups))
+        .to_numpy()
+    )
+
+    # Technology-appropriate terminal growth rate, written onto every row of the
+    # group whether or not a terminal row is ultimately added.
+    if terminal_method == "perpetuity":
+        g_effective = np.where(is_carbontech, g_brown, g_green).astype(np.float64)
+    else:
+        g_effective = np.full(n_groups, float(terminal_growth_rate))
+    npv_data["terminal_growth_rate"] = g_effective[gid] if n_groups else 0.0
+
     terminal_value = np.zeros(n_groups, dtype=np.float64)
     if terminal_method == "perpetuity" and n_groups:
+        # NaN != 0 is True — a group whose terminal FCFF is missing is treated
+        # as having one, exactly as a raw float comparison would.
+        has_terminal_fcff = final_fcff != 0
+        terminal_cf = final_fcff * (1.0 + g_effective)
+
+        if stranding_aware_tv:
+            # Stranded: loss-making for N consecutive years at the horizon end
+            # (Gourdel 2024) — a rational owner shuts down, so TV = 0.
+            strand_mask = pos_from_end < stranding_consecutive_years
+            is_stranded = (
+                pd.Series(fcff[strand_mask] <= 0)
+                .groupby(gid[strand_mask])
+                .all()
+                .reindex(np.arange(n_groups), fill_value=False)
+                .to_numpy()
+                .astype(bool)
+            )
+            stranded = has_terminal_fcff & is_stranded
+            # Declining but still profitable carbontech: a finite annuity over
+            # the remaining economic life instead of a perpetuity.
+            annuity = (
+                has_terminal_fcff & ~is_stranded & is_carbontech & (final_fcff > 0)
+            )
+            annuity_factor = np.zeros(n_groups, dtype=np.float64)
+            for t in range(1, brown_remaining_life_years + 1):
+                annuity_factor = annuity_factor + 1.0 / (1.0 + final_discount_rate) ** t
+            # The annuity factor already discounts t=1..N back to final_year, so
+            # discount from final_year (not final_year + 1) to base_year.
+            annuity_tv = (
+                terminal_cf
+                * annuity_factor
+                * (1.0 + final_discount_rate) ** (-(final_year - base_year_per_group))
+            )
+            terminal_value = np.where(annuity, annuity_tv, terminal_value)
+        else:
+            stranded = np.zeros(n_groups, dtype=bool)
+            annuity = np.zeros(n_groups, dtype=bool)
+
+        # Gordon Growth perpetuity for everything else, only where r > g.
         with np.errstate(divide="ignore", invalid="ignore"):
-            perpetuity_tv = (
-                final_fcff
-                * (1.0 + terminal_growth_rate)
-                / (final_discount_rate - terminal_growth_rate)
-            ) * (1.0 + final_discount_rate) ** (-years_to_terminal)
-        has_terminal_value = (final_fcff > 0) & (
-            final_discount_rate > terminal_growth_rate
+            perpetuity_tv = (terminal_cf / (final_discount_rate - g_effective)) * (
+                1.0 + final_discount_rate
+            ) ** (-years_to_terminal)
+        perpetuity = (
+            has_terminal_fcff
+            & ~stranded
+            & ~annuity
+            & (final_discount_rate > g_effective)
         )
-        terminal_value = np.where(has_terminal_value, perpetuity_tv, 0.0)
+        terminal_value = np.where(perpetuity, perpetuity_tv, terminal_value)
 
     # One terminal row per group with a non-zero terminal value, built as a
     # single frame (the old per-group Series.to_frame().T forced object dtype).
@@ -346,6 +500,9 @@ def calculate_npv_per_asset(
             baseline_arr = npv_wide["baseline_npv"].to_numpy(dtype=np.float64)
             shock_arr = npv_wide["latesudden_npv"].to_numpy(dtype=np.float64)
             change_arr = np.true_divide((shock_arr - baseline_arr), abs(baseline_arr))
+        # A zero baseline yields inf/-inf; that is "undefined", not "infinitely
+        # worse", and it poisons every downstream mean.
+        change_arr = np.where(np.isfinite(change_arr), change_arr, np.nan)
         npv_wide["npv_change"] = change_arr
 
     logger.info(f"Calculated NPV (wide) for {len(npv_wide)} assets")
@@ -391,6 +548,7 @@ def aggregate_to_company_technology_npv(asset_npv: pd.DataFrame) -> pd.DataFrame
         base_ct = company_tech_npv["baseline_npv"].to_numpy(dtype=np.float64)
         shock_ct = company_tech_npv["latesudden_npv"].to_numpy(dtype=np.float64)
         change_ct = np.true_divide((shock_ct - base_ct), abs(base_ct))
+    change_ct = np.where(np.isfinite(change_ct), change_ct, np.nan)
     company_tech_npv["npv_change"] = change_ct
     logger.info(
         f"Aggregated to {len(company_tech_npv)} company-technology-scenario_geography combinations"
@@ -430,6 +588,7 @@ def aggregate_to_company_npv(company_technology_npv: pd.DataFrame) -> pd.DataFra
         base_c = company_npv["baseline_npv"].to_numpy(dtype=np.float64)
         shock_c = company_npv["latesudden_npv"].to_numpy(dtype=np.float64)
         change_c = np.true_divide((shock_c - base_c), abs(base_c))
+    change_c = np.where(np.isfinite(change_c), change_c, np.nan)
     company_npv["npv_change"] = change_c
 
     logger.info(f"Aggregated to {len(company_npv)} company-level records")

@@ -148,10 +148,54 @@ def _consolidate_ownership_stakes(companies_ownerships: pd.DataFrame) -> pd.Data
     ].sum()
 
 
+def _select_ownership_tier(
+    companies_ownerships: pd.DataFrame, ownership_type: str
+) -> pd.DataFrame:
+    """Keep one rung of the ownership tree.
+
+    A company's stake in an asset is recorded at several tiers - a direct
+    holding and the equity stakes that roll up through subsidiaries. They are
+    alternative views of the same capacity, not additive ones, so a run picks
+    the tier it reports on. Summing across tiers would allocate the same plant
+    to the same company twice.
+
+    Two schemas are in circulation: `ownership_type` ("direct"/"indirect") and
+    the newer `ownership_level` (1 = direct, 2+ = indirect).
+    """
+    if "ownership_type" in companies_ownerships.columns:
+        selected = companies_ownerships.loc[
+            companies_ownerships["ownership_type"] == ownership_type
+        ]
+    elif "ownership_level" in companies_ownerships.columns:
+        level = companies_ownerships["ownership_level"]
+        selected = companies_ownerships.loc[
+            level.eq(1) if ownership_type == "direct" else level.ge(2)
+        ]
+    else:
+        logger.warning(
+            "Neither 'ownership_type' nor 'ownership_level' is present in the "
+            "companies input; keeping every ownership row. Capacity may be "
+            "allocated more than once per company."
+        )
+        return companies_ownerships
+
+    logger.info(
+        "Ownership tier '%s': kept %s of %s ownership rows",
+        ownership_type,
+        len(selected),
+        len(companies_ownerships),
+    )
+    return selected
+
+
 def filter_companies(
     companies_ownerships: pd.DataFrame,
     company_ids: List[str],
+    ownership_type: str = "direct",
 ) -> pd.DataFrame:
+    # Tier first, then consolidate: consolidation sums the stakes it is given,
+    # so it must only ever see one rung of the tree.
+    companies_ownerships = _select_ownership_tier(companies_ownerships, ownership_type)
     companies_ownerships = _consolidate_ownership_stakes(companies_ownerships)
 
     if company_ids:

@@ -1,0 +1,29 @@
+# scripts/export_allowlist.txt — everything an export ships; nothing else leaves.
+# The destination is the build_export.py --dest directory, not a named repo.
+#
+# One path per line, relative to the repository root. A directory entry ships
+# the whole subtree; a file entry ships that one file. Anything not listed here
+# never reaches the export. Trailing `# ...` is a comment.
+#
+# Exclusions applied on top of these entries live in build_export.py
+# (SKIP_RELATIVE / SKIP_DIR_NAMES) so the reasons stay next to the code that
+# rewrites the affected files.
+#
+# AGENTS.md is deliberately absent and must stay absent: recipients never
+# receive agent or team-board context.
+
+src/altr_model/              # minus bigquery_marts_downloader.py — handled in code
+conf/base/
+conf/fixture/
+docs/handover/
+mkdocs.yml
+notebooks/walkthrough.ipynb
+tests/
+scripts/prepare_inputs.py
+scripts/gen_param_docs.py
+scripts/pin_golden.py        # lets recipients pin their own golden baseline
+pyproject.toml
+uv.lock
+LICENSE
+Dockerfile
+.gitignore

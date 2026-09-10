@@ -1,0 +1,71 @@
+# Fixture environment: tiny committed input slice, outputs quarantined
+# under data/fixture_run/. Everything else inherits from conf/base.
+#
+# Every dataset in conf/base/catalog.yml that carries a `filepath:` is
+# re-declared here. Inputs point at tests/fixtures/data/; outputs are
+# rewritten to data/fixture_run/<path under data/> so a fixture run can
+# never overwrite a real model run.
+#
+# tests/integration/test_fixture_catalog_complete.py asserts this file covers
+# every base dataset, so a new base entry cannot silently write outside the
+# quarantine.
+
+# ================================================
+# ================== INPUTS ======================
+# ================================================
+
+scenarios:
+  type: pandas.CSVDataset
+  filepath: tests/fixtures/data/scenarios.csv
+
+assets_forecasts:
+  type: pandas.CSVDataset
+  filepath: tests/fixtures/data/assets_forecasts.csv
+
+companies_ownerships:
+  type: pandas.CSVDataset
+  filepath: tests/fixtures/data/companies_ownerships.csv
+
+# ================================================
+# ================== OUTPUTS =====================
+# ================================================
+
+company_trajectories:
+  type: pandas.CSVDataset
+  filepath: data/fixture_run/07_model_output/company_trajectories.csv
+
+asset_trajectories:
+  type: pandas.CSVDataset
+  filepath: data/fixture_run/07_model_output/asset_trajectories.csv
+
+frozen_capacity_at_retirement:
+  type: pandas.CSVDataset
+  filepath: data/fixture_run/07_model_output/frozen_capacity_at_retirement.csv
+
+# ================================================
+# ======= EARNINGS MODEL PIPELINE OUTPUTS =======
+# ================================================
+
+asset_earnings:
+  type: pandas.CSVDataset
+  filepath: data/fixture_run/07_model_output/asset_earnings.csv
+
+# ================================================
+# ================== VALUATION MODEL OUTPUTS ===
+# ================================================
+
+yearly_npv_trajectories:
+  type: pandas.CSVDataset
+  filepath: data/fixture_run/07_model_output/yearly_npv_trajectories.csv
+
+asset_npv:
+  type: pandas.CSVDataset
+  filepath: data/fixture_run/07_model_output/asset_npv.csv
+
+company_technology_npv:
+  type: pandas.CSVDataset
+  filepath: data/fixture_run/07_model_output/company_technology_npv.csv
+
+company_npv:
+  type: pandas.CSVDataset
+  filepath: data/fixture_run/07_model_output/company_npv.csv
