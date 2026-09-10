@@ -42,7 +42,7 @@ financial_averages:
 # See ALTR_NPV_Direction_Fix_Research.md for IAM-specific carbon price strategy
 ar6_carbon_prices:
   type: pandas.CSVDataset
-  filepath: 6_final_AR6_viable_scenarios.csv
+  filepath: data/01_raw/ar6_carbon_prices.csv  # tracked (gitignore exception); 5 columns, carbon prices only
   load_args:
     usecols:
       - scenario_provider

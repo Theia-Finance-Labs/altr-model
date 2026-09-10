@@ -1,0 +1,130 @@
+<title>AR6 Fuel-Price Trace</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
+<style>
+  :root {
+    --ground: #F4F6F8; --panel: #FFFFFF; --ink: #1A222C; --ink-2: #4A5866; --rule: #D3DAE0;
+    --accent: #116B72; --accent-ink: #0C4E53; --open: #B4761A; --open-bg: #FBF3E4;
+    --code-bg: #EEF2F5; --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --sans: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif; --serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0F151B; --panel: #161E26; --ink: #E4EAEF; --ink-2: #A3B0BC; --rule: #2A3540;
+      --accent: #4DB2B7; --accent-ink: #7FCBCF; --open: #E1A63C; --open-bg: #2B2314; --code-bg: #1B252E;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0F151B; --panel: #161E26; --ink: #E4EAEF; --ink-2: #A3B0BC; --rule: #2A3540;
+    --accent: #4DB2B7; --accent-ink: #7FCBCF; --open: #E1A63C; --open-bg: #2B2314; --code-bg: #1B252E;
+  }
+  body { background: var(--ground); color: var(--ink); font-family: var(--serif); font-size: 17px; line-height: 1.55; margin: 0; }
+  main { max-width: 74ch; margin: 0 auto; padding: 40px 24px 96px; }
+  h1, h2, h3 { font-family: var(--sans); text-wrap: balance; line-height: 1.2; margin: 0; }
+  h1 { font-size: 34px; font-weight: 600; letter-spacing: -0.01em; }
+  h2 { font-size: 22px; font-weight: 600; margin-top: 44px; padding-top: 20px; border-top: 1px solid var(--rule); }
+  h3 { font-size: 17px; font-weight: 600; margin-top: 22px; }
+  p { margin: 12px 0; max-width: 68ch; }
+  .eyebrow { font-family: var(--sans); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); margin-bottom: 10px; }
+  .lede { font-size: 19px; color: var(--ink-2); margin-top: 14px; }
+  .task { background: var(--panel); border: 1px solid var(--rule); border-left: 4px solid var(--accent); padding: 16px 20px; margin: 22px 0; }
+  .task.open { border-left-color: var(--open); }
+  .task h2 { border: 0; margin: 0; padding: 0; font-size: 20px; }
+  .task .meta { font-family: var(--sans); font-size: 13px; color: var(--ink-2); margin-top: 4px; }
+  code, pre { font-family: var(--mono); }
+  code { font-size: 0.88em; background: var(--code-bg); padding: 1px 5px; border-radius: 3px; }
+  pre { background: var(--code-bg); border: 1px solid var(--rule); padding: 14px 16px; overflow-x: auto; font-size: 13.5px; line-height: 1.5; margin: 14px 0; }
+  pre code { background: none; padding: 0; font-size: inherit; }
+  .tbl { overflow-x: auto; margin: 14px 0; }
+  table { border-collapse: collapse; width: 100%; font-family: var(--sans); font-size: 14px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { font-weight: 600; color: var(--ink-2); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+  td.num, th.num { text-align: right; }
+  ul, ol { padding-left: 22px; } li { margin: 7px 0; max-width: 66ch; }
+  .path { font-family: var(--mono); font-size: 13px; color: var(--ink-2); }
+  .note { font-family: var(--sans); font-size: 13.5px; color: var(--ink-2); }
+  a { color: var(--accent-ink); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+<main>
+  <div class="eyebrow">For Max · scenario processing · 5 September 2026</div>
+  <h1>AR6 Fuel-Price Trace</h1>
+  <p class="lede">Two tasks in <code>ar6_scenario_workflow</code>. One is a ten-minute label fix. The other is a trace of where the carbon tax gets into the fuel price — it decides whether the ALTR model is charging carbon twice.</p>
+
+  <div class="task">
+    <h2>Task 1 — fix the pathway unit label</h2>
+    <div class="meta">Owner: you · Size: one line · Status: confirmed by Bertrand's trace, nothing to investigate</div>
+    <p>In <span class="path">pipeline/combined_pipeline.py</span>, <code>pathway_unit</code> is set to <code>MWh/yr</code> whenever secondary energy exists, and a few lines later every power row with capacity has <code>scenario_pathway</code> overwritten with <code>capacity_mw</code> (commit <code>a93e2e1</code>, "change scenario_pathway to be in capacity"). The value is capacity in MW; the label still says generation. Make the label say <code>MW</code> for those rows (or rename the column). The values are fine — the model already treats them as capacity.</p>
+  </div>
+
+  <div class="task open">
+    <h2>Task 2 — find where the carbon tax gets into <code>fuel_price</code></h2>
+    <div class="meta">Owner: you for the trace; the fix goes to whoever the trace points at (you if the pipeline adds it, Tron/Bertrand if it is the raw AR6 definition) · Size: a couple of hours · Status: open, priority</div>
+    <p><strong>The symptom.</strong> In the policy scenarios, <code>fuel_price</code> for gas is not the fuel price — it is the fuel price plus the carbon tax. WITCH 5.0, China, USD per MWh of <em>fuel</em>:</p>
+    <div class="tbl"><table>
+      <thead><tr><th>Technology</th><th>Year</th><th class="num">EN_NoPolicy</th><th class="num">EN_NPi2020_500</th><th class="num">Carbon price USD/t</th><th class="num">Baseline + carbon × EF<sub>fuel</sub></th></tr></thead>
+      <tbody>
+        <tr><td>Gas w/o CCS</td><td>2030</td><td class="num">23.76</td><td class="num">99.61</td><td class="num">339</td><td class="num">≈ 91.6</td></tr>
+        <tr><td>Gas w/o CCS</td><td>2040</td><td class="num">24.76</td><td class="num">151.39</td><td class="num">569</td><td class="num">≈ 138.5</td></tr>
+        <tr><td>Gas w/o CCS</td><td>2050</td><td class="num">25.77</td><td class="num">186.07</td><td class="num">722</td><td class="num">≈ 170.1</td></tr>
+        <tr><td>Coal w/o CCS</td><td>2030</td><td class="num">6.76</td><td class="num">126.09</td><td class="num">339</td><td class="num">≈ 122.1</td></tr>
+        <tr><td>Coal w/o CCS</td><td>2040</td><td class="num">7.24</td><td class="num">6.03</td><td class="num">569</td><td class="num">≈ 200.6</td></tr>
+        <tr><td>Coal w/o CCS</td><td>2050</td><td class="num">7.63</td><td class="num">6.26</td><td class="num">722</td><td class="num">≈ 253.0</td></tr>
+      </tbody>
+    </table></div>
+    <p class="note">EF<sub>fuel</sub> ≈ 0.34 (coal) and 0.20 (gas) tCO₂ per MWh of fuel, used only for this check.</p>
+    <p>Gas matches "baseline plus carbon" in every year. Coal matches in 2030 and reverts to the baseline price from 2040 — inconsistent within one provider, which is a lead in itself. Share of 2035+ region-years where the target fuel price is more than 1.5× the baseline:</p>
+    <div class="tbl"><table>
+      <thead><tr><th>Provider</th><th class="num">Coal</th><th class="num">Gas</th></tr></thead>
+      <tbody>
+        <tr><td>WITCH 5.0</td><td class="num">54%</td><td class="num">100%</td></tr>
+        <tr><td>IMAGE 3.0</td><td class="num">100%</td><td class="num">100%</td></tr>
+        <tr><td>REMIND-MAgPIE 2.1-4.2</td><td class="num">0%</td><td class="num">96%</td></tr>
+        <tr><td>POLES ENGAGE</td><td class="num">29%</td><td class="num">33%</td></tr>
+        <tr><td>MESSAGEix-GLOBIOM 1.1 · AIM/CGE 2.2 · GEM-E3 V2021</td><td class="num">0%</td><td class="num">0%</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>Why it matters.</strong> The model's input contract says prices are ex-carbon, and the model charges carbon itself: <code>carbon_cost_net = Q × carbon_price × EF</code>. Wherever the fuel price already carries the tax, a plant pays carbon twice. On the reference run that is 7.3 tn of extra fuel cost next to 9.8 tn of explicit carbon, against a headline risk number of −4.0 tn. Every absolute number the model has produced on this extract is inflated by it.</p>
+
+    <h3>What to establish, in order</h3>
+    <ol>
+      <li><strong>Which AR6 variable feeds <code>fuel_price</code>, per provider.</strong> Expected <code>Price|Primary Energy|Coal / Gas / Oil / Biomass</code> (US$2010/GJ × 3.6 → USD/MWh). Check <span class="path">ar6_variables_with_mapping.csv</span> and the conversion in <span class="path">pipeline/combined_pipeline.py</span>.</li>
+      <li><strong>Whether the workflow adds carbon anywhere</strong> — a join on <code>Price|Carbon</code>, a "consumer price" step, or the gap-fill in <span class="path">pipeline/step4_gapfill_simple.py</span> (it fills prices; confirm it never builds a carbon-inclusive one).</li>
+      <li><strong>If the workflow is clean, whether the raw AR6 rows are carbon-inclusive</strong> for WITCH, IMAGE and REMIND. Pull the raw values for WITCH 5.0 / EN_NPi2020_500 / CHN / coal for 2030 and 2040 and compare the source variable — the 2030-only jump points at either a per-year variable switch or a model-side reporting convention.</li>
+      <li><strong>Write down the answer and the proposed contract:</strong> <code>fuel_price</code> ex-carbon in every scenario. Two candidate fixes — carry the baseline scenario's fuel-price path into the target, or subtract carbon price × fuel emission factor for the carbon-inclusive providers. Say which and why. If it is a pipeline step, fix it; if it is the raw definition, the subtraction goes to Tron/Bertrand on the marts side.</li>
+    </ol>
+
+    <h3>Repro</h3>
+    <pre><code>import pandas as pd
+sc = pd.read_csv("ar6_scenarios_20260901.csv")      # the 2026-09-01 extract, 337,192 rows
+
+# baseline vs target fuel price, WITCH China, gas and coal
+w = sc[(sc.scenario_provider == "WITCH 5.0") &amp; (sc.scenario_geography == "CHN")
+       &amp; sc.scenario.isin(["EN_NoPolicy", "EN_NPi2020_500"])
+       &amp; sc.technology.isin(["GasCap - w/o CCS", "CoalCap - w/o CCS"])
+       &amp; sc.scenario_year.isin([2030, 2040, 2050])]
+print(w.pivot_table(index=["technology", "scenario_year"], columns="scenario",
+                    values=["fuel_price", "carbon_price_usd_per_tco2"]))
+
+# share of 2035+ region-years with target fuel price &gt; 1.5x baseline, per provider
+keys = ["scenario_provider", "scenario_geography", "scenario_year", "technology"]
+th = sc[sc.technology.isin(["CoalCap - w/o CCS", "GasCap - w/o CCS"]) &amp; (sc.scenario_year &gt;= 2035)]
+base = th[th.scenario.str.contains("NoPolicy|INDCi2100")][keys + ["fuel_price"]].rename(columns={"fuel_price": "fb"})
+targ = th[th.scenario.str.contains("NPi2020_500|PkBudg900|2Deg")][keys + ["fuel_price"]].rename(columns={"fuel_price": "ft"})
+m = base.merge(targ, on=keys); m = m[m.fb &gt; 0]
+print(m.assign(hi=m.ft &gt; 1.5 * m.fb).groupby(["scenario_provider", "technology"]).hi.mean())</code></pre>
+  </div>
+
+  <h2>Already settled — do not redo</h2>
+  <ul>
+    <li><strong>Near-zero target capacity factors</strong> (WITCH coal, China): faithful to raw AR6 — 852 GW standing, ~1e-10 EJ/yr of output. WITCH mothballs the plant; the pipeline computes it correctly. A modelling question for Jakub, not a pipeline task.</li>
+    <li><strong>POLES carbon price 5,500–10,700 USD/t</strong>: raw AR6 value passed through unchanged.</li>
+    <li><strong>AIM/CGE target carbon price = 0</strong>: a downstream default in <code>crispy-datamodels</code> (<span class="path">int_scn_kapsarc_financial_surface_defaults.sql</span>) for a missing value — Tron's side, not the pipeline.</li>
+  </ul>
+
+  <h2>Hand back</h2>
+  <ul>
+    <li>Task 1: a commit on <code>results_v2</code>.</li>
+    <li>Task 2: one page with the source variable per provider, whether the workflow touches it, and the proposed contract — to Jakub and Bertrand. A re-export follows the decision.</li>
+  </ul>
+  <p class="note">Pointers: pipeline <span class="path">Theia-Finance-Labs/ar6_scenario_workflow</span> @ <code>results_v2</code> (<span class="path">pipeline/combined_pipeline.py</span>, <span class="path">pipeline/step4_gapfill_simple.py</span>, <span class="path">ar6_variables_with_mapping.csv</span>, commit <code>a93e2e1</code>). Model-side evidence: <span class="path">Theia-Finance-Labs/altr-model</span> @ <code>feat/decision-proposals</code>, <span class="path">docs/superpowers/plans/measurement-batch-results.md</span>, section F. Questions on the model: Jakub. On the pipeline history: Bertrand.</p>
+</main>

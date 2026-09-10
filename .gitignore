@@ -14,6 +14,7 @@ conf/**/*credentials*
 
 # ignore everything in the following folders
 data/**
+!data/01_raw/ar6_carbon_prices.csv
 
 # except their sub-folders
 !data/**/
@@ -166,3 +167,6 @@ mlruns/*
 
 # kedro study env written by notebooks/run_all_scenarios_comparison.py
 conf/study/**
+
+# lockfile of the uv toolchain; poetry.lock is authoritative
+uv.lock

@@ -16,7 +16,7 @@ Usage:
     # Custom manifest and AR6 path
     python notebooks/run_all_scenarios_comparison.py \
         --manifest workspace/scenario_manifest.json \
-        --ar6-path 6_final_AR6_viable_scenarios.csv
+        --ar6-path data/05_model_input/ar6_scenarios_20260901.csv
 
     # Run only a subset of configs
     python notebooks/run_all_scenarios_comparison.py --configs vanilla adjusted
@@ -990,8 +990,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--ar6-path",
         type=Path,
-        default=Path("6_final_AR6_viable_scenarios.csv"),
-        help="Path to the AR6 viable scenarios CSV (default: 6_final_AR6_viable_scenarios.csv)",
+        default=Path("data/05_model_input/ar6_scenarios_20260901.csv"),
+        help="Path to the full AR6 scenario extract (23 columns incl. fuel/capex/O&M; the 5-column carbon-price file in data/01_raw cannot drive a run)",
     )
     parser.add_argument(
         "--project-dir",
