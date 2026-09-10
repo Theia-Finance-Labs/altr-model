@@ -6,6 +6,8 @@ against files they do not own. These tests fail when a source file is reworded
 and a pattern goes stale, rather than silently shipping the un-rewritten text.
 """
 
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -15,8 +17,11 @@ from scripts.build_export import (
     ROOT,
     TRANSFORMS,
     TransformError,
+    dockerfile_for_recipients,
+    drop_streamlit_group,
     empty_company_ids,
     is_skipped,
+    prune_streamlit_lock,
     read_allowlist,
 )
 from scripts.sanitize_check import EXCEPTIONS, PATTERNS, selftest
@@ -56,7 +61,7 @@ def test_uv_lock_ships_and_poetry_lock_does_not():
 
 def test_pin_golden_ships_and_the_internal_only_tests_do_not():
     entries = read_allowlist(ALLOWLIST)
-    assert "scripts/pin_golden.py" in entries
+    assert "tests/golden/pin_golden.py" in entries
     # tests/ ships wholesale, so exclusions are made in code, not by omission.
     assert "tests" in entries or "tests/" in entries
     # The licence guard reads the deliverables drop by path; the export-tooling
@@ -68,8 +73,8 @@ def test_pin_golden_ships_and_the_internal_only_tests_do_not():
 def test_the_pipeline_registration_test_ships():
     # The pre-migration exclusion justified dropping it as a "full-input smoke
     # test needing the internal data drop". On this tree it is a data-free
-    # registration test, it passes for a recipient, and it is the guard that
-    # would catch a re-introduced frozen_capacity_at_retirement.
+    # registration test that passes for a recipient and catches renamed
+    # pipelines, moved namespaces and drifted dataset contracts.
     assert not is_skipped("tests/test_run.py")
 
 
@@ -101,6 +106,110 @@ def test_company_ids_transform_raises_when_its_target_is_gone():
     # A transform that silently no-ops is how an unlicensed id ships.
     with pytest.raises(TransformError, match="no `company_ids:` block"):
         empty_company_ids("baseline_scenario: x\ntarget_scenario: y\n")
+
+
+def test_dockerfile_is_rewritten_to_run_the_pipeline():
+    # The internal image launches the Streamlit batch runner, which does not
+    # ship — delivered unrewritten, the image builds and then crashes at
+    # startup looking for notebooks/streamlit_app.py.
+    source = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    assert "streamlit" in source.lower(), "Dockerfile reworded; transform is stale"
+
+    shipped = _transformed("Dockerfile")
+    assert 'ENTRYPOINT ["kedro", "run"]' in shipped
+    assert "streamlit" not in shipped.lower(), "streamlit survives the export"
+    assert "8501" not in shipped
+    # docker-compose.yml does not ship; the delivered file must not point at it.
+    assert "compose" not in shipped.lower()
+
+
+def test_dockerfile_transform_raises_when_its_target_is_gone():
+    with pytest.raises(TransformError, match="tail marker"):
+        dockerfile_for_recipients('FROM python:3.10-slim\nENTRYPOINT ["true"]\n')
+
+
+def test_streamlit_group_is_dropped_from_the_exported_pyproject():
+    # The group installs the batch-run app, which does not ship. Left declared,
+    # the documented `uv sync --group streamlit` installs a dependency with
+    # nothing to run.
+    source = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert "streamlit = [" in source, "pyproject.toml reworded; transform is stale"
+
+    shipped = _transformed("pyproject.toml")
+    assert "streamlit" not in shipped.lower(), "streamlit survives the export"
+    # The neighbouring groups are untouched — the cut is the streamlit block,
+    # not everything around it.
+    for group in ("dev = [", "bigquery = [", "docs = ["):
+        assert group in shipped, f"{group} lost to the streamlit transform"
+
+
+def test_streamlit_transform_raises_when_its_target_is_gone():
+    with pytest.raises(TransformError, match="no `streamlit = \\[` group"):
+        drop_streamlit_group("[dependency-groups]\ndocs = [\n    \"mkdocs\",\n]\n")
+
+
+def test_streamlit_is_pruned_from_the_exported_uv_lock():
+    # The pyproject transform above drops the group, but the lock was copied
+    # verbatim — so the export shipped the group's two declarations and the
+    # resolved [[package]] block, contradicting the docs and leaving the lock
+    # disagreeing with the pyproject it locks.
+    source = (ROOT / "uv.lock").read_text(encoding="utf-8")
+    assert "streamlit" in source.lower(), "uv.lock re-locked; transform is stale"
+
+    shipped = _transformed("uv.lock")
+    assert "streamlit" not in shipped.lower(), "streamlit survives the export"
+    # The cut is the streamlit entries, not the file around them: the other
+    # groups, the lock header and the neighbouring packages all stay.
+    assert "docs = [" in shipped and "bigquery = [" in shipped
+    assert shipped.startswith("version = "), "lock header lost to the transform"
+    for package in ('name = "kedro"', 'name = "pandas"', 'name = "strawberry-graphql"'):
+        assert package in shipped, f"{package} lost to the streamlit transform"
+    # Exactly the streamlit lines go: three blocks out of a file this size.
+    assert len(shipped.splitlines()) < len(source.splitlines())
+    assert len(source.splitlines()) - len(shipped.splitlines()) < 50
+
+
+def test_uv_lock_transform_raises_when_its_target_is_gone():
+    # The other half of the no-op guard: a lock with no streamlit in it means
+    # the transform can no longer verify what it removed.
+    with pytest.raises(TransformError, match="nothing named `streamlit`"):
+        prune_streamlit_lock('version = 1\n\n[[package]]\nname = "kedro"\n')
+
+
+def test_dockerignore_ships_alongside_the_dockerfile():
+    # Without it, every recipient `docker build` hashes their staged data/
+    # (hundreds of MB) into the build context.
+    entries = read_allowlist(ALLOWLIST)
+    assert "Dockerfile" in entries
+    assert ".dockerignore" in entries
+    # It ships untransformed, so its comments must not point recipients at
+    # internal-only files.
+    assert "compose" not in _transformed(".dockerignore").lower()
+
+
+def test_build_export_still_runs_as_a_script():
+    """The company-id pattern is imported from the sanitizer next door, and the
+    two run under different import roots: `python scripts/build_export.py` puts
+    `scripts/` on sys.path, `import scripts.build_export` puts the repo root
+    there. The shim covers both — this is the half the rest of this suite, which
+    imports the module, cannot exercise."""
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "build_export.py"), "--help"],
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "--data-source" in result.stdout
+
+
+def test_the_company_id_pattern_is_not_duplicated():
+    """One definition, imported. Two copies of this regex is how the transform
+    and the gate that runs after it end up seeing different id shapes."""
+    source = (ROOT / "scripts" / "build_export.py").read_text(encoding="utf-8")
+    assert "CN|CP" not in source, "the id pattern is inlined again"
+    assert "COMPANY_ID_RE" in source
 
 
 def test_every_transform_target_is_still_a_repo_file():

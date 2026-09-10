@@ -1,6 +1,6 @@
-# Mounted at runtime by docker-compose.yml, not baked into the image - and
-# data/ in particular can be hundreds of MB, which otherwise gets hashed and
-# sent to the Docker daemon as build context on every build.
+# Mounted at runtime rather than baked into the image - and data/ in
+# particular can be hundreds of MB, which otherwise gets hashed and sent to
+# the Docker daemon as build context on every build.
 data/
 workspace/
 

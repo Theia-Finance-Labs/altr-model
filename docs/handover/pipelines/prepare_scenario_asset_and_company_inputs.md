@@ -31,21 +31,35 @@ The stage's second output pivots the scenario pair onto each company-technology
 so the trajectory stage receives one wide row per company-year carrying both the
 baseline and the target assumptions.
 
-!!! note "Ownership is tiered first, then summed"
+!!! note "Ownership: tiered first, or summed - `ownership_aggregation` decides"
     A company's stake in an asset is recorded at several tiers - a direct
-    holding, and the equity stakes rolling up through subsidiaries. Those are
-    alternative **views** of the same capacity, not additive components of it,
-    so `ownership_type` selects one rung (`"direct"` by default) before anything
-    is summed. `_consolidate_ownership_stakes` then groups on `(company_id,
-    company_name, asset_id, asset_name, sector, technology, year)` and **sums**
-    `ownership_percentage` within that rung, collapsing several same-tier stakes
-    in one asset-year into one row.
+    holding, and the equity stakes rolling up through subsidiaries.
+    `ownership_aggregation` chooses how they combine, and the two modes are not
+    comparable in absolute terms.
 
-    The order matters: consolidating first would give a company holding a plant
-    at 50.00% direct **and** 0.45% equity a 50.45% claim on it. The merge is
-    sum-preserving, so it also cannot bring a genuinely over-allocated ownership
-    universe - two different companies claiming the same capacity - back under
-    100%; see
+    **`"tier_filter"` (default)** treats the tiers as alternative **views** of
+    the same capacity, not additive components of it, so `ownership_type`
+    selects one rung (`"direct"` by default) before anything is summed.
+    `_consolidate_ownership_stakes` then groups on `(company_id, asset_id,
+    sector, technology, year)` and **sums** `ownership_percentage` within that
+    rung, collapsing several same-tier stakes in one asset-year into one row.
+    `company_name` and `asset_name` are carried along as labels rather than
+    grouped on: as keys, a blank name deletes the stake outright, and a name
+    filled on one sibling row but not the other splits one stake into two. The order matters: consolidating first would
+    give a company holding a plant at 50.00% direct **and** 0.45% equity a
+    50.45% claim on it. This is the validated baseline - the pinned fixture NPVs
+    were produced under it.
+
+    **`"sum"`** skips the tier selection and hands every rung to the same
+    consolidation, so that company's claim *is* 50.45% and a holder with only
+    equity stakes stays in the universe. That is TRISK's reading of ownership,
+    and the mode to run when results must line up with a TRISK run; on the
+    fixture slice it grows the owner-asset universe roughly 2.2×, and every
+    absolute output with it.
+
+    In both modes the merge is sum-preserving, so it cannot bring a genuinely
+    over-allocated ownership universe - two different companies claiming the
+    same capacity - back under 100%; see
     [Troubleshooting](../troubleshooting.md#companies-n-of-asset-years-sum-to-105-warning-not-an-error).
 
 ## Consumes
@@ -95,14 +109,14 @@ of their own.
 | Function | What it does |
 | --- | --- |
 | `check_input_parameters` | Raises if `alignment_year` is below `shock_year`. Wired as a node in [stage 2](calculate_company_trajectories.md), where the two keys live |
-| `filter_scenarios` | Keeps the baseline/target pair only, prefixing `AR6_<provider>_` where it is absent |
-| `_select_ownership_tier` | Keeps one rung of the ownership tree, per `ownership_type`; handles both the `ownership_type` and `ownership_level` company schemas |
-| `_consolidate_ownership_stakes` | Sums the stakes it is given - always one tier's worth - into a single row per company-asset-year |
-| `filter_companies` | Selects the tier, consolidates within it, then applies the `company_ids` filter |
+| `filter_scenarios` | Keeps the baseline/target pair only. Names are matched verbatim against the `scenario` column — it asserts both are present and prefixes nothing (the data must already carry `AR6_<provider>_`; `workspace/stage_marts_inputs.py` restores it for marts extracts that ship bare names) |
+| `_select_ownership_tier` | Keeps one rung of the ownership tree, per `ownership_type`; handles both the `ownership_type` and `ownership_level` company schemas. Skipped under `ownership_aggregation: "sum"` |
+| `_consolidate_ownership_stakes` | Sums the stakes it is given - one tier's worth under `"tier_filter"`, every tier under `"sum"` - into a single row per company-asset-year |
+| `filter_companies` | Selects the tier (`"tier_filter"` only), consolidates, then applies the `company_ids` filter; raises on an `ownership_aggregation` that is neither mode |
 | `apply_ccs_suffix` | Points Coal/Gas/Biomass/Oil at the with- or without-CCS scenario variant |
 | `filter_assets` | Cuts each asset to `max_forecast_horizon` years from the scenario start year, and asserts both scenarios start in the same year |
 | `assign_scenario_geographies_to_assets` | Matches every asset's country to its most granular scenario geography, failing rather than guessing on a tie |
-| `allocate_assets_to_companies` | Multiplies asset capacity by each owner's ownership percentage (0-100 scale) |
+| `allocate_assets_to_companies` | Allocates `capacity × ownership_percentage / 100` to each owner - the column is on the 0-100 scale, and the node raises rather than guessing if it looks like a 0-1 fraction |
 | `determine_increasing_or_decreasing_techs` | Labels each technology as increasing or decreasing under the scenario |
 | `determine_lifetime_per_technology` | Derives the technology lifetime used to date asset retirement |
 
@@ -123,7 +137,7 @@ company-technology, and the plots lose their per-asset detail when it is on.
 | Key | Defined in |
 | --- | --- |
 | `baseline_scenario`, `target_scenario` | `conf/base/parameters_prepare_scenario_asset_and_company_inputs.yml` |
-| `company_ids`, `ownership_type`, `ccs_on`, `max_forecast_horizon` | `conf/base/parameters_prepare_scenario_asset_and_company_inputs.yml` |
+| `company_ids`, `ownership_type`, `ownership_aggregation`, `ccs_on`, `max_forecast_horizon` | `conf/base/parameters_prepare_scenario_asset_and_company_inputs.yml` |
 | `reduce_granularity_from_asset_to_company_level` | `conf/base/parameters_prepare_scenario_asset_and_company_inputs.yml` |
 
 Every key this stage reads is defined in its own file - the pipeline declares

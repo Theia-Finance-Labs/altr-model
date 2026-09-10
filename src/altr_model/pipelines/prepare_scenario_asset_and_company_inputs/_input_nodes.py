@@ -14,7 +14,7 @@ def check_input_parameters(
     alignment_year: int,
 ) -> None:
     if alignment_year < shock_year:
-        raise ValueError("Alignment year must be greater than shock year")
+        raise ValueError("Alignment year cannot be earlier than shock year")
 
 
 def filter_scenarios(
@@ -133,19 +133,69 @@ def _consolidate_ownership_stakes(companies_ownerships: pd.DataFrame) -> pd.Data
     (company_id, asset_id, sector, technology, year) - otherwise the
     duplicate rows survive into the per-company asset pivot later in the
     pipeline and it fails with "Index contains duplicate entries".
+
+    ``company_name`` and ``asset_name`` are NOT group keys. They are labels
+    nothing computes on, and keying on them broke the roll-up in both
+    directions: pandas' default drops every row with NaN in a key, so a blank
+    name deleted that company's stake and its capacity with it; and
+    ``dropna=False`` alone then SPLIT one stake into two whenever sibling rows
+    disagreed about a name (typically one blank, one filled), reinstating the
+    duplicate key this function exists to remove. Carried as ``first``
+    instead, they cannot do either - ``first`` skips NaN, so a name blank on
+    one row of a stake is taken from the row that has it, and a stake with no
+    name anywhere keeps its row with a NaN label.
+
+    ``dropna=False`` stays for the load-bearing keys: a NaN there is a real
+    data defect that must reach the run, not vanish from it. This is a
+    roll-up, not a filter; it must return the same total ownership it was
+    handed. The company-grain aggregations downstream
+    (``aggregate_assets_to_company_level``,
+    ``apply_reduce_granularity_from_asset_to_company_level``) carry the names
+    the same way, so an unnamed company survives to the company projection
+    inputs rather than being dropped one stage later.
     """
     group_cols = [
         "company_id",
-        "company_name",
         "asset_id",
-        "asset_name",
         "sector",
         "technology",
         "year",
     ]
-    return companies_ownerships.groupby(group_cols, as_index=False)[
-        "ownership_percentage"
-    ].sum()
+    consolidated = companies_ownerships.groupby(
+        group_cols, as_index=False, dropna=False
+    ).agg(
+        company_name=("company_name", "first"),
+        asset_name=("asset_name", "first"),
+        ownership_percentage=("ownership_percentage", "sum"),
+    )
+    # Column order as callers have always seen it (names beside their ids).
+    return consolidated[
+        [
+            "company_id",
+            "company_name",
+            "asset_id",
+            "asset_name",
+            "sector",
+            "technology",
+            "year",
+            "ownership_percentage",
+        ]
+    ]
+
+
+#: Configured `ownership_type` values the NUMBERED (`ownership_level`) schema
+#: understands, mapped to the rung they select. These are the two names the
+#: NAMED schema uses plus "indirect", the numbered schema's own word for 2+.
+#: A bare integer ("2") selects that level exactly. ANYTHING ELSE RAISES: the
+#: previous `level >= 2` fallback turned every typo into a silent request for
+#: the indirect rungs, so "dirct" quietly reported on the wrong tier.
+_NUMBERED_DIRECT = frozenset({"direct"})
+_NUMBERED_INDIRECT = frozenset({"indirect", "equity"})
+
+
+def _normalize_tier(value: object) -> str:
+    """Case- and whitespace-insensitive form of one tier label."""
+    return str(value).strip().casefold()
 
 
 def _select_ownership_tier(
@@ -159,18 +209,74 @@ def _select_ownership_tier(
     the tier it reports on. Summing across tiers would allocate the same plant
     to the same company twice.
 
-    Two schemas are in circulation: `ownership_type` ("direct"/"indirect") and
-    the newer `ownership_level` (1 = direct, 2+ = indirect).
+    Two schemas are in circulation: `ownership_type`, which names the rungs
+    ("direct" and "equity" in the marts export), and the newer
+    `ownership_level`, which numbers them (1 = direct, 2+ = indirect).
+
+    A tier the data does not carry is a configuration error, not an empty
+    result: silently returning an empty panel takes every company out of the
+    run and the failure only surfaces as zero rows several stages later. Both
+    schemas therefore raise `ValueError` naming the configured value and what
+    the frame actually offers.
+
+    Matching is case- and whitespace-insensitive on BOTH sides, and the
+    selection uses the same normalized comparison the validation does - a
+    check that accepted "Direct" and then filtered on `== "Direct"` would
+    hand back the empty panel this exists to prevent. Under the numbered
+    schema only the labels in `_NUMBERED_DIRECT` / `_NUMBERED_INDIRECT` and a
+    bare integer are accepted; a typo raises instead of falling through to
+    "level >= 2".
+
+    Neither path can return zero rows without raising first. Two silent
+    reductions remain OUTSIDE this function, and both are handled where they
+    happen: the no-tier-column branch below keeps every row (and
+    `scripts/prepare_inputs.py` refuses a delivered file that reaches it), and
+    `_consolidate_ownership_stakes` keeps the cosmetic name columns out of its
+    group keys (and groups with `dropna=False`) so a blank name cannot delete
+    a stake.
     """
     if "ownership_type" in companies_ownerships.columns:
-        selected = companies_ownerships.loc[
-            companies_ownerships["ownership_type"] == ownership_type
-        ]
+        column = companies_ownerships["ownership_type"]
+        available = sorted(str(v) for v in column.dropna().unique())
+        wanted = _normalize_tier(ownership_type)
+        matches = column.map(_normalize_tier).eq(wanted) & column.notna()
+        if not matches.any():
+            raise ValueError(
+                f"ownership_type {ownership_type!r} is not present in the "
+                f"companies input; its 'ownership_type' column holds "
+                f"{available}. Set `ownership_type` in "
+                "conf/base/parameters_prepare_scenario_asset_and_company_inputs"
+                ".yml to one of those (matching ignores case and surrounding "
+                "whitespace)."
+            )
+        selected = companies_ownerships.loc[matches]
     elif "ownership_level" in companies_ownerships.columns:
-        level = companies_ownerships["ownership_level"]
-        selected = companies_ownerships.loc[
-            level.eq(1) if ownership_type == "direct" else level.ge(2)
-        ]
+        level = pd.to_numeric(companies_ownerships["ownership_level"], errors="coerce")
+        rungs = sorted(str(v) for v in level.dropna().unique())
+        wanted = _normalize_tier(ownership_type)
+        if wanted in _NUMBERED_DIRECT:
+            mask = level.eq(1)
+        elif wanted in _NUMBERED_INDIRECT:
+            mask = level.ge(2)
+        elif wanted.isdigit():
+            mask = level.eq(int(wanted))
+        else:
+            raise ValueError(
+                f"ownership_type {ownership_type!r} means nothing under the "
+                f"'ownership_level' schema, whose column holds {rungs}. Use "
+                f"{sorted(_NUMBERED_DIRECT)} for level 1, "
+                f"{sorted(_NUMBERED_INDIRECT)} for level 2+, or a bare level "
+                "number. It is NOT taken as 'some indirect rung': that "
+                "fallback reported a typo on the wrong tier without saying so."
+            )
+        selected = companies_ownerships.loc[mask]
+        if selected.empty:
+            raise ValueError(
+                f"ownership_type {ownership_type!r} selects no rung of the "
+                f"'ownership_level' column, which holds {rungs} "
+                "('direct' selects level 1, 'indirect'/'equity' select level "
+                "2+, a bare number selects that level)."
+            )
     else:
         logger.warning(
             "Neither 'ownership_type' nor 'ownership_level' is present in the "
@@ -188,14 +294,38 @@ def _select_ownership_tier(
     return selected
 
 
+#: Accepted values of the `ownership_aggregation` parameter, in the order the
+#: error message lists them; the first is the default.
+OWNERSHIP_AGGREGATIONS = ("tier_filter", "sum")
+
+
 def filter_companies(
     companies_ownerships: pd.DataFrame,
     company_ids: List[str],
     ownership_type: str = "direct",
+    ownership_aggregation: str = OWNERSHIP_AGGREGATIONS[0],
 ) -> pd.DataFrame:
+    """Reduce the ownership table to one stake row per company-asset-year.
+
+    `ownership_aggregation` decides how a company's several stakes in one asset
+    combine - see the annotated key in
+    `conf/base/parameters_prepare_scenario_asset_and_company_inputs.yml`.
+    """
+    if ownership_aggregation not in OWNERSHIP_AGGREGATIONS:
+        raise ValueError(
+            f"ownership_aggregation must be one of {OWNERSHIP_AGGREGATIONS}, "
+            f"got {ownership_aggregation!r}. Use 'tier_filter' to report on one "
+            "ownership tier (the validated default) or 'sum' to total every "
+            "holding a company has in an asset-year."
+        )
+
     # Tier first, then consolidate: consolidation sums the stakes it is given,
-    # so it must only ever see one rung of the tree.
-    companies_ownerships = _select_ownership_tier(companies_ownerships, ownership_type)
+    # so under "tier_filter" it must only ever see one rung of the tree. Under
+    # "sum" it is handed every rung deliberately.
+    if ownership_aggregation == "tier_filter":
+        companies_ownerships = _select_ownership_tier(
+            companies_ownerships, ownership_type
+        )
     companies_ownerships = _consolidate_ownership_stakes(companies_ownerships)
 
     if company_ids:
@@ -552,8 +682,9 @@ def allocate_assets_to_companies(
 
     # Calculate owned asset capacity (allocated capacity based on ownership
     # percentage). ownership_percentage is on the 0-100 scale -- the tier
-    # selected upstream sums to ~100 per asset-year (see check_ownership_tier in
-    # notebooks/prepare_new_inputs.py) -- so divide by 100 to get the fraction.
+    # selected upstream sums to ~100 per asset-year, which
+    # `check_ownership_allocation` in scripts/prepare_inputs.py warns about when
+    # the delivered rows do not -- so divide by 100 to get the fraction.
     max_ownership = merged_data["ownership_percentage"].max()
     if pd.notna(max_ownership) and max_ownership <= 1.5:
         raise ValueError(

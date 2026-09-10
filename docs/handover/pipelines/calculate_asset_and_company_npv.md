@@ -16,11 +16,34 @@ discounted at a rate that depends on which scenario surface the row sits on -
 target rows; a terminal value is added beyond the forecast horizon; and the
 result is rolled up from asset to company-technology to company level.
 
+!!! note "`dcf.discount_rate_shock` is inert under the shipped configuration"
+
+    The rate is chosen off `scenario_type`, and a *ramped* late & sudden
+    pathway is a blend of the two scenario surfaces, so it keeps the baseline
+    label rather than falsely claiming the target's. Every row arriving here
+    then reads `scenario_type: baseline` and takes
+    `dcf.discount_rate_baseline`.
+
+    The pathway ramps when `price_ramp: True` **and** `alignment_year` is
+    strictly greater than `shock_year` — both set in stage 2, and both true as
+    shipped (`price_ramp: True`, 2038 > 2033). Either half turns the ramp off
+    and makes `dcf.discount_rate_shock` live again: `price_ramp: False` (the
+    hard switch at `shock_year`), or `alignment_year` equal to `shock_year`,
+    which `check_input_parameters` accepts — it requires `alignment_year >=
+    shock_year` — and which leaves an empty transition window to blend across.
+
+    The two pathways stay distinguishable by `trajectory_type` regardless. See
+    the [user guide](../user_guide.md#discount-rates) for what to change if the
+    pathways should be discounted differently.
+
 The terminal value is where most of the valuation judgement sits. It can be
 switched off (`terminal_value.method: "none"`) or computed from a **normalized**
 terminal FCFF — the mean of the last `terminal_value.normalization_window` years
 rather than the final year alone, so that one transition-period CapEx spike
-cannot decide an asset's entire terminal value.
+cannot decide an asset's entire terminal value. Switching the method to
+`"none"` disables the **whole** three-tier structure below - the stranding
+zero and the carbontech annuity included, not just the perpetuity - because
+the tier split lives inside the perpetuity method.
 
 With `dcf.stranding_aware_tv` on (the default), that terminal FCFF is routed
 through a three-way split rather than a single perpetuity:
@@ -31,10 +54,12 @@ through a three-way split rather than a single perpetuity:
 | Declining carbontech | Still profitable, `alignment_type` is high-carbon | A **finite annuity** over `brown_remaining_life_years`, reflecting a fossil asset's finite remaining economic life in a transition |
 | Everything else | — | The standard Gordon-growth **perpetuity** |
 
-The perpetuity tier applies wherever the terminal FCFF is non-zero and the
-discount rate exceeds the growth rate. Note the asymmetry that follows: an asset
-whose terminal FCFF is negative but which is *not* stranded takes a negative
-perpetuity. That is deliberate — a business losing money at the horizon that has
+The perpetuity tier is the remainder: it applies wherever the terminal FCFF is
+non-zero, the discount rate exceeds the growth rate, **and neither of the first
+two tiers claimed the row** - a still-profitable declining carbontech asset
+takes the annuity, never the perpetuity. Note the asymmetry that follows: an
+asset whose terminal FCFF is negative but which is *not* stranded takes a
+negative perpetuity. That is deliberate — a business losing money at the horizon that has
 not met the stranding test is worth less than nothing, and rounding it to zero
 would flatter it.
 

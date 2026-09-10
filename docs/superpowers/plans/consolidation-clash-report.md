@@ -77,6 +77,15 @@ Note the knock-on: because roll-over is no longer a capacity *movement*, the
 flow identity `K_t = K_{t-1} − retired + replaced + new_build` can no longer
 balance by construction. See Q1-5.
 
+**The switch default flipped too — `include_replacement_capex: False → True`**
+(`parameters_calculate_asset_earnings.yml`). On `main` the whole replacement
+term is OFF out of the box, so the form above is not merely different from
+yours, it is *newly live*: a default run now charges routine capital
+maintenance on installed capacity every year where before it charged nothing.
+Every absolute `capex_total`, FCFF and NPV moves on that flip alone,
+independently of the mask change. If the switch should ship OFF and the form
+change be adopted only for runs that ask for it, this is the line to say so on.
+
 ### Q1-3 · `replacement_capex_rate` default · FYI
 
 | | |
@@ -104,6 +113,18 @@ form therefore *raises* FCFF when an asset retires — retiring a plant pays its
 owner. If the intent was to model recoverable scrap value net of demolition,
 that is a defensible model, but it belongs as its own signed term, not folded
 into a cost line whose sign convention is "outflow".
+
+**The switch default flipped too — `include_decom_costs: False → True`**
+(`parameters_calculate_asset_earnings.yml`). As with Q1-2, on `main` the term
+is OFF out of the box, so the sign fix above only bites because the switch is
+now on by default: a default run charges decommissioning on every retiring
+asset where before it charged nothing. Same call to make, on the same line.
+
+**Both flips together.** `include_replacement_capex` and `include_decom_costs`
+both move `False → True` against `main`; `include_growth_capex` stays `False`.
+These are the two default changes in this report that move every absolute
+number in a run nobody has reconfigured, so they are called out here rather
+than left to the parameter diff.
 
 ### Q1-5 · `validate_capacity_flow_identity` is now unreachable-and-wrong · FYI
 
@@ -252,6 +273,43 @@ Inert on the committed fixture slice, whose EF series already spans the horizon 
 the regression pins did not move. It bites on inputs whose EF series is shorter
 than the trajectory, which is the production case the handover branch hit.
 
+### Q3-2 · Synthetic top-ups had no emission factor at all · **OWNER-ORDERED**
+
+| | |
+| --- | --- |
+| Your form | Synthetic assets match nothing in the EF merge; the null reaches `fillna(0.0)` and they pay no carbon cost |
+| Handover form | Identical — neither lineage attaches an EF to a synthetic asset |
+| Done | Synthetic top-ups inherit the capacity-weighted EF of the real assets they are built out from (`combine_asset_allocation_branches`, 2026-09-02) |
+
+**What to look at.** This is not a clash between the two lineages — both behave
+the same way, and the ablation work (decision D2) found the behaviour rather than
+the merge. Allocation joins EF from the real-asset panel on `asset_id`; the
+synthetic `NEW_<company>_<sector>_<technology>_<geography>` rows match nothing,
+and the resulting null is zero-filled a stage later. **181 synthetic assets /
+9,412 rows — `BiomassCap - w/o CCS` and `OilCap - w/o CCS` — were therefore
+priced as emitting nothing in both pathways**, which flatters exactly the
+technologies a transition shock should penalise.
+
+The owner ruled on 2026-09-02: per synthetic asset and year, EF is the
+capacity-weighted mean EF of the company's own real assets in the same
+(sector, technology, scenario_geography) group; failing that, all real assets in
+that technology × geography; failing that, the technology as a whole; and only
+then zero, with a warning naming the technology. Years whose weighting basis
+carries no capacity take the group's nearest available year.
+
+Two things worth your judgement. **The weight is BAU capacity, not post-shock
+capacity** — the EF column is single-valued per asset-year and read by both
+pathways, so a shocked weight would make the baseline's carbon cost depend on the
+shock. And **the renewable zero-fill still runs first**, so renewable synthetics
+keep their explicit zero instead of inheriting one; the change lands only on the
+non-renewable population above.
+
+Not inert. The fixture slice's 52 synthetic `OilCap - w/o CCS` rows now carry EF
+0.842126 and one pin was re-derived: `CN_6488161088428600082`'s shock NPV by
+**−8,654,796.38 (−0.0122%)**. Only the shock side moves — a synthetic's baseline
+capacity is zero, so it has no baseline carbon cost to change. The full-universe
+delta is pending a run (see `decision-ablations.md`, *D2 resolved 2026-09-02*).
+
 ---
 
 ## Q4 — Frozen capacity at retirement
@@ -272,6 +330,17 @@ The handover branch has it in the impact-distribution stage. Here it is a node
 in the allocation pipeline, filtering the wide allocation panel — `retirement_year`
 is already carried on every row, so it is a filter, not a join, and no new
 pipeline or intermediate dataset was created.
+
+**Correction (2026-09-01 review).** This entry originally said the carried
+`retirement_year` was sufficient to filter on. It is not: allocation clips
+retirement to `max(retirement_year, alignment_year + 1)`
+(`_allocation_nodes.py`), so for any asset dated to retire on or before the
+alignment year the raw column names a year the asset is still running. The
+node anchored on the raw value and therefore froze the wrong capacity for
+exactly those assets. Fixed — the node now takes `alignment_year` and applies
+the same clip. The pins did not move, because the dataset is numerically inert
+(Q4-1); this is a latent defect that would have surfaced the moment anything
+started reading the column.
 
 ### Q4-3 · Merge keys · FYI
 
@@ -321,15 +390,26 @@ lean on it.
 
 ## Ownership
 
-### OWN-1 · Ownership tier selection restored · **DECIDE — the big one**
+### OWN-1 · Ownership tier selection · **RESOLVED-AS-PARAMETER**
 
 | | |
 | --- | --- |
 | Your form | `filter_companies(companies_ownerships, company_ids)` — consolidates across every tier, summing all stakes a company holds in an asset-year. No `ownership_type` parameter |
 | Handover form | Selects a tier (`ownership_type`, default `"direct"`) **first**, then consolidates within it |
-| Done | Ported the handover form: one parameter in `parameters_prepare_scenario_asset_and_company_inputs.yml`, the tier filter inside your `filter_companies`, consolidation untouched |
+| Done | **Both, under `ownership_aggregation`.** The owner ruled on 2026-09-01 that this is a parameter, not a winner: `"tier_filter"` (DEFAULT — the handover form, tier then consolidate) and `"sum"` (your form, every holding totalled). One key in `parameters_prepare_scenario_asset_and_company_inputs.yml`, one branch inside your `filter_companies`; `_consolidate_ownership_stakes` still untouched |
 
-**What to look at.** This is the largest behavioural difference between the two
+**Which mode to use.** Run `"tier_filter"` for anything that has to match the
+validated baseline — it is what last year's published results and the pinned
+fixture NPVs were produced under — and `"sum"` when the numbers have to line up
+with a TRISK run, which reads a company's holding as direct + equity.
+
+**Ruling lineage.** Owner decision of 2026-09-01, the same ruling this report
+applies (`implementation-notes-handover.md`, "Owner decisions 2026-09-01" +
+Amendment; `migration-disposition-ledger.md`, Addendum 2). The entry below is
+kept as the record of *why* the default is the tier filter — the argument no
+longer decides which code ships, only which mode a run should pick.
+
+**What to look at.** This was the largest behavioural difference between the two
 lineages and the change that closed the equivalence gate, so it deserves the
 most scrutiny.
 
@@ -359,8 +439,64 @@ restored ordering, with new cases for both company schemas (`ownership_type`
 naming the rungs, `ownership_level` numbering them) and for an input carrying
 neither, which warns and keeps every row.
 
-**If you think summing tiers is right**, this is the entry to argue, and the
-number to argue about is the 2.2×.
+**Correction (2026-09-01 review).** "Both schemas covered" was true of the
+happy path only. Under the named `ownership_type` schema a configured tier the
+data does not carry — and the documented value `"indirect"` was exactly that,
+since the shipped input holds `direct` and `equity` — matched nothing and
+returned an EMPTY panel, taking every company out of the run silently;
+arbitrary values were accepted the same way. The test that should have caught
+it asserted the empty result as if it were the feature (it was even named
+"…selects the other rung"). Both schemas now validate and raise a `ValueError`
+naming the configured value and what is available, the parameter comment names
+`direct`/`equity` rather than `direct`/`indirect`, and the test asserts the
+equity rows come back and that an absent tier raises.
+
+**If you think summing tiers is right**, it is now a setting rather than an
+argument: `ownership_aggregation: "sum"`. The 2.2× is the reason the default is
+not that — a run must state which reading it used, and two runs on different
+readings cannot be compared on absolute numbers.
+
+The consolidation regression test carries both modes: the tier-first cases
+above, plus `"sum"` totalling one company's 50.00% direct and 0.45% equity
+stakes to 50.45%, an equity-only holder that `"tier_filter"` drops and `"sum"`
+keeps, and a `ValueError` naming both options on anything else.
+
+### OWN-2 · The recipient's data has no tier column · **RULED-A-DATA-DEFECT**
+
+| | |
+| --- | --- |
+| Found | The deliverables `companies_ownerships.csv` (2026-08-25 drop) has **8 columns and no tier column at all** — `asset_id`, `company_id`, `year`, `ownership_percentage`, `sector`, `technology`, `asset_name`, `company_name`. Neither `ownership_type` nor `ownership_level` |
+| Why it matters | Every argument in OWN-1 above — the default, the 2.2× on absolute outputs, the whole `ownership_aggregation` design — assumes a tier column exists. On the recipient's actual file `_select_ownership_tier` takes its third branch and keeps every row, so `"tier_filter"` silently degrades into `"sum"` on the full ownership chain. The internal `downloaded_companies.csv` (BigQuery marts) DOES carry `ownership_type`, which is why this was invisible internally |
+| Ruling | Owner, 2026-09-01: a tier-less export is a **DATA-EXPORT DEFECT**, not a run-time mode. `scripts/prepare_inputs.py::build_companies` now refuses such a file outright (`require_ownership_tier`), naming the column, the consequence and the remedy |
+| Action | **Owner + Bertrand: re-export the deliverables including `ownership_type` from the marts.** Until that lands, the 2026-08-25 drop cannot be converted into model inputs |
+
+**Measured on the 2026-08-25 drop** (1,048,249 rows, 152,972 asset-years),
+totalling `ownership_percentage` per `(asset_id, year)` with no tier selected:
+
+| Statistic | Value |
+| --- | --- |
+| Asset-years summing above 105% | **92.0%** |
+| Median asset-year sum | **227.5%** |
+| Maximum asset-year sum | 903.3% |
+| Asset-years within 99–101% | 4.3% |
+
+A median of 227% is the ownership chain restating the same capacity roughly
+twice over. `allocate_assets_to_companies` multiplies capacity by
+`ownership_percentage / 100` with no renormalisation, so every absolute output
+of such a run — NPV, earnings, allocated capacity — is inflated by about that
+factor. It is not a rounding-scale problem that a warning covers.
+
+**Why it fails rather than warns.** `check_ownership_allocation` already warned
+about exactly this number, and the warning is not enough: it fires on stderr
+mid-conversion, the script writes `data/05_model_input/` anyway, and the run
+that follows produces plausible-looking numbers. The tier column is part of the
+input contract, so its absence belongs with the other missing-column failures.
+
+**The export build is unaffected.** `build_export.py --data-source` only
+*stages* the three raw files into `data/01_raw/`; it never calls
+`prepare_inputs.py`. The guard therefore fires at the recipient's quickstart
+step 4, not during export assembly, and the export gate still passes on the
+tier-less drop. Quickstart step 3 says so explicitly.
 
 ---
 
@@ -464,11 +600,34 @@ tests, consistent with the 37 already there.
 
 | Decide first | Why it matters |
 | --- | --- |
-| **OWN-1** ownership tier | 2.2× on every absolute output |
+| ~~**OWN-1** ownership tier~~ — settled: `ownership_aggregation`, default `"tier_filter"` | was 2.2× on every absolute output; now a documented mode switch |
+| **OWN-2** re-export the deliverables with `ownership_type` — ruled, but an OPEN ACTION for owner + Bertrand | the delivered file has no tier column, so the default mode degrades to summing the whole chain: median asset-year ownership 227%. `prepare_inputs.py` now refuses the drop |
 | **Q2-1** price ramp labels rows `baseline` | silently neutralises any future split between the two discount rates |
 | **Q2-3** negative perpetuity | reverses an explicit design choice of yours |
+| **Q1-2 / Q1-4** the two switch defaults flip `False → True` vs `main` (`include_replacement_capex`, `include_decom_costs`) | both terms are newly LIVE in a default run, so every absolute number moves before either form change is even considered |
 | **Q1-2** replacement CapEx base | changes what "maintenance" means in the model |
 | **NAME-4** raise vs drop | your guard kept; may stop a full-data run |
 | **Q2-7** carbon-price side-file | the one place the ruling was not applied |
 | **Q1-4** decom sign | retiring an asset used to pay its owner |
 | **Q4-4** narrowed contract test | a deliberate invariant is now weaker |
+
+## Reviewer notes for the maintainer (post-review, non-blocking)
+
+Left by the final dual review; none blocks merge, all worth knowing:
+
+1. **Names are no longer group keys.** company_name/asset_name are carried as
+   `first` aggregations over the load-bearing keys (2134579) — a blank name can
+   neither delete a stake nor split a company. If a future change re-keys on
+   names, both failure modes return.
+2. **Exported uv.lock keeps streamlit's transitive-only packages** (altair,
+   pydeck, blinker) — inert, `uv lock --check` passes, but visible to a reader.
+3. **Terminal-value normalization still averages filled zeros across data
+   gaps** in the last window years (deliberate X2 scoping: the stranding
+   CLASSIFICATION ignores gaps; the normalization mean does not).
+4. **The prepare_inputs tier guard covers the documented ingress only** — a
+   tier-less CSV dropped directly into data/05_model_input/ bypasses it and
+   over-allocates with only a log line. Deliberate (hand-made-frame
+   compatibility); noted here so nobody assumes the hole is fully closed.
+5. **ownership_level holding strings** coerces to NaN and raises with a
+   message that points at the values, not the schema mismatch — loud but
+   imprecise; not believed to be a shape in circulation.

@@ -4,9 +4,17 @@ dcf:
   # Baseline scenarios use standard discount rate
   discount_rate_baseline: 0.07  # 7% real discount rate for baseline pathways
 
-  # Shock scenarios use higher discount rate due to transition risk
-  # Higher rate reflects: regulatory uncertainty, stranded asset risks,
-  # market volatility during energy transition, policy implementation risks
+  # The shock-pathway rate. It ships EQUAL to the baseline rate, so no discount
+  # premium is applied: the shipped configuration values the two pathways at the
+  # same 7%, and the whole baseline-vs-shock difference comes from the cash
+  # flows, not from the rate. Raise it here to price transition risk into the
+  # rate as well — regulatory uncertainty, stranded-asset risk, market
+  # volatility and policy-implementation risk are the usual grounds.
+  # NOTE: this key is INERT whenever the pathway actually ramps — that is
+  # `price_ramp: True` AND `alignment_year` > `shock_year`, which is the shipped
+  # configuration (2038 > 2033). `alignment_year: 2033` is legal and switches
+  # the ramp off, which makes this key live again, as does `price_ramp: False`.
+  # See the user guide's "Discount rates" section and the stage-5 pipeline page.
   discount_rate_shock: 0.07  # 7% real discount rate for transition shock pathways
 
   # ── Technology-differentiated discount rates ────────────────────────────────

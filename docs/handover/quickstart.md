@@ -42,17 +42,18 @@ powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | ie
 ```
 
 `uv sync` installs the `dev` group by default, so `pytest`, `pytest-cov` and
-`ruff` are already there. Two optional groups are *not* installed and are not
+`ruff` are already there. One optional group is *not* installed and is not
 needed to run the model:
 
 | Group | Install with | What it is for |
 | --- | --- | --- |
 | `docs` | `uv sync --group docs` | Building this documentation site locally. |
-| `streamlit` | `uv sync --group streamlit` | The batch-run app under `notebooks/`. |
 
-`pyproject.toml` declares one further optional group used only by the
-maintainers' internal input tooling. It is not installed by default, the module
-it serves is not part of this package, and you never need it.
+`pyproject.toml` declares two further optional groups, used only by the
+maintainers' internal tooling - the warehouse ingestion path and the batch-run
+app. Neither is installed by default and you never need either; in a delivered
+copy neither the groups nor the modules they serve are present, which is why
+nothing in this documentation names them.
 
 Verify the install - this must print a `0.19.x` version and exit cleanly:
 
@@ -72,8 +73,11 @@ The model is fed by three CSV files. Put them, unmodified, in `data/01_raw/`:
 | File | Contents |
 | --- | --- |
 | `assets_forecasts.csv` | Physical assets and their per-year technical forecasts (capacity, technology, country, age) |
-| `companies_ownerships.csv` | Which company owns which asset, and the ownership percentage of each stake |
+| `companies_ownerships.csv` | Which company owns which asset, the ownership percentage of each stake, and the `ownership_type` rung it sits on |
 | `scenarios.csv` | IAM scenario pathways, prices, capacity factors and cost assumptions |
+
+The 2026-08-25 deliverables drop predates the `ownership_type` column and step 4
+below refuses it; ask for the re-exported version that includes it.
 
 Column-level dictionaries for all three files, including the units traps
 (`ownership_percentage` is on the 0-100 scale, not a fraction):
@@ -119,6 +123,12 @@ If you bring an IAM extract whose `carbon_price_usd_per_tco2` column is empty,
 the carbon cost will be zero everywhere rather than silently wrong; fill the
 column in your scenarios input rather than reaching for a side-file.
 
+One artefact of that lineage is still committed: `tests/fixtures/data/`
+contains an `ar6_carbon_prices.csv`. It is **inert** - no catalog entry, no
+node and no test reads it as an input - and it is kept rather than deleted so
+the file the retired entry pointed at stays inspectable. Do not take its
+presence as a fourth input file.
+
 ## 4. Convert the deliverables into model inputs
 
 The three delivered files use the deliverables schema. One script validates them
@@ -141,6 +151,16 @@ Both directories can be overridden: `uv run python scripts/prepare_inputs.py
 input before it writes anything, so a schema problem stops it with a named
 missing column rather than leaving a half-converted `data/05_model_input/`.
 
+!!! note "Marts extracts are staged upstream - not by anything in your copy"
+    `prepare_inputs.py` expects the deliverables schema: prefixed scenario
+    names (`AR6_<provider>_...`) and a `year` column. A raw warehouse (marts)
+    extract - bare scenario names, `production_year` / `scenario_year` columns
+    - is converted to that schema by an internal staging script
+    (`scripts/stage_marts_inputs.py`) that **is not part of a delivered
+    copy**. If your `scenarios.csv` carries bare names, have the data provider
+    restore the `AR6_<provider>_` prefix upstream - nothing in the pipeline
+    adds it, and no script in your copy will.
+
 ## 5. Choose the run configuration
 
 There is **no `conf/base/parameters.yml`**. Kedro merges every
@@ -153,7 +173,7 @@ the cost switches next to theirs:
 
 | File | What it holds |
 | --- | --- |
-| `parameters_prepare_scenario_asset_and_company_inputs.yml` | `baseline_scenario`, `target_scenario`, `company_ids`, `ownership_type`, `ccs_on`, `max_forecast_horizon`, `reduce_granularity_from_asset_to_company_level` |
+| `parameters_prepare_scenario_asset_and_company_inputs.yml` | `baseline_scenario`, `target_scenario`, `company_ids`, `ownership_type`, `ownership_aggregation`, `ccs_on`, `max_forecast_horizon`, `reduce_granularity_from_asset_to_company_level` |
 | `parameters_calculate_company_trajectories.yml` | `shock_year`, `alignment_year`, `price_ramp` |
 | `parameters_calculate_asset_earnings.yml` | `market_passthrough`, the cost switches and the carbon-cost method |
 | `parameters_allocate_company_trajectories_to_assets.yml` | retirement and staggering knobs |
@@ -163,19 +183,40 @@ the cost switches next to theirs:
 The three keys you will almost always touch:
 
 ```yaml
-# conf/base/parameters_prepare_scenario_asset_and_company_inputs.yml
-baseline_scenario: "AR6_AIM/CGE 2.2_EN_NPi2020_1200f"
-target_scenario: "AR6_AIM/CGE 2.2_EN_NPi2020_900f"
+# set in conf/base/parameters_prepare_scenario_asset_and_company_inputs.yml:
+baseline_scenario: "AR6_WITCH 5.0_EN_NoPolicy"
+target_scenario: "AR6_WITCH 5.0_EN_NPi2020_500"
 
-# conf/base/parameters_calculate_company_trajectories.yml
+# set in conf/base/parameters_calculate_company_trajectories.yml:
 shock_year: 2033
 ```
 
-Both scenario names must appear in the `scenario` column of
+Both scenario names must appear **verbatim** in the `scenario` column of
 `data/05_model_input/scenarios.csv`, and both must come from the same IAM
-provider. See the [scenario catalog](scenario_catalog.md) for candidate pairs.
-The defaults shipped in the files are a valid pair - you can run first and tune
-afterwards. Full per-key annotations: [parameters reference](parameters.md).
+provider - a rule you enforce, not the model (see the
+[scenario catalog](scenario_catalog.md)).
+
+!!! warning "Check the shipped defaults against your extract before running"
+    Two of the shipped defaults do not do what a first read suggests:
+
+    * The scenario pair shipped in `conf/base` (AIM/CGE `EN_NPi2020_1200f` /
+      `900f`) is **not in the 2026-09-01 scenarios extract** - names change
+      between extract vintages. The WITCH pair above is verified against that
+      extract; list what yours carries before running (the one-liner is in
+      [Troubleshooting](troubleshooting.md#assertionerror-target-scenario-not-found-in-scenarios-pathways)).
+    * `company_ids` - in this repository it ships **populated with a
+      30-company example selection**, so an out-of-the-box run covers 30
+      companies, not the universe; a sanitized delivered copy ships it
+      **empty** (the export strips the ids). Check your file, and empty the
+      list (`company_ids: []`) for a full run.
+
+    In this repository, `uv run kedro run --env full --tags altrisk` does both
+    in one step: the `conf/full` environment overrides the pair to the
+    verified WITCH pair and empties the company filter, leaving `conf/base`
+    untouched. `conf/full/` is not part of a delivered copy - there, set the
+    pair and the empty list in `conf/base` directly.
+
+Full per-key annotations: [parameters reference](parameters.md).
 
 ## 6. Run the model
 
@@ -200,10 +241,10 @@ Expected console landmarks, in order:
 INFO     Kedro project altr-model
 INFO     Loading data from scenarios (CSVDataset)...
 INFO     Running node: prepare_scenario_asset_and_company_inputs.prepare_scenarios: ...
-INFO     Completed 1 out of 28 tasks
+INFO     Completed 1 out of 29 tasks
 ...
 INFO     Saving data to company_npv (CSVDataset)...
-INFO     Completed 28 out of 28 tasks
+INFO     Completed 29 out of 29 tasks
 INFO     Pipeline execution completed successfully.
 ```
 
@@ -211,8 +252,10 @@ Node names are namespaced with their pipeline (`<pipeline>.<node>`), which is
 how you tell which stage a failure is in. The run has failed if you do not see
 `Pipeline execution completed successfully` - see
 [Troubleshooting](troubleshooting.md) for the common causes. Run duration scales
-with the number of companies and the forecast horizon; a first full-universe run
-is measured in tens of minutes, not seconds.
+with the number of companies and the forecast horizon: with the shipped
+30-company example filter a run takes minutes; a full-universe run
+(`company_ids: []`, or `--env full`) is measured in tens of minutes, not
+seconds.
 
 ## 7. Collect the outputs
 
@@ -225,6 +268,7 @@ is measured in tens of minutes, not seconds.
 | `data/07_model_output/asset_earnings.csv` | Per-asset, per-year earnings before discounting |
 | `data/07_model_output/asset_trajectories.csv` | Per-asset capacity path per trajectory type |
 | `data/07_model_output/company_trajectories.csv` | Company baseline / target / requested / realised paths |
+| `data/07_model_output/frozen_capacity_at_retirement.csv` | For each retiring asset, the capacity it last stood at, carried from its retirement year onward - a lookup surface, not a cost driver |
 | `data/08_reporting/` | Figure packs (`reporting` tag only) |
 
 Read them with the [user guide](user_guide.md).

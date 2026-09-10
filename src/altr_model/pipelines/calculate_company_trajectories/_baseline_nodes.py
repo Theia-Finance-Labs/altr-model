@@ -10,25 +10,44 @@ logger = logging.getLogger(__name__)
 
 
 def aggregate_assets_to_company_level(assets_forecasts: pd.DataFrame) -> pd.DataFrame:
-    """Aggregate asset-level data to company level by calculating total activity."""
+    """Aggregate asset-level data to company level by calculating total activity.
+
+    ``company_name`` rides along as ``first`` rather than being a group key,
+    for the reasons spelled out in ``_consolidate_ownership_stakes``: as a key
+    it deletes an unnamed company's activity outright (pandas drops NaN keys),
+    and keeping the NaN key instead would split one company into two rows that
+    `prepare_company_projection_inputs` then fails to merge one-to-one.
+    """
 
     companies_forecasts = (
         assets_forecasts.groupby(
             [
                 "company_id",
-                "company_name",
                 "scenario_geography",
                 "sector",
                 "technology",
                 "year",
             ]
         )
-        .agg({"asset_activity": "sum"})
-        .rename({"asset_activity": "company_activity"}, axis=1)
+        .agg(
+            company_name=("company_name", "first"),
+            company_activity=("asset_activity", "sum"),
+        )
         .reset_index()
     )
 
-    return companies_forecasts
+    # Column order as callers have always seen it (name beside its id).
+    return companies_forecasts[
+        [
+            "company_id",
+            "company_name",
+            "scenario_geography",
+            "sector",
+            "technology",
+            "year",
+            "company_activity",
+        ]
+    ]
 
 
 def calculate_tmsr(

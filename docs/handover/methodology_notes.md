@@ -44,6 +44,16 @@ rather than picking one arbitrarily
 (`ValueError: Ambiguous scenario geography assignment detected` - see
 [Troubleshooting](troubleshooting.md#valueerror-ambiguous-scenario-geography-assignment-detected)).
 
+!!! warning "22 countries never reach the matching at all"
+    Before any geography is assigned, `filter_assets` silently drops every
+    asset whose `country_iso2` is missing - and every asset in a hardcoded
+    list of 22 jurisdictions: AS, BM, AW, SZ, FO, CW, DM, GF, PS, KN, MK, IM,
+    PM, XK, SC, SS, AX, KY, BQ, GG, MS, JE. This is a legacy NGFS-scenario
+    workaround (the code marks it `TODO REMOVE HARDFIX FOR NGFS`), kept for
+    output comparability until it is removed deliberately. If an asset count
+    does not reconcile against your source extract, check these countries
+    before anything else - no warning is logged when they are dropped.
+
 ## Granularity changes the shape of every output
 
 The `reduce_granularity_from_asset_to_company_level` parameter changes what an
@@ -55,9 +65,12 @@ The `reduce_granularity_from_asset_to_company_level` parameter changes what an
 2. **Company granularity** (the switch on): physical assets are aggregated into
    one synthetic row per company/sector/technology/geography *before* the model
    runs. `asset_npv.csv`'s `asset_id` becomes a generated identifier of the form
-   `NEW_<company_id>_<sector>_<technology>_<geography>`, and `asset_count`
-   drops to the number of technology/geography buckets rather than physical
-   assets.
+   `unique_company_asset_<sector>_<technology>_<company_id>_<geography>`, and
+   `asset_count` drops to the number of technology/geography buckets rather
+   than physical assets. (The similar-looking
+   `NEW_<company_id>_<sector>_<technology>_<geography>` is a different id
+   entirely - the synthetic build-out asset below - and it appears under either
+   granularity setting.)
 
 !!! warning "Do not mix outputs from different granularity settings"
     Aggregating before the model runs is **not** equivalent to aggregating the
@@ -92,16 +105,37 @@ Retirement dating happens in
 [Stage 1](pipelines/prepare_scenario_asset_and_company_inputs.md)'s asset
 preparation.
 
+**The retirement floor.** The dated retirement year is not applied as-is: when
+allocation zeroes retired capacity it clips retirement to `alignment_year + 1`,
+so no asset retires before the transition window closes. An asset dated to
+retire in 2035 under `alignment_year: 2038` therefore keeps running until 2039.
+The floor exists so retirement never removes capacity the shock has not yet had
+a chance to act on — the transition path would otherwise be reading a fleet
+that had already shrunk for unrelated reasons. Every consumer of the retirement
+year applies the same floor, `frozen_capacity_at_retirement` included; the raw
+`retirement_year` carried on the panel is the *input* to it, not the year the
+asset actually stops.
+
 ## Synthetic assets for increasing technologies
 
 For technologies whose scenario pathway is *increasing* (a renewables
 build-out, say), a company's real assets are left at business-as-usual
-capacity, and any gap versus the company's target trajectory is filled by a
-single **synthetic** top-up asset. From `shock_year` onward, the synthetic
-asset's capacity in year *t* is
-`max(0, company_target[t] − sum(real_assets[t]))` - it fills exactly the gap
-between the company-level target and what the real fleet already delivers, so
-real + synthetic always reconciles to the company total.
+capacity, and any gap versus the company's requested trajectory is filled by a
+single **synthetic** top-up asset. From `shock_year` onward (and only from
+there - before the shock year the synthetic asset carries no capacity), its
+capacity in year *t* is
+`max(0, company_late_sudden_requested[t] − sum(real_assets[t]))`. The series
+being closed on is the **late & sudden requested** company path, not the raw
+`target` scenario path: the requested path is the one the company is actually
+being held to.
+
+The reconciliation is **one-sided**. The `max(0, ...)` closes a *shortfall*
+only; there is no downward correction. Where a company's real assets already
+carry more capacity at business-as-usual than the requested path asks for, the
+top-up is zero and the company's total stays *above* the requested path - real
+capacity is never reduced to meet it. So real + synthetic equals the requested
+path exactly only in the years the real fleet falls short of it, and is greater
+than or equal to it otherwise.
 
 A synthetic asset can only appear where the company already has a real one.
 The model only produces a company trajectory for a
@@ -109,8 +143,82 @@ The model only produces a company trajectory for a
 has at least one real asset, so a company can never be handed synthetic
 build-out in a country or technology it has no presence in at all.
 
+A synthetic asset burns like the fleet it was built out from. It has no plant
+record of its own, so it has no measured emission factor; it takes the
+capacity-weighted mean emission factor of the company's real assets in the same
+(sector, technology, scenario_geography) group, year by year. Where the company
+holds no real asset in that group the model widens the group - first to every
+real asset in that technology and geography, then to the technology as a whole -
+and only falls back to zero when the technology carries no emission factor
+anywhere, which it logs as a warning. The weighting capacity is the BAU
+trajectory rather than the post-shock one, so a synthetic's emission factor is a
+property of the fleet and not of the shock. Renewable technologies are the
+exception: a missing emission factor there genuinely is zero, so they are
+zero-filled before the inheritance rule sees them.
+
 Synthetic rows are flagged `is_synthetic = True` in the asset-level outputs -
 one of the [sanity checks](user_guide.md#5-sanity-checks-before-you-trust-a-run)
 is watching for companies whose NPV a synthetic asset dominates. The allocation
 mechanics are in
 [Stage 3](pipelines/allocate_company_trajectories_to_assets.md).
+
+## Ownership attribution and aggregation
+
+A physical asset can appear in the ownership data under more than one
+relationship type - a **direct** stake (the operating owner's share) and an
+**equity** stake (a look-through share held via intermediaries) - and can be
+claimed by several companies at once (a parent through equity, its subsidiary
+through direct, JV partners each through theirs). Any attribution rule answers
+two different questions, and no single rule answers both:
+
+1. **Economic exposure** - what fraction of this asset's cash flows does
+   *this company* have a claim on?
+2. **Physical accounting** - do the attributed shares, summed over all
+   companies in the universe, add up to the real fleet?
+
+`ownership_aggregation` selects the rule. **`tier_filter`** (shipped default)
+selects one relationship type (`ownership_type`, default `direct`) and
+consolidates within it: each megawatt is counted once, under its operating
+owner; the company universe is operating owners; this is the basis of the
+validated baseline and previously published results. **`sum`** totals every
+stake a company holds in an asset-year across relationship types
+(50.00% direct + 0.45% equity = 50.45%): each company carries its full
+economic claim; equity-only holders enter the universe. On the current data,
+`sum` attributes 2.68x the fleet's ownership-weighted capacity across 7,752
+claimants; `tier_filter` covers the same assets once through 4,899 operating
+owners.
+
+**Precedent.** PACTA-family attribution uses proportional equity look-through
+including minority stakes, level by level up the ownership tree ("if Company A
+owns x% of Asset 1, it gets attributed x% of its production" - PACTA for
+Banks Methodology §1.7.2; PACTA for Investors Methodology v1.0 §1.2.3, the
+"Equity Ownership" consolidation). Shares sum to 100% only at the
+direct-asset level; the same megawatt then appears in the subsidiary and,
+stake-weighted, in every parent - PACTA accepts this in the company universe
+and avoids double counting only at the financial layer, where each security
+maps to exactly one company node. PACTA also defines a second rule per asset
+class (Credit Ownership, one node per debt instrument): attribution follows
+analytical purpose even within one methodology, which is why ALTR exposes the
+choice as a parameter rather than fixing one mode.
+
+**Consequences to hold explicitly:**
+
+- Under `sum`, every cross-company aggregate (company-technology tables,
+  totals) is claim-weighted, not physical - the same plant is counted once
+  per claimant. Label aggregates accordingly or de-duplicate first.
+- Ownership enters the model as a linear scalar on capacity and every major
+  cost line is linear in it, while stranding classification is sign-based -
+  so a company's `npv_change` ratio is invariant to stake *size* and moves
+  only through *composition* (which assets and companies enter). Absolute
+  levels scale with the full attribution factor: risk signals may be compared
+  across modes with care; absolute levels may never be.
+- Allocation runs per company independently: under `sum` a company's claim
+  list is larger and each claim smaller, giving the staggering finer
+  granularity, but physical coherence across companies is not enforced - two
+  claimants may retire their shares of one plant in different years.
+- `sum` trusts the ownership tree's within-company non-overlap (a stake
+  reported both directly and via look-through for the same company would
+  double count inside that company - not observed in the current data, not
+  guarded against). `tier_filter` conversely discards real economic exposure
+  by construction. Both are conventions; every published number should name
+  the one it used.

@@ -30,6 +30,26 @@ consequences for interpretation are spelled out under
 [Reading the sign of `npv_change`](user_guide.md#reading-the-sign-of-npv_change) -
 read that section before you present results to anyone.
 
+One definition before any number. `company_npv` is the discounted value of a
+company's **power-generation assets**, weighted by the company's ownership
+share in each - capacity enters the model as
+`capacity × ownership_percentage / 100` before any money is computed. It is not
+enterprise value and not market capitalization: no debt, no non-power business
+lines, no corporate overhead. An `npv_change` of `-0.12` means the shock
+destroys 12% of the value of this power-asset slice - nothing more, and nothing
+less.
+
+## What this model does not do
+
+Stating the boundary is cheaper than having it discovered. The model carries no
+physical climate risk, no litigation or reputational channel, no
+balance-sheet, leverage or liquidity effects, and no demand response or
+market-share reallocation between companies - each company's fleet meets its
+own pathway independently. Coverage is power generation only, and a company is
+covered exactly as far as the asset data covers it. Which switches carry the
+transition signal, and how to size them, is in the
+[user guide](user_guide.md#changing-one-thing-at-a-time).
+
 Everything the model does is in this package, in code you can read and run. That
 is deliberate: where the number comes from should never be a matter of trust.
 
@@ -49,8 +69,8 @@ is deliberate: where the number comes from should never be a matter of trust.
     [`altr_documentation.pdf`](altr_documentation.pdf) is a **delivered binary
     that cannot be edited**, and parts of it describe the internal setup rather
     than the package in your hands. Where it and this site differ on
-    mechanics - commands, file names, pipeline names, the clone URL - **this
-    site is correct and the PDF is not**. Four places specifically:
+    mechanics - commands, file names, pipeline names - **this site is correct
+    and the PDF is not**. Three places specifically:
 
     * It names a Docker Compose configuration and a
       `notebooks/run_kedro_batch.py` batch runner. Both exist in this

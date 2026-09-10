@@ -23,23 +23,67 @@
 # (current-policy) pathway; `target_scenario` is the climate-policy pathway whose
 # "late & sudden" alignment drives the shock.
 # Values: full scenario names as they appear in the `scenario` column of the
-# scenarios input (`data/05_model_input/scenarios.csv`). Both must come from the
-# same IAM provider and start in the same year (asserted in `filter_assets`).
-# Note: `filter_scenarios` prepends "AR6_<provider>_" automatically.
+# scenarios input (`data/05_model_input/scenarios.csv`). Both must start in the
+# same year (asserted in `filter_assets`) and SHOULD come from the same IAM
+# provider - the provider is NOT checked: a cross-provider pair that shares a
+# start year runs to completion, silently intersecting the two providers'
+# geographies/technologies with only a logged warning. Enforce same-provider
+# yourself.
+# NOTE (corrected 2026-09-02): `filter_scenarios` does NOT prepend
+# "AR6_<provider>_" -- it asserts the name below appears VERBATIM in the
+# `scenario` column and prefixes nothing (`_input_nodes.py::filter_scenarios`;
+# `grep -rn 'AR6_' src/` is empty). The committed fixture stores full names
+# ("AR6_WITCH 5.0_EN_NoPolicy") for exactly this reason. If your scenarios
+# extract carries bare names, the prefix must be restored upstream -- the
+# internal staging script (`workspace/stage_marts_inputs.py`) does it, and is
+# not part of a delivered copy.
+# The pair below is NOT present in the 2026-09-01 extract; the full-universe
+# run overrides it in `conf/full/` with the WITCH pair that is.
 # Known pairs per IAM: see docs/handover/scenario_catalog.md
 baseline_scenario: "AR6_AIM/CGE 2.2_EN_NPi2020_1200f"
 target_scenario: "AR6_AIM/CGE 2.2_EN_NPi2020_900f"
 
 # ── Ownership tier ────────────────────────────────────────────────────────────────
 # Which rung of the ownership tree attaches assets to companies.
-# Values: "direct" (ownership_type == "direct", or ownership_level == 1)
-#       | "indirect" (ownership_type == "indirect", or ownership_level >= 2).
+# Values: whatever the companies input's tier column actually holds. The column
+# comes from the marts export; under the NAMED schema (`ownership_type`) its
+# values there are "direct" and "equity" — not "indirect". Under the NUMBERED
+# schema (`ownership_level`) "direct" selects level 1, "indirect"/"equity"
+# select level 2+, and a bare number selects that level; anything else raises
+# rather than being taken as "some indirect rung".
+# Matching ignores case and surrounding whitespace on both sides.
+# The 2026-08-25 deliverables drop carries NEITHER column, and
+# `scripts/prepare_inputs.py` refuses such a file rather than letting every rung
+# of the ownership chain into the run: a re-export including `ownership_type`
+# is required before that drop can be converted.
+# A tier the data does not carry is rejected with a ValueError listing the
+# values that are available, rather than silently emptying the run.
 # A company's stake in an asset is recorded at several tiers — a direct holding
 # and the equity stakes rolling up through subsidiaries. They are alternative
 # views of the same capacity, not additive ones, so a run reports on one tier.
 # The tier is selected BEFORE stakes are consolidated, so consolidation only ever
 # sums within the tier it was given.
+# Read only when `ownership_aggregation` is "tier_filter" (the default); "sum"
+# keeps every tier and ignores this key.
 ownership_type: "direct"
+
+# ── Ownership aggregation ─────────────────────────────────────────────────────────
+# How the several stakes one company holds in one asset-year are combined.
+# Values: "tier_filter" (DEFAULT) | "sum".
+#   "tier_filter" — select the `ownership_type` rung above, then consolidate the
+#     duplicate stakes WITHIN that rung into one row per company-asset-year. The
+#     tiers are alternative views of the same capacity, so only one is reported.
+#     This is the validated baseline: it is the behaviour the pinned fixture NPVs
+#     and last year's published results were produced under.
+#   "sum" — total every holding: direct + equity per company-asset-year, all
+#     tiers entering. This is TRISK's reading, and the mode to pick when results
+#     have to line up with a TRISK run.
+# Absolute outputs are NOT comparable across the two modes. On the fixture slice
+# one company holds a plant at 50.00% direct and 0.45% equity: "tier_filter"
+# gives it 50.00%, "sum" gives it 50.45%, and the owner-asset universe grows
+# roughly 2.2× under "sum" — every absolute number (NPV, earnings, capacity)
+# scales with it. Only within-mode comparisons mean anything.
+ownership_aggregation: "tier_filter"
 
 
 # ── Output granularity ────────────────────────────────────────────────────────────
@@ -50,8 +94,11 @@ reduce_granularity_from_asset_to_company_level: False
 
 
 # ── Scope filters ─────────────────────────────────────────────────────────────────
-# Number of forecast years kept per asset, counted from the scenario start year:
-# assets are filtered to production years in [start_year, start_year + N] (years).
+# Observed forecast years kept per asset, counted from the scenario start year:
+# assets are filtered to production years in [start_year, start_year + N], a
+# closed interval - N=5 keeps six calendar years. Not the valuation window: the
+# kept panel is then flat-extended to the scenario's last year, so the shock is
+# always inside the valued period.
 max_forecast_horizon: 5
 
 # Technology scenario mapping control
@@ -60,7 +107,11 @@ max_forecast_horizon: 5
 ccs_on: False
 
 
-# Empty list = all companies (no filter).
+# Empty list = all companies (no filter). NOTE: in the internal repository the
+# list below is POPULATED with 30 example companies, so an out-of-the-box run
+# covers those 30, not the universe (a sanitized delivered copy ships it
+# empty - the export strips the ids). Empty it (company_ids: []) for a full
+# run, or use `--env full` (internal repository only), which does.
 # Values: list of company_id strings present in the companies input. Read the ids
 # you can choose from off the `company_id` column of your own companies input
 # (`data/05_model_input/companies_ownerships.csv`); the list below is an example

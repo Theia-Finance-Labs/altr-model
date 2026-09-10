@@ -131,6 +131,10 @@ def _reference_compute(
 
     agg_map = {col: "sum" for col in available_financial_cols}
     agg_map["discount_rate"] = "first"
+    # Mirrors the production collapse: an all-NaN FCFF cell sums to 0.0, so the
+    # observation count travels alongside it for the stranding test.
+    npv_data = npv_data.assign(_fcff_observed=npv_data["FCFF"].notna())
+    agg_map["_fcff_observed"] = "sum"
     npv_data = npv_data.groupby(
         group_keys + ["year"], dropna=False, as_index=False
     ).agg(agg_map)
@@ -168,9 +172,16 @@ def _reference_compute(
             terminal_value = 0.0
 
             if stranding_aware_tv and final_fcff != 0:
-                n_check = min(stranding_consecutive_years, len(g))
-                last_n_fcff = g["FCFF"].iloc[-n_check:]
-                is_stranded = (last_n_fcff <= 0).all()
+                # A group with fewer than N OBSERVED years cannot show N
+                # consecutive loss years, and a missing year is not a loss —
+                # mirrors the production guard. The trailing window must be
+                # complete: "loss, gap, loss" is not a run of three.
+                tail = g.iloc[-stranding_consecutive_years:]
+                is_stranded = bool(
+                    g["_fcff_observed"].gt(0).sum() >= stranding_consecutive_years
+                    and tail["_fcff_observed"].gt(0).all()
+                    and (tail["FCFF"] <= 0).all()
+                )
 
                 if is_stranded:
                     tv_tier = "stranded"
