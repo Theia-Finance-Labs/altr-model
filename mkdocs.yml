@@ -1,0 +1,69 @@
+# ALTR model documentation site.
+#
+# Build:   uv run mkdocs build --strict
+# Preview: uv run mkdocs serve
+#
+# `repo_url` points at the repository this package lives in. Under the
+# 2026-09-01 single-repo ruling that is `Theia-Finance-Labs/altr-model`;
+# `altr-model-refactored` is retired and nothing new should name it.
+
+site_name: ALTR Model
+site_description: Asset-level transition-risk valuation model — install, run, interpret.
+repo_url: https://github.com/Theia-Finance-Labs/altr-model
+repo_name: Theia-Finance-Labs/altr-model
+docs_dir: docs/handover
+site_dir: site
+use_directory_urls: true
+
+theme:
+  name: material
+  features:
+    - navigation.top
+    - navigation.tracking
+    - toc.follow
+    - content.code.copy
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - md_in_html
+  - pymdownx.details
+  # Mermaid diagrams: ```mermaid fences render as SVG here and on GitHub.
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Quickstart: quickstart.md
+  - User guide: user_guide.md
+  - Input data: input_data.md
+  - Parameters: parameters.md
+  - Pipelines:
+      - "Stage 1 — prepare_scenario_asset_and_company_inputs": pipelines/prepare_scenario_asset_and_company_inputs.md
+      - "Stage 2 — calculate_company_trajectories": pipelines/calculate_company_trajectories.md
+      - "Stage 3 — allocate_company_trajectories_to_assets": pipelines/allocate_company_trajectories_to_assets.md
+      - "Stage 4 — calculate_asset_earnings": pipelines/calculate_asset_earnings.md
+      - "Stage 5 — calculate_asset_and_company_npv": pipelines/calculate_asset_and_company_npv.md
+      - "Stage 6 — plot_transition_risk_results": pipelines/plot_transition_risk_results.md
+  - Methodology notes: methodology_notes.md
+  - Architecture: architecture.md
+  - Batch runs and the app: batch_runs.md
+  - Scenario catalog: scenario_catalog.md
+  - Troubleshooting: troubleshooting.md

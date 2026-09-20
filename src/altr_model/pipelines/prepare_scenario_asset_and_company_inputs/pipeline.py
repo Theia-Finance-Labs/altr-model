@@ -16,6 +16,7 @@ PIPELINE_PARAMETERS = {
     "ccs_on",
     "company_ids",
     "max_forecast_horizon",
+    "ownership_type",
     "reduce_granularity_from_asset_to_company_level",
     "target_scenario",
 }
@@ -41,6 +42,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                     "downloaded_companies": "companies_ownerships",
                     "scenario_pathways": "_scenario_pathways",
                     "company_ids": "params:company_ids",
+                    "ownership_type": "params:ownership_type",
                     "ccs_on": "params:ccs_on",
                     "max_forecast_horizon": "params:max_forecast_horizon",
                     "reduce_granularity_from_asset_to_company_level": "params:reduce_granularity_from_asset_to_company_level",

@@ -10,6 +10,12 @@ logger = logging.getLogger(__name__)
 # Constants
 HOURS_PER_YEAR = 8760
 
+# Annual capital maintenance as a fraction of installed capacity. 1-3% of
+# replacement cost per year is the standard utility benchmark (EPRI, Lazard
+# LCOE methodology); 2% is the value the handover branch charged. Only a
+# fallback for direct callers — the pipeline reads params:replacement_capex_rate.
+REPLACEMENT_CAPEX_RATE = 0.02
+
 # A physical asset can legitimately appear once per owner. Every time-series
 # operation must therefore use the complete canonical asset-series grain, not
 # ``asset_id`` alone.
@@ -23,8 +29,18 @@ ASSET_SERIES_KEYS = [
 ]
 
 
-def validate_asset_trajectories(asset_trajectories: pd.DataFrame) -> pd.DataFrame:
-    """Validate the canonical, already-enriched asset trajectory contract."""
+def validate_asset_trajectories(
+    asset_trajectories: pd.DataFrame,
+    frozen_capacity_at_retirement: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Validate the canonical, already-enriched asset trajectory contract.
+
+    ``frozen_capacity_at_retirement`` is a lookup of the capacity each retiring
+    asset last stood at, carried onto the panel from its retirement year on.
+    Nothing in the earnings maths reads it — fixed costs use first-year capacity
+    — so it is a carried surface, not a cost driver; see the Q4 entries in
+    docs/superpowers/plans/consolidation-clash-report.md.
+    """
     required_columns = {
         "asset_id",
         "company_id",
@@ -51,6 +67,29 @@ def validate_asset_trajectories(asset_trajectories: pd.DataFrame) -> pd.DataFram
         raise ValueError(f"asset_trajectories missing required columns: {missing}")
 
     assets = asset_trajectories.copy()
+
+    frozen_keys = ["asset_id", "company_id", "scenario_geography", "sector",
+                   "technology", "year"]
+    if (
+        frozen_capacity_at_retirement is not None
+        and not frozen_capacity_at_retirement.empty
+    ):
+        assets = assets.merge(
+            frozen_capacity_at_retirement[
+                frozen_keys + ["frozen_capacity_at_retirement"]
+            ].drop_duplicates(frozen_keys),
+            on=frozen_keys,
+            how="left",
+            validate="many_to_one",
+        )
+        logger.info(
+            "Frozen capacity merged onto %s of %s asset-year rows",
+            assets["frozen_capacity_at_retirement"].notna().sum(),
+            len(assets),
+        )
+    else:
+        assets["frozen_capacity_at_retirement"] = np.nan
+
     for column in [
         "asset_id",
         "company_id",
@@ -80,6 +119,19 @@ def validate_asset_trajectories(asset_trajectories: pd.DataFrame) -> pd.DataFram
             assets[column] = pd.to_numeric(assets[column], errors="coerce")
 
     assets = assets.dropna(subset=["year"]).copy()
+
+    # Forward-fill emission_factor along each asset series before any zero-fill.
+    # The EF input is a shorter series than the trajectory horizon, so the tail
+    # years arrive empty; without this they reach compute_ops_block's
+    # fillna(0.0) and a coal plant is priced as emitting nothing for the back
+    # half of its life. A forward fill never backfills, so a leading gap stays
+    # NaN and is handled by the renewable rule below (or by that fillna).
+    if not assets.empty:
+        assets = assets.sort_values(ASSET_SERIES_KEYS + ["year"])
+        assets["emission_factor"] = assets.groupby(ASSET_SERIES_KEYS, dropna=False)[
+            "emission_factor"
+        ].ffill()
+
     renewable_technologies = {
         "SolarCap - CSP",
         "SolarCap - PV",
@@ -122,7 +174,7 @@ def validate_asset_trajectories(asset_trajectories: pd.DataFrame) -> pd.DataFram
 
 def validate_capacity_flow_identity(
     asset_panel_enriched: pd.DataFrame,
-    replacement_capex_rate: float = 0.05,
+    replacement_capex_rate: float = REPLACEMENT_CAPEX_RATE,
 ):
     """
     Validate the capacity flow identity: K_t = K_{t-1} - retired + replaced + new_build
@@ -226,15 +278,16 @@ def validate_capacity_flow_identity(
 
 
 def compute_capacity_flows(
-    asset_panel: pd.DataFrame, replacement_capex_rate: float = 0.05
+    asset_panel: pd.DataFrame, replacement_capex_rate: float = REPLACEMENT_CAPEX_RATE
 ) -> pd.DataFrame:
     """
     Compute capacity flows from capacity changes in the asset panel (vectorized).
 
-    Creates flow indicators:
-    - new_buildout_cap: Net new capacity (growth above baseline)
-    - roll_over_cap: Capacity replacement (existing capacity renewed)
-    - retired_max_cap: Capacity retired (reduction from baseline)
+    Creates flow indicators, exactly one per asset-year:
+    - new_buildout_cap: Net new capacity on synthetic assets (shock growth)
+    - roll_over_cap: replacement_capex_rate of a real asset's installed capacity
+    - retired_max_cap: Capacity retired on a real asset (reduction from baseline)
+    - none: everything else (a synthetic asset with no capacity event)
     """
 
     logger.info("Computing capacity flows from capacity changes...")
@@ -263,28 +316,33 @@ def compute_capacity_flows(
         new_buildout_data["capex_capacity"] = new_buildout_data["capacity_change"]
         flow_records.append(new_buildout_data)
 
-    # 2. Retirement flows (negative capacity changes)
-    retirement_mask = data["capacity_change"] < 0
+    # 2. Retirement flows (negative capacity changes on REAL assets only).
+    # Synthetic assets are accounting constructs for incremental shock growth —
+    # their capacity decline is not a physical decommissioning event.
+    is_real = ~data.get("is_synthetic", pd.Series(False, index=data.index))
+    retirement_mask = (data["capacity_change"] < 0) & is_real
     if retirement_mask.any():
         retirement_data = data[retirement_mask].copy()
         retirement_data["capex_indicator"] = "retired_max_cap"
         retirement_data["capex_capacity"] = retirement_data["capacity_change"].abs()
         flow_records.append(retirement_data)
 
-    # 3. Replacement flows (replacement_capex_rate of existing non-synthetic capacity annually)
-    replacement_mask = (
-        ~data.get("is_synthetic", pd.Series(False, index=data.index))
-    ) & (data["capacity_change"] > 0)
+    # 3. Replacement flows (replacement_capex_rate of existing installed capacity
+    # annually for real assets). Routine capital maintenance/refurbishment is a
+    # fraction of replacement cost per year (EPRI, Lazard LCOE methodology), so it
+    # is charged on what is standing, not on the year's growth — a flat asset still
+    # pays it. Excludes retiring assets, which are already charged decom costs.
+    replacement_mask = is_real & ~retirement_mask
     if replacement_mask.any():
         replacement_data = data[replacement_mask].copy()
         replacement_data["capex_indicator"] = "roll_over_cap"
         replacement_data["capex_capacity"] = (
-            replacement_data["capacity_change"] * replacement_capex_rate
+            replacement_data["asset_trajectory"] * replacement_capex_rate
         )
         flow_records.append(replacement_data)
 
-    # 4. No-flow records (assets with no flows need placeholder records)
-    no_flow_mask = (data["capacity_change"] == 0) & (~replacement_mask)
+    # 4. No-flow records (synthetic assets with no capacity events need placeholders)
+    no_flow_mask = ~(new_buildout_mask | retirement_mask | replacement_mask)
     if no_flow_mask.any():
         no_flow_data = data[no_flow_mask].copy()
         no_flow_data["capex_indicator"] = "none"
@@ -324,7 +382,7 @@ def compute_flow_based_capex(
     include_growth_capex: bool,
     include_replacement_capex: bool,
     include_decom_costs: bool,
-    replacement_capex_rate: float = 0.05,
+    replacement_capex_rate: float = REPLACEMENT_CAPEX_RATE,
 ) -> pd.DataFrame:
     """
     Node 5: Compute CapEx using flow-based approach.
@@ -341,7 +399,8 @@ def compute_flow_based_capex(
     capex_data = compute_capacity_flows(asset_panel_enriched, replacement_capex_rate)
 
     # NOTE: Flow identity validation disabled because it's based on flawed assumptions:
-    # - Roll-over flows are intentionally only replacement_capex_rate of capacity changes
+    # - Roll-over flows are replacement_capex_rate of INSTALLED capacity annually
+    #   (EPRI/Lazard benchmark), which is not a capacity movement at all
     # - The validation expects flows to fully explain capacity trajectories, which they don't by design
     # - The flows themselves are correct and properly used in CapEx calculations
     # validate_capacity_flow_identity(capex_data, replacement_capex_rate)
@@ -377,12 +436,16 @@ def compute_flow_based_capex(
         capex_data["replace_capex"] = 0.0
         logger.info("Replacement CapEx switched OFF - setting to zero")
 
-    # Decommissioning costs: retired capacity (can be switched off)
+    # Decommissioning costs: retired capacity (can be switched off).
+    # scrap_usd_per_mw is negative (= -capex/2), representing the cost to
+    # decommission. abs() makes decom_cost POSITIVE in capex_total — a real cash
+    # outflow that reduces FCFF, covering demolition, remediation and site
+    # restoration. Without it, retiring an asset PAID the owner.
     if include_decom_costs:
         retired_mask = capex_data["capex_indicator"] == "retired_max_cap"
         capex_data["decom_cost"] = np.where(
             retired_mask,
-            capex_data["scrap_usd_per_mw"] * capex_data["capex_capacity"],
+            capex_data["scrap_usd_per_mw"].abs() * capex_data["capex_capacity"],
             0.0,
         )
     else:
@@ -431,6 +494,8 @@ def compute_ops_block(
     market_passthrough: float = 0.5,
     apply_continued_om_baseline: bool = False,
     apply_continued_om_shock: bool = True,
+    carbon_cost_method: str = "full_ef",
+    dynamic_marginal_ef: bool = False,
 ) -> pd.DataFrame:
     """
     Node 8: Compute operations block (production, costs, revenue, EBITDA).
@@ -444,6 +509,29 @@ def compute_ops_block(
         market_passthrough: Fraction of carbon price passed through to market (default 0.5)
         apply_continued_om_baseline: Apply continued O&M at first-year capacity to baseline trajectories
         apply_continued_om_shock: Apply continued O&M at first-year capacity to shock trajectories
+        carbon_cost_method: How emission factors enter the carbon cost.
+            - "full_ef" (default): cost = Q × cp × EF. Each technology pays for
+              everything it emits. Right for IAMs whose electricity prices barely
+              move with carbon stringency (WITCH: a $9/MWh C1→C7 price spread
+              against a $722/tCO2 carbon-price difference), where there is no
+              embedded carbon to double-count.
+            - "differential_ef": cost = Q × cp × max(EF − marginal_EF, 0), i.e.
+              only the excess over the price-setting generator. Right for IAMs
+              whose prices already embed the marginal generator's carbon cost
+              (AIM/CGE: a $64/MWh spread).
+        dynamic_marginal_ef: Let the marginal emission factor decay with the VRE
+            capacity share, marginal_ef(t) = marginal_EF × (1 − vre_share(t))²,
+            so that a technology loses its carbon rent as renewables push it off
+            the margin. Quadratic rather than linear because the merit order
+            turns over non-linearly: at low VRE only coal and oil are displaced,
+            at high VRE gas itself is.
+
+    Both knobs act on ``marginal_emission_factor``, which is produced by the
+    market-clearing-price adjustment. That adjustment is retired in this tree
+    (2026-09-01 owner ruling), so the column is absent, the marginal EF is 0 and
+    the two methods coincide: every technology pays its full EF. They are ported
+    so the differential path is available if the adjustment ever returns — see
+    docs/superpowers/plans/consolidation-clash-report.md, entry Q2-5.
     """
 
     logger.info("Computing operations block...")
@@ -554,12 +642,35 @@ def compute_ops_block(
         ops_data["fom_usd_per_mw_yr"] * ops_data["K_for_fixed_cost"]
     )
 
-    # Carbon cost (net of passthrough)
+    # Carbon cost (net of passthrough), charged on the emission factor the
+    # configured method exposes. See the docstring for when each applies.
+    if carbon_cost_method == "full_ef":
+        marginal_ef = pd.Series(0.0, index=ops_data.index)
+    else:
+        marginal_ef = pd.to_numeric(
+            ops_data.get(
+                "marginal_emission_factor", pd.Series(0.0, index=ops_data.index)
+            ),
+            errors="coerce",
+        ).fillna(0.0)
+
+    if dynamic_marginal_ef:
+        marginal_ef = marginal_ef * (1 - _vre_capacity_share(ops_data)) ** 2
+
+    excess_ef = (ops_data["emission_factor"] - marginal_ef).clip(lower=0.0)
+
     ops_data["carbon_cost_net"] = (
         ops_data["Q"]
         * ops_data["carbon_price_usd_per_tco2"]
-        * ops_data["emission_factor"]
+        * excess_ef
         * (1 - market_passthrough)
+    )
+    logger.info(
+        "Carbon cost (%s): %s asset-year rows with non-zero cost, mean charged "
+        "EF %.4f tCO2/MWh",
+        carbon_cost_method,
+        (ops_data["carbon_cost_net"] > 0).sum(),
+        excess_ef.mean(),
     )
 
     # Revenue (ex-carbon price)
@@ -576,6 +687,25 @@ def compute_ops_block(
     logger.info("Computed operations for %s asset-year rows", len(ops_data))
 
     return ops_data
+
+
+def _vre_capacity_share(ops_data: pd.DataFrame) -> pd.Series:
+    """VRE share of installed capacity per geography-year, per trajectory."""
+    vre_technologies = {
+        "SolarCap - PV",
+        "SolarCap - CSP",
+        "WindCap - Onshore",
+        "WindCap - Offshore",
+    }
+    group_columns = ["trajectory_type", "scenario_geography", "year"]
+    capacity = ops_data["K_avg"]
+    total = capacity.groupby([ops_data[c] for c in group_columns]).transform("sum")
+    vre = (
+        capacity.where(ops_data["technology"].isin(vre_technologies), 0.0)
+        .groupby([ops_data[c] for c in group_columns])
+        .transform("sum")
+    )
+    return (vre / total.clip(lower=1e-6)).clip(0.0, 1.0).fillna(0.0)
 
 
 def compute_fcff(asset_ops_block: pd.DataFrame) -> pd.DataFrame:

@@ -160,8 +160,19 @@ def combine_company_trajectory_cases(
     aligned_decreasing_trajectories: pd.DataFrame,
     aligned_increasing_trajectories: pd.DataFrame,
     shock_year: int,
+    alignment_year: int,
+    price_ramp: bool,
 ) -> pd.DataFrame:
-    """Combine the four visible cases into the canonical pre-allocation table."""
+    """Combine the four visible cases into the canonical pre-allocation table.
+
+    ``price_ramp`` controls how the late & sudden pathway picks up the target
+    scenario's financial surfaces. Off, the surfaces hard-switch from baseline
+    to target at ``shock_year``; on, they blend linearly across the transition
+    window ``[shock_year, alignment_year]``. The hard switch hands the shock
+    pathway a near-term price windfall — target prices sit 30-50% above
+    baseline at the shock year — which shows up as fossil assets gaining value
+    under a climate shock. Blending removes it.
+    """
     case_rows = pd.concat(
         [
             misaligned_decreasing_trajectories,
@@ -213,18 +224,37 @@ def combine_company_trajectory_cases(
     )
 
     is_baseline = pathways["trajectory_type"].eq("baseline")
+    is_late_sudden = pathways["trajectory_type"].eq("late_sudden_requested")
+    ramping = price_ramp and alignment_year > shock_year
     uses_target_surface = pathways["trajectory_type"].eq("target") | (
-        pathways["trajectory_type"].eq("late_sudden_requested")
-        & pathways["year"].ge(shock_year)
+        is_late_sudden & pathways["year"].ge(shock_year) & ~ramping
     )
+    if ramping:
+        # 0 at (and before) the shock year, 1 from the alignment year on.
+        blend = (
+            (pathways["year"] - shock_year) / (alignment_year - shock_year)
+        ).clip(0.0, 1.0)
     for column in FINANCIAL_SURFACE_COLUMNS:
+        baseline_values = pathways[f"{column}_baseline"]
+        target_values = pathways[f"{column}_target"]
+        if not ramping:
+            late_sudden_values = np.where(
+                pathways["year"].ge(shock_year), target_values, baseline_values
+            )
+        elif pd.api.types.is_numeric_dtype(baseline_values):
+            late_sudden_values = baseline_values * (1 - blend) + target_values * blend
+        else:
+            # `scenario` is the scenario NAME: it labels a surface rather than
+            # being one, so a blended pathway cannot take the target's. It keeps
+            # carrying the baseline name, as scenario_type does below.
+            late_sudden_values = baseline_values
         pathways[column] = np.where(
             is_baseline,
-            pathways[f"{column}_baseline"],
+            baseline_values,
             np.where(
-                uses_target_surface,
-                pathways[f"{column}_target"],
-                pathways[f"{column}_baseline"],
+                pathways["trajectory_type"].eq("target"),
+                target_values,
+                late_sudden_values,
             ),
         )
     pathways["scenario_type"] = np.where(uses_target_surface, "target", "baseline")
