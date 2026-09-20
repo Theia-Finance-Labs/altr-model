@@ -7,16 +7,127 @@ import logging
 import numpy as np
 import pandas as pd
 
+from altr_model._validation import validate_choice
+
 logger = logging.getLogger(__name__)
 
 
 CARBONTECH_ALIGNMENTS = {"misaligned_high_carbon", "aligned_high_carbon"}
 
+#: What decides that an asset is "brown", for the discount spread AND the
+#: terminal growth rate alike — owner ruling 13 tied both to one carrier.
+SPREAD_CARRIER_TECHNOLOGY = "technology"
+SPREAD_CARRIER_ALIGNMENT = "alignment_type"
+SPREAD_CARRIERS = (SPREAD_CARRIER_TECHNOLOGY, SPREAD_CARRIER_ALIGNMENT)
+
+#: What a non-stranded group with a negative terminal FCFF is worth.
+NEGATIVE_TV_METHODS = ("perpetuity", "bounded_annuity")
+
+#: What the terminal anchor is allowed to see.
+TV_ANCHOR_POLICIES = ("raw", "operating")
+
+#: How the terminal value is computed. "none" writes no terminal value at all;
+#: "perpetuity" is the Gordon-growth tier split below. A typo used to take the
+#: "none" arm silently, collapsing every NPV to its forecast-window sum.
+TERMINAL_METHODS = ("none", "perpetuity")
+
+#: The asset-series grain `asset_horizon_attributes` is keyed on — the same
+#: `ASSET_SERIES_KEYS` the earnings stage writes it at. The valuation group keys
+#: add name and classification columns, all functionally dependent on these six,
+#: so one horizon row serves one valuation group.
+HORIZON_ATTRIBUTE_KEYS = [
+    "company_id",
+    "asset_id",
+    "scenario_geography",
+    "sector",
+    "technology",
+    "trajectory_type",
+]
+
+
+def _horizon_attributes_per_group(
+    npv_data: pd.DataFrame,
+    last_idx: np.ndarray,
+    asset_horizon_attributes: pd.DataFrame | None,
+) -> pd.DataFrame | None:
+    """`asset_horizon_attributes` re-indexed to one row per valuation group.
+
+    Returns None when the table is absent, empty, or does not carry the join
+    keys — every caller then falls back exactly as a frame without the table
+    always has (no exit floor, the tier-2 annuity horizon). A group with no
+    matching row gets NaN across the merge and takes the same fallbacks.
+
+    A table carrying MORE than one row per asset series raises instead: there
+    is no defensible way to choose between two different horizons for the same
+    asset, and picking one quietly would mis-price the exit.
+    """
+    if asset_horizon_attributes is None or asset_horizon_attributes.empty:
+        return None
+    missing = [
+        column
+        for column in HORIZON_ATTRIBUTE_KEYS
+        if column not in asset_horizon_attributes.columns
+        or column not in npv_data.columns
+    ]
+    if missing:
+        logger.warning(
+            "asset_horizon_attributes cannot be joined — missing key column(s) "
+            "%s; the terminal-value fallbacks apply",
+            missing,
+        )
+        return None
+
+    group_keys = npv_data.iloc[last_idx][HORIZON_ATTRIBUTE_KEYS].reset_index(drop=True)
+    # THE input check for this table lives here, at the boundary where a stale
+    # or hand-edited catalog file actually arrives — the writer cannot emit
+    # duplicates (its tail(1) collapse guarantees one row per series; its own
+    # check is a postcondition). Name the offenders instead of letting the
+    # merge below die with a bare MergeError mid-run.
+    duplicated = asset_horizon_attributes.duplicated(
+        subset=HORIZON_ATTRIBUTE_KEYS, keep=False
+    )
+    if bool(duplicated.any()):
+        offenders = (
+            asset_horizon_attributes.loc[duplicated, HORIZON_ATTRIBUTE_KEYS]
+            .drop_duplicates()
+            .head(5)
+            .to_dict("records")
+        )
+        raise ValueError(
+            f"asset_horizon_attributes holds duplicate rows for "
+            f"{int(duplicated.sum())} asset-series keys — there is no "
+            f"defensible way to choose between two horizons for one asset. "
+            f"Regenerate the table (a stale or hand-edited file is the usual "
+            f"cause). First offending keys: {offenders}"
+        )
+    # ONE mechanism, and it is the one that raises. A `drop_duplicates` here
+    # would silently keep whichever duplicate came first — and it also made
+    # `validate="many_to_one"` unreachable, so the guard that looked like the
+    # protection could never fire; `validate` stays as defence in depth behind
+    # the named-offenders check above.
+    merged = group_keys.merge(
+        asset_horizon_attributes,
+        on=HORIZON_ATTRIBUTE_KEYS,
+        how="left",
+        validate="many_to_one",
+    )
+    unmatched = int(
+        merged.drop(columns=HORIZON_ATTRIBUTE_KEYS).isna().all(axis=1).sum()
+    )
+    if unmatched:
+        logger.warning(
+            "%d of %d valuation groups have no asset_horizon_attributes row; "
+            "they take the terminal-value fallbacks",
+            unmatched,
+            len(merged),
+        )
+    return merged
+
 
 def compute_yearly_npv_trajectories(
     asset_earnings: pd.DataFrame,
-    discount_rate_baseline: float = 0.07,
-    discount_rate_shock: float = 0.08,
+    asset_horizon_attributes: pd.DataFrame | None = None,
+    discount_rate: float = 0.07,
     terminal_growth_rate: float = 0.02,
     terminal_method: str = "perpetuity",
     terminal_growth_rate_brown: float | None = None,
@@ -24,9 +135,13 @@ def compute_yearly_npv_trajectories(
     terminal_normalization_window: int = 1,
     brown_discount_spread: float = 0.0,
     green_discount_spread: float = 0.0,
+    brown_technologies: list[str] | None = None,
+    spread_carrier: str = "technology",
     stranding_aware_tv: bool = False,
     stranding_consecutive_years: int = 3,
     brown_remaining_life_years: int = 10,
+    negative_tv_method: str = "perpetuity",
+    tv_anchor_policy: str = "raw",
 ) -> pd.DataFrame:
     """
     Node 1: Compute yearly NPV trajectories with all financial components.
@@ -37,44 +152,128 @@ def compute_yearly_npv_trajectories(
     - Terminal value calculation in final year
 
     Args:
+        asset_horizon_attributes: One row per asset series carrying its
+            lifetime, age, scrap price and capacity in the LAST forecast year —
+            what the bounded negative branch below prices its remaining life and
+            its exit off. Optional: without it every group falls back to the
+            tier-2 annuity horizon and takes no exit floor.
         terminal_growth_rate_brown / terminal_growth_rate_green: Terminal growth
-            rate for carbontech / greentech. Either falling back to
-            terminal_growth_rate when None. A declining fossil asset does not
-            grow into perpetuity, and a clean one may.
+            rate for a `brown_technologies` member / everything else. Either
+            falling back to terminal_growth_rate when None. A declining fossil
+            asset does not grow into perpetuity, and a clean one may. Owner
+            ruling 13 put this on the SAME carrier as the discount spread —
+            membership of the list, not `alignment_type`, which had offshore
+            wind and nuclear growing at the fossil rate whenever a scenario
+            classed them `misaligned_high_carbon`.
         terminal_normalization_window: Number of final years averaged into the
             terminal FCFF. 1 is the last year alone; 3-5 is the Damodaran /
             McKinsey / CFA practice, and stops a single transition-period CapEx
             spike from erasing an asset's whole terminal value.
-        brown_discount_spread / green_discount_spread: Carbon risk premium added
-            to carbontech and greenium subtracted from greentech. Bolton &
-            Kacperczyk (2021, 2023) measure ~1.5-2.5% higher equity returns for
-            high-emission firms; Shell's 2024 report uses 7.5% for O&G against
-            6.0% for renewables. Both 0 gives a uniform rate.
-        stranding_aware_tv: Three-tier terminal value instead of a single
-            perpetuity (Gourdel 2024):
+        brown_discount_spread: Carbon risk PREMIUM added to the assets named in
+            `brown_technologies`. Bolton & Kacperczyk (2021, 2023) measure
+            ~1.5-2.5% higher equity returns for high-emission firms, and no
+            corresponding discount for clean ones — so there is a penalty leg
+            and no greenium leg. 0 gives a uniform rate; a negative value is
+            rejected rather than silently applied as a discount.
+        green_discount_spread: The GREENIUM — a discount subtracted from every
+            asset the carrier does not call brown. Live only under
+            `spread_carrier="alignment_type"`; under the shipped "technology"
+            carrier it is retired and ignored with a warning, because Bolton &
+            Kacperczyk measure a penalty on high emitters and NO corresponding
+            discount for clean firms. Kept as a parameter so the pre-ruling-12
+            behaviour is reachable and measurable, not merely described.
+        brown_technologies: The technologies that pay the premium under the
+            "technology" carrier.
+        spread_carrier: WHAT decides that an asset is brown — and it decides it
+            for BOTH the discount spread (ruling 12) and the terminal growth
+            rate (ruling 13), which the owner tied to one carrier.
+            "technology" — membership of `brown_technologies`. What a lender
+                prices is what the plant burns. Shipped.
+            "alignment_type" — membership of `CARBONTECH_ALIGNMENTS`, the
+                pre-ruling behaviour. Alignment describes an asset's trajectory
+                against its scenario, not what it burns, so it misfired in both
+                directions: offshore wind and nuclear classed
+                `misaligned_high_carbon` paid the fossil penalty AND grew at the
+                fossil rate, while oil classed `misaligned_low_carbon` collected
+                the greenium. Kept reachable for the ablation batch so the
+                ruling's effect can be measured rather than asserted.
+            No consumer of `alignment_type` remains in this stage under the
+            shipped carrier (the former tier-2 carbontech annuity was removed
+            on 2026-09-05, measured at 1.1% of the signal).
+        stranding_aware_tv: Two-tier terminal value instead of a single
+            perpetuity (after Gourdel 2024):
             1. STRANDED — FCFF <= 0 for the last N years: TV = 0. A rational
                owner exercises the abandonment option rather than funding
                perpetual losses.
-            2. DECLINING BUT PROFITABLE CARBONTECH — TV = a finite annuity over
-               brown_remaining_life_years, not a perpetuity, because a fossil
-               asset in transition has a finite remaining economic life.
-            3. EVERYTHING ELSE — the standard Gordon Growth perpetuity.
+            2. EVERYTHING ELSE — the standard Gordon Growth perpetuity (a
+               negative anchor is bounded by ``negative_tv_method``).
         stranding_consecutive_years: How many consecutive loss-making years at
             the end of the horizon count as stranded. A company can weather one
             or two bad years; N in a row is a closure.
-        brown_remaining_life_years: Annuity horizon for tier 2.
+        brown_remaining_life_years: Fallback remaining-life horizon for the
+            bounded negative branch below, where an asset carries no lifetime.
+        negative_tv_method: What a NON-stranded group with a negative terminal
+            FCFF is worth.
+            "perpetuity" — Gordon Growth on the negative cash flow, which is
+                unbounded below: the asset is valued at less than nothing,
+                forever.
+            "bounded_annuity" — the least bad of the two choices an owner
+                actually has: run the remaining life out at a loss
+                (`final_fcff * annuity_factor(r, N_remaining)`) or pay to
+                decommission now (`-decom_cost`). Both are negative, so the
+                larger is the smaller loss. A loss-maker does not run at a
+                loss forever — it exits.
+                Where `N_remaining <= 0` and capacity is still standing, the
+                run-out arm does NOT exist — there is no life left to run out —
+                so the exit arm binds and TV = `-decom_cost` (owner ruling C2).
+                Where neither arm is available (past its lifetime AND no scrap
+                price to quote an exit at) the group takes no terminal value.
+        tv_anchor_policy: What the terminal anchor is allowed to see.
+            "raw" — the anchor is the mean FCFF of the last
+                `terminal_normalization_window` years, whatever those years
+                contain, and a group standing at zero capacity is valued like
+                any other. The pre-proposal behaviour, kept for the ablation.
+            "operating" — two corrections, both about the anchor describing a
+                PERPETUITY:
+                1. A group whose capacity at the horizon is zero has no
+                   terminal value at all. There is no plant to run: whatever
+                   the anchor says, TV = 0.
+                2. The anchor excludes decommissioning charges. Decom is a
+                   one-off exit cost booked into `capex_total`; capitalising it
+                   into a perpetuity charges it every year forever.
     """
 
     logger.info("Computing yearly NPV trajectories...")
+
+    # Each of these selects between behaviours that move published numbers, and
+    # each was reached by an `if x == "a": ... else: ...`, so a misspelling did
+    # not raise — it silently took the other arm. Reject at the top of the node
+    # instead, naming the conf key and every legal value.
+    validate_choice("dcf.terminal_value.method", terminal_method, TERMINAL_METHODS)
+    validate_choice("dcf.negative_tv_method", negative_tv_method, NEGATIVE_TV_METHODS)
+    validate_choice("dcf.tv_anchor_policy", tv_anchor_policy, TV_ANCHOR_POLICIES)
+    validate_choice("dcf.spread_carrier", spread_carrier, SPREAD_CARRIERS)
 
     if stranding_aware_tv:
         logger.info(
             "Stranding-aware TV ENABLED (Gourdel 2024): "
             "stranded (>=%d consecutive loss years) -> TV=0; "
-            "declining carbontech (profitable) -> %d-year finite annuity; "
-            "greentech -> standard Gordon Growth perpetuity",
+            "everything else -> Gordon Growth perpetuity",
             stranding_consecutive_years,
-            brown_remaining_life_years,
+        )
+
+    if negative_tv_method == "bounded_annuity":
+        logger.info(
+            "Bounded negative TV ENABLED: a non-stranded group with a negative "
+            "terminal FCFF takes max(run-out annuity, -decommissioning cost) "
+            "instead of an unbounded negative perpetuity"
+        )
+
+    if tv_anchor_policy == "operating":
+        logger.info(
+            "Operating terminal anchor ENABLED: zero capacity at the horizon "
+            "means TV=0, and decommissioning charges are excluded from the "
+            "anchor years' FCFF"
         )
 
     g_brown = (
@@ -92,44 +291,116 @@ def compute_yearly_npv_trajectories(
 
     unresolved_mask = npv_data["scenario_type"].isna()
     if unresolved_mask.any():
-        unresolved_asset_ids = sorted(npv_data.loc[unresolved_mask, "asset_id"].unique())
+        unresolved_asset_ids = sorted(
+            npv_data.loc[unresolved_mask, "asset_id"].unique()
+        )
         raise ValueError(
             f"{len(unresolved_asset_ids)} asset(s) have no scenario_type resolved "
             f"and cannot be included in NPV: {unresolved_asset_ids}"
         )
 
     def get_discount_rate(scenario_type):
-        if scenario_type == "baseline":
-            return discount_rate_baseline
-        elif scenario_type == "target":
-            return discount_rate_shock
-        else:
-            raise ValueError(f"Invalid scenario type: {scenario_type}")
+        # One real rate for both pathways (owner ruling 2026-09-05): transition
+        # risk enters through the cash flows and the technology spread, never
+        # through a pathway-specific rate.
+        if scenario_type in ("baseline", "target"):
+            return discount_rate
+        raise ValueError(f"Invalid scenario type: {scenario_type}")
 
     # map() over the column instead of a row-wise apply: same per-value
     # semantics (including the raise above), one Python call per row instead
     # of one Series construction per row.
     base_rate = npv_data["scenario_type"].map(get_discount_rate).to_numpy(dtype=float)
 
-    # Technology-differentiated discount rates on top of the scenario base rate.
-    if "alignment_type" in npv_data.columns:
-        is_carbontech_row = (
-            npv_data["alignment_type"].isin(CARBONTECH_ALIGNMENTS).to_numpy()
+    # Carbon risk premium on top of the scenario base rate, charged by
+    # TECHNOLOGY. There is no green leg: the literature the spread rests on
+    # measures a penalty on high emitters and no discount for clean firms.
+    if brown_discount_spread < 0:
+        raise ValueError(
+            "dcf.brown_discount_spread is a risk PREMIUM and cannot be "
+            f"negative (got {brown_discount_spread}). A negative value would "
+            "make carbon-intensive assets cheaper to finance than everything "
+            "else; use 0 for a uniform rate."
         )
+
+    if green_discount_spread < 0:
+        raise ValueError(
+            "dcf.green_discount_spread is a DISCOUNT expressed as a positive "
+            f"number of rate points (got {green_discount_spread}). The old "
+            "greenium was -50 bps, entered as 0.005; a negative value here "
+            "would be silently ignored by the selection below, so it is "
+            "rejected instead."
+        )
+
+    brown_set = set(brown_technologies or ())
+
+    # WHICH assets count as brown, for the spread here AND for the terminal
+    # growth rate far below — owner ruling 13 tied the two to one carrier, so
+    # they must not be able to disagree.
+    if spread_carrier == SPREAD_CARRIER_ALIGNMENT:
+        if "alignment_type" in npv_data.columns:
+            is_brown_row = (
+                npv_data["alignment_type"].isin(CARBONTECH_ALIGNMENTS).to_numpy()
+            )
+        else:
+            is_brown_row = np.zeros(len(npv_data), dtype=bool)
+    elif "technology" in npv_data.columns:
+        is_brown_row = npv_data["technology"].isin(brown_set).to_numpy()
     else:
-        is_carbontech_row = np.zeros(len(npv_data), dtype=bool)
-    if brown_discount_spread > 0 or green_discount_spread > 0:
-        logger.info(
-            "Technology-differentiated discount rates: brown +%.1f bps, "
-            "green -%.1f bps (Bolton & Kacperczyk 2021/2023; Shell 2024)",
-            brown_discount_spread * 10000,
-            green_discount_spread * 10000,
+        is_brown_row = np.zeros(len(npv_data), dtype=bool)
+
+    if spread_carrier == SPREAD_CARRIER_ALIGNMENT and brown_set:
+        logger.warning(
+            "dcf.brown_technologies has %d entries but spread_carrier is "
+            "'alignment_type', so the list is ignored — brown selection runs "
+            "on alignment_type for both the spread and terminal growth",
+            len(brown_set),
         )
-    green_rate = (
-        base_rate - green_discount_spread if green_discount_spread > 0 else base_rate
-    )
+    if (
+        brown_discount_spread > 0
+        and spread_carrier == SPREAD_CARRIER_TECHNOLOGY
+        and not brown_set
+    ):
+        logger.warning(
+            "dcf.brown_discount_spread is %.1f bps but dcf.brown_technologies "
+            "is empty, so no asset pays it and the rate is uniform",
+            brown_discount_spread * 10000,
+        )
+
+    # The GREENIUM leg exists only under the alignment carrier. Under the
+    # shipped technology carrier it is retired: Bolton & Kacperczyk measure a
+    # penalty on high emitters and no discount for clean firms, so a non-zero
+    # value here would be subsidising every non-fossil asset's valuation off
+    # evidence that does not exist. Ignored loudly rather than quietly.
+    greenium = green_discount_spread
+    if greenium and spread_carrier != SPREAD_CARRIER_ALIGNMENT:
+        logger.warning(
+            "dcf.green_discount_spread is %.1f bps but dcf.spread_carrier is "
+            "'%s', under which the greenium is retired (Bolton & Kacperczyk "
+            "find no discount for clean firms); it is IGNORED. Set "
+            "spread_carrier: 'alignment_type' to reach the pre-ruling-12 "
+            "behaviour.",
+            green_discount_spread * 10000,
+            spread_carrier,
+        )
+        greenium = 0.0
+
+    if brown_discount_spread > 0 and is_brown_row.any():
+        logger.info(
+            "Carbon risk premium: +%.1f bps on %d of %d asset-year rows, by "
+            "%s — Bolton & Kacperczyk 2021/2023",
+            brown_discount_spread * 10000,
+            int(is_brown_row.sum()),
+            len(npv_data),
+            (
+                "technology (" + ", ".join(sorted(brown_set)) + ")"
+                if spread_carrier == SPREAD_CARRIER_TECHNOLOGY
+                else "alignment_type"
+            ),
+        )
+    green_rate = base_rate - greenium if greenium > 0 else base_rate
     npv_data["discount_rate"] = np.where(
-        is_carbontech_row, base_rate + brown_discount_spread, green_rate
+        is_brown_row, base_rate + brown_discount_spread, green_rate
     )
 
     # Guard: need trajectory_type and FCFF
@@ -169,7 +440,7 @@ def compute_yearly_npv_trajectories(
 
     # Collapse CapEx flow-split rows to ONE row per asset-year before any
     # row-indexed logic runs. Upstream, compute_capacity_flows emits separate
-    # component rows per (asset, year) — operating, decommissioning, rollover —
+    # component rows per (asset, year) — operating, decommissioning —
     # and their FCFFs sum correctly for present value, but the terminal-value
     # anchor (the group's last ROW) assumes one row per year. In the 2026-08
     # WITCH audit 38% of asset-trajectories carried duplicate years in the
@@ -184,6 +455,12 @@ def compute_yearly_npv_trajectories(
     # present-value number keeps the summed 0.0 it has always had.
     npv_data = npv_data.assign(_fcff_observed=npv_data["FCFF"].notna())
     agg_map["_fcff_observed"] = "sum"
+    # The decommissioning charge booked inside capex_total. A genuine flow, so
+    # it sums across the flow-split rows exactly as its parent does. Internal to
+    # this node: it feeds the terminal anchor and never reaches the output.
+    has_decom = "decom_cost" in npv_data.columns
+    if has_decom:
+        agg_map["decom_cost"] = "sum"
     pre_rows = len(npv_data)
     npv_data = npv_data.groupby(
         group_keys + ["year"], dropna=False, as_index=False
@@ -266,6 +543,33 @@ def compute_yearly_npv_trajectories(
         )
     else:
         is_carbontech = np.zeros(n_groups, dtype=bool)
+    # The terminal GROWTH rate rides the SAME carrier as the discount spread
+    # (owner ruling 13) — one carrier, one answer, so an asset cannot be brown
+    # for its rate and green for its growth. Recomputed here at GROUP grain
+    # rather than reused from `is_brown_row`, which was measured on the
+    # pre-collapse frame and is not row-aligned with `last_idx`. Both
+    # `technology` and `alignment_type` are group keys, so the group's last row
+    # speaks for the whole group either way.
+    if spread_carrier == SPREAD_CARRIER_ALIGNMENT:
+        is_brown_group = is_carbontech
+    elif "technology" in npv_data.columns:
+        is_brown_group = (
+            npv_data["technology"].iloc[last_idx].isin(brown_set).to_numpy()
+        )
+    else:
+        is_brown_group = np.zeros(n_groups, dtype=bool)
+
+    horizon = _horizon_attributes_per_group(
+        npv_data, last_idx, asset_horizon_attributes
+    )
+
+    def anchor(column: str) -> np.ndarray | None:
+        """A horizon attribute as one value per group, or None if unavailable."""
+        if horizon is None or column not in horizon.columns:
+            return None
+        return pd.to_numeric(horizon[column], errors="coerce").to_numpy(
+            dtype=np.float64
+        )
 
     # Normalized terminal FCFF: mean of the last min(window, group_size) rows.
     # A single transition-period CapEx spike in the final year must not decide
@@ -277,8 +581,23 @@ def compute_yearly_npv_trajectories(
             terminal_normalization_window,
         )
     window_mask = pos_from_end < terminal_normalization_window
+
+    # A perpetuity capitalises whatever the anchor holds, so the anchor has to
+    # be OPERATING cash flow. Decommissioning is a one-off charge for leaving,
+    # and an asset shedding capacity every year of the transition books one
+    # every year: left in, r-g turns a single exit bill into an infinite series
+    # of them. Adding the charge back is exact — capex_total contains it as a
+    # positive outflow, so FCFF + decom_cost is the FCFF of an asset that did
+    # not retire. A missing charge is no charge, hence fillna(0.0) rather than
+    # a NaN that would silently drop the year from the window mean.
+    anchor_fcff = fcff
+    if tv_anchor_policy == "operating" and has_decom:
+        anchor_fcff = fcff + npv_data["decom_cost"].fillna(0.0).to_numpy(
+            dtype=np.float64
+        )
+
     final_fcff = (
-        pd.Series(fcff[window_mask])
+        pd.Series(anchor_fcff[window_mask])
         .groupby(gid[window_mask])
         .mean()  # NaN-skipping
         .reindex(np.arange(n_groups))
@@ -288,7 +607,7 @@ def compute_yearly_npv_trajectories(
     # Technology-appropriate terminal growth rate, written onto every row of the
     # group whether or not a terminal row is ultimately added.
     if terminal_method == "perpetuity":
-        g_effective = np.where(is_carbontech, g_brown, g_green).astype(np.float64)
+        g_effective = np.where(is_brown_group, g_brown, g_green).astype(np.float64)
     else:
         g_effective = np.full(n_groups, float(terminal_growth_rate))
     npv_data["terminal_growth_rate"] = g_effective[gid] if n_groups else 0.0
@@ -310,6 +629,13 @@ def compute_yearly_npv_trajectories(
             # have. A MISSING year is not a loss either, so both the history
             # length and the loss run count measured values, never the 0.0 the
             # collapse above puts in a gap's place.
+            # NOTE the deliberate asymmetry with the anchor above: stranding
+            # reads the AS-BOOKED FCFF, decom included. The anchor asks "what
+            # does this asset earn from here?" and a one-off exit charge is no
+            # part of the answer; stranding asks "is it burning cash?", and an
+            # asset paying a decommissioning bill it cannot cover is. Stranded
+            # pays zero, which is strictly less negative than the raw anchor's
+            # value, so the ordering is conservative either way.
             observed_per_group = np.bincount(gid[fcff_observed], minlength=n_groups)
             has_full_history = observed_per_group >= stranding_consecutive_years
             window = pos_from_end < stranding_consecutive_years
@@ -330,25 +656,96 @@ def compute_yearly_npv_trajectories(
             stranded = (
                 has_terminal_fcff & is_stranded & has_full_history & window_is_complete
             )
-            # Declining but still profitable carbontech: a finite annuity over
-            # the remaining economic life instead of a perpetuity.
-            annuity = (
-                has_terminal_fcff & ~is_stranded & is_carbontech & (final_fcff > 0)
-            )
-            annuity_factor = np.zeros(n_groups, dtype=np.float64)
-            for t in range(1, brown_remaining_life_years + 1):
-                annuity_factor = annuity_factor + 1.0 / (1.0 + final_discount_rate) ** t
-            # The annuity factor already discounts t=1..N back to final_year, so
-            # discount from final_year (not final_year + 1) to base_year.
-            annuity_tv = (
-                terminal_cf
-                * annuity_factor
-                * (1.0 + final_discount_rate) ** (-(final_year - base_year_per_group))
-            )
-            terminal_value = np.where(annuity, annuity_tv, terminal_value)
         else:
             stranded = np.zeros(n_groups, dtype=bool)
-            annuity = np.zeros(n_groups, dtype=bool)
+
+        # BOUNDED NEGATIVE — a non-stranded group losing money at the horizon.
+        # Gordon Growth on a negative terminal FCFF is unbounded below: the
+        # asset is valued at less than nothing, forever. No owner makes that
+        # choice. Bound it by the least bad of the two they actually have —
+        # run the remaining life out at a loss, or pay to exit now. Both
+        # candidates are negative, so the larger is the smaller loss.
+        if negative_tv_method == "bounded_annuity":
+            negative = has_terminal_fcff & ~stranded & (final_fcff < 0)
+
+            # Remaining economic life at the horizon. Where the asset carries
+            # no lifetime, fall back to the tier-2 annuity's own horizon.
+            n_remaining = np.full(n_groups, float(brown_remaining_life_years))
+            lifetime, age = anchor("lifetime_years"), anchor("asset_age")
+            past_lifetime = np.zeros(n_groups, dtype=bool)
+            if lifetime is not None and age is not None:
+                measured = lifetime - age
+                past_lifetime = np.isfinite(measured) & (measured <= 0)
+                n_remaining = np.where(
+                    np.isfinite(measured), np.maximum(measured, 0.0), n_remaining
+                )
+
+            # The tier-2 annuity factor as a closed form, at the group's OWN
+            # rate (technology spreads included) over its own remaining life.
+            with np.errstate(divide="ignore", invalid="ignore"):
+                negative_annuity_factor = np.where(
+                    final_discount_rate != 0,
+                    (1.0 - (1.0 + final_discount_rate) ** (-n_remaining))
+                    / final_discount_rate,
+                    n_remaining,
+                )
+            run_out_tv = final_fcff * negative_annuity_factor
+
+            # The exit quote: decommissioning whatever capacity is still
+            # standing at the horizon, priced off the same scrap rate the
+            # include_decom_costs charge uses. Where scrap or capacity is
+            # unavailable there is no quote, so there is no floor and the
+            # annuity stands alone.
+            scrap, capacity = anchor("scrap_usd_per_mw"), anchor("asset_trajectory")
+            if scrap is None or capacity is None:
+                exit_tv = np.full(n_groups, -np.inf)
+            else:
+                decom_cost = np.abs(scrap) * capacity
+                exit_tv = np.where(np.isfinite(decom_cost), -decom_cost, -np.inf)
+
+            # PAST ITS LIFETIME AND STILL STANDING — the run-out arm does not
+            # exist for it. There is no remaining life to run out, so the owner
+            # is not choosing between running on and exiting: exiting is the
+            # only thing left, and the exit arm binds.
+            #
+            # Clamping `n_remaining` to zero and leaving the arm in place is
+            # what produced the degeneracy this corrects: a zero-year annuity
+            # factor makes `run_out_tv` exactly 0, 0 beats every negative
+            # `-decom_cost`, and the asset walks away from its decommissioning
+            # bill. That is a FREE EXIT, and it is not a rare corner —
+            # `lifetime - age <= 0` with capacity still standing holds for
+            # 20.5% of the fixture's asset series. Owner ruling C2 (2026-09-04)
+            # reads decision #5 the other way: no life left to run out means
+            # the exit arm is the one that prices the group.
+            #
+            # The capacity COLUMN is absent (not "capacity is zero"): with no
+            # quote available the exit arm is unavailable too, and both arms
+            # missing resolves to 0 below - the same answer either way. There is
+            # no plant to decommission either, so both arms are 0 and the
+            # `tv_anchor_policy="operating"` zeroing below agrees.
+            if capacity is None:
+                still_standing = np.zeros(n_groups, dtype=bool)
+            else:
+                still_standing = np.isfinite(capacity) & (capacity > 0)
+            run_out_tv = np.where(past_lifetime & still_standing, -np.inf, run_out_tv)
+
+            # BOTH arms unavailable — past its lifetime, still standing, and no
+            # scrap price to quote the exit at. There is no number to put on
+            # the group, so it takes no terminal value rather than an infinite
+            # one: the same "no quote, no floor" reading as the branch above,
+            # applied when the annuity is the arm that is missing.
+            least_bad = np.maximum(run_out_tv, exit_tv)
+            least_bad = np.where(np.isneginf(least_bad), 0.0, least_bad)
+
+            # The annuity factor already discounts t = 1..N back to final_year,
+            # so discount from final_year (not final_year + 1) to base_year —
+            # the same convention the tier-2 annuity uses.
+            bounded_tv = least_bad * (1.0 + final_discount_rate) ** (
+                -(final_year - base_year_per_group)
+            )
+            terminal_value = np.where(negative, bounded_tv, terminal_value)
+        else:
+            negative = np.zeros(n_groups, dtype=bool)
 
         # Gordon Growth perpetuity for everything else, only where r > g.
         with np.errstate(divide="ignore", invalid="ignore"):
@@ -358,10 +755,66 @@ def compute_yearly_npv_trajectories(
         perpetuity = (
             has_terminal_fcff
             & ~stranded
-            & ~annuity
+            & ~negative
             & (final_discount_rate > g_effective)
         )
         terminal_value = np.where(perpetuity, perpetuity_tv, terminal_value)
+
+        # WHICH TIER CLAIMED WHAT. The tiers are mutually exclusive and the
+        # counts sum to n_groups EXCEPT groups where r <= g (no perpetuity is
+        # defined; they carry no terminal value and are counted separately
+        # below). NOTE: these are tier ASSIGNMENTS logged before the
+        # operating-anchor retired-at-horizon override; a group counted here
+        # can still be zeroed by that override afterwards.
+        # A census is the cheapest way for a reader
+        # to see whether the perpetuity is the common case or the exception in
+        # their own run — the handover page quotes the fixture's, and this is
+        # how to reproduce it on any other input.
+        logger.info(
+            "Terminal-value tier census of %d groups: %d stranded (TV=0), "
+            "%d bounded negative, %d perpetuity, "
+            "%d with no terminal anchor, %d perpetuity-clause rejects (r <= g, "
+            "or rate/growth undefined; no terminal value) — assignments before the "
+            "operating-anchor retirement override",
+            n_groups,
+            int(stranded.sum()),
+            int(negative.sum()),
+            int(perpetuity.sum()),
+            int((~has_terminal_fcff).sum()),
+            int((has_terminal_fcff & ~stranded & ~negative & ~perpetuity).sum()),
+        )
+
+        # RETIRED AT THE HORIZON — the hard case, and it outranks every tier
+        # above. A group standing at zero capacity has no plant: there is
+        # nothing to run out, nothing to decommission a second time, and
+        # nothing to grow into perpetuity. Whatever its final cash flows say,
+        # the terminal value is zero.
+        #
+        # The tiers cannot reach this on their own, because the anchor is a
+        # WINDOW: with `terminal_normalization_window: 3` a plant that retired
+        # two years before the horizon still has two live years inside the
+        # window, so it is handed a terminal value off cash flows it can no
+        # longer earn. Zeroing on capacity is what stops the window from
+        # resurrecting a retired asset.
+        if tv_anchor_policy == "operating":
+            capacity_at_horizon = anchor("asset_trajectory")
+            if capacity_at_horizon is None:
+                logger.warning(
+                    "tv_anchor_policy='operating' has no capacity at the "
+                    "horizon to read; a retired group keeps the terminal value "
+                    "its tier gave it"
+                )
+            else:
+                retired_at_horizon = np.isfinite(capacity_at_horizon) & (
+                    capacity_at_horizon <= 0
+                )
+                logger.info(
+                    "Retired at the horizon: %d of %d groups stand at zero "
+                    "capacity and take TV=0",
+                    int(retired_at_horizon.sum()),
+                    n_groups,
+                )
+                terminal_value = np.where(retired_at_horizon, 0.0, terminal_value)
 
     # One terminal row per group with a non-zero terminal value, built as a
     # single frame (the old per-group Series.to_frame().T forced object dtype).
@@ -372,9 +825,9 @@ def compute_yearly_npv_trajectories(
         terminal_rows = npv_data.iloc[anchors].copy()
         terminal_rows["year"] = final_year[add_groups] + 1
         terminal_rows["years_from_base"] = group_years_to_terminal
-        terminal_rows["discount_factor"] = (
-            1.0 + final_discount_rate[add_groups]
-        ) ** (-group_years_to_terminal)
+        terminal_rows["discount_factor"] = (1.0 + final_discount_rate[add_groups]) ** (
+            -group_years_to_terminal
+        )
         terminal_rows["pv_fcff"] = 0.0  # No FCFF in terminal year
         terminal_rows["terminal_value"] = terminal_value[add_groups]
         terminal_rows["yearly_npv"] = terminal_value[add_groups]

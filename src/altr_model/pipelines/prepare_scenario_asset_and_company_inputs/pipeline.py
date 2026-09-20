@@ -13,11 +13,14 @@ PIPELINE_INPUTS = {"assets_forecasts", "companies_ownerships", "scenarios"}
 PIPELINE_OUTPUTS = {"asset_forecast_panel", "company_projection_inputs"}
 PIPELINE_PARAMETERS = {
     "baseline_scenario",
+    "capture_price",
     "ccs_on",
     "company_ids",
+    "decom_cost_fraction_of_capex",
     "max_forecast_horizon",
     "ownership_aggregation",
     "ownership_type",
+    "price_floor",
     "reduce_granularity_from_asset_to_company_level",
     "target_scenario",
 }
@@ -32,6 +35,9 @@ def create_pipeline(**kwargs) -> Pipeline:
                     "downloaded_scenarios": "scenarios",
                     "target_scenario": "params:target_scenario",
                     "baseline_scenario": "params:baseline_scenario",
+                    "decom_cost_fraction_of_capex": "params:decom_cost_fraction_of_capex",
+                    "capture_price": "params:capture_price",
+                    "price_floor": "params:price_floor",
                 },
                 outputs="_scenario_pathways",
                 name="prepare_scenarios",

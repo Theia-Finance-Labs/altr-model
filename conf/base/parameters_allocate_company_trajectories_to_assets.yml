@@ -8,6 +8,26 @@ apply_retirement_baseline: True  # Apply retirement to baseline trajectories
 apply_retirement_shock: True     # Apply retirement to shock (late sudden) trajectories
 apply_decreasing_staggered_shock: False
 
+# ── Natural retirement timing (decision D9) ──────────────────────────────────
+# When a NATURAL retirement — asset age past its technology's lifetime — takes
+# effect. This is not a policy exit: the date is the same with or without the
+# shock, and it is read from `retirement_year` alone.
+#   "deferred_to_window" — eff_retirement = max(retirement_year, alignment_year + 1).
+#                          Every natural retirement dated on or before the
+#                          alignment year is held back to alignment_year + 1.
+#                          With `alignment_year: 2038` that bunches decades of
+#                          retirements into 2039, and holds each of those assets
+#                          at full capacity until then, in BOTH pathways.
+#   "natural"           — each retirement lands on its own year, in both
+#                          pathways identically. It then cancels out of the
+#                          shock-minus-baseline difference by construction,
+#                          which is the isolation the clamp was reaching for,
+#                          without inventing a cliff in either level.
+# SHOCK-INDUCED capacity reduction is unaffected either way: the staggering and
+# phase-out machinery runs off `shock_year` and the company's adjusted path,
+# never through this switch.
+retirement_timing: "natural"  # "deferred_to_window" | "natural"
+
 # Read only when apply_decreasing_staggered_shock is True (it ships False).
 staggered_shock:
   g_k: 6.0        # Steepness of the logistic age curve that orders which assets

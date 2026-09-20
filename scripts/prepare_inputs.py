@@ -140,13 +140,15 @@ def check_ownership_allocation(frame: pd.DataFrame) -> None:
     enters, which over-allocates by construction -- that mode is for
     TRISK-comparable runs, not for reading absolute numbers off.
 
-    This check runs on the DELIVERED frame, before any tier is selected, so it
-    sums across every rung the export carries. On a well-formed export that is
-    the number to look at: it is the whole ownership chain, and a chain whose
-    rungs each restate the same 100% shows up here as a large multiple.
-    ``require_ownership_tier`` above has already guaranteed the frame names its
-    rungs, so a high number here means the rungs themselves over-allocate, not
-    that the tier column is missing.
+    This check runs on the DELIVERED frame, before any tier is selected. Tiers
+    are alternative VIEWS of the same capacity, not additive ones, so summing
+    across rungs double-counts and always shows a large multiple on a
+    well-formed multi-tier export (``direct`` + ``equity`` each restating
+    ~100%). Over-allocation is only real WITHIN a tier -- the one
+    ``tier_filter`` hands to allocation as-is -- so the check sums per
+    (asset, year, tier) and a large cross-tier multiple is expected, not
+    flagged. ``require_ownership_tier`` above has already guaranteed the frame
+    names its rungs.
 
     An extract that flattens every rung of an ownership chain passes a
     duplicate-key check and still over-allocates, because different companies
@@ -155,24 +157,27 @@ def check_ownership_allocation(frame: pd.DataFrame) -> None:
 
     Warning only: some universes legitimately hold partial ownership.
     """
-    sums = frame.groupby(["asset_id", "year"]).ownership_percentage.sum()
+    tier_column = next((c for c in OWNERSHIP_TIER_COLUMNS if c in frame.columns), None)
+    group_keys = ["asset_id", "year"] + ([tier_column] if tier_column else [])
+    sums = frame.groupby(group_keys).ownership_percentage.sum()
     over = float((sums > OVER_ALLOCATION_PCT).mean())
     print(  # noqa: T201
         f"  allocation check: {len(frame):,} rows, "
-        f"{sums.index.get_level_values(0).nunique():,} assets, "
-        f"sum p50={sums.median():.1f}% max={sums.max():.1f}%, "
+        f"{frame['asset_id'].nunique():,} assets"
+        + (f" x {frame[tier_column].nunique()} tiers" if tier_column else "")
+        + f", per-tier sum p50={sums.median():.1f}% max={sums.max():.1f}%, "
         f"within 99-101%={100 * sums.between(99, 101).mean():.1f}%"
     )
     if over > OVER_ALLOCATION_SHARE:
         warnings.warn(
-            f"companies: {over:.1%} of asset-years sum to "
-            f">{OVER_ALLOCATION_PCT}% (median {sums.median():.1f}%). Capacity "
-            "would be over-allocated silently. The delivered ownership rows "
-            "must partition the asset (sum to 100%) -- fix this upstream. Note "
-            "this is NOT about duplicate stake rows: `_consolidate_ownership_"
-            "stakes` totals every stake a company holds in one asset-year into "
-            "a single row automatically, and that merge is sum-preserving, so "
-            "it cannot bring an over-allocated universe back under 100%.",
+            f"companies: {over:.1%} of asset-year-tiers sum to "
+            f">{OVER_ALLOCATION_PCT}% (median {sums.median():.1f}%). Within a "
+            "single ownership tier the rows must partition the asset (sum to "
+            "100%) -- a tier that is over-allocated is fixed upstream, not by "
+            "`_consolidate_ownership_stakes` (its merge is sum-preserving) nor "
+            "by `tier_filter` (it hands the tier to allocation as-is). A large "
+            "CROSS-tier multiple (direct + equity each ~100%) is expected and "
+            "not counted here.",
             stacklevel=2,
         )
 

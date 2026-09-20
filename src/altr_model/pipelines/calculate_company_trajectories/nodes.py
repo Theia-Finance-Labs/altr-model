@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pandas as pd
 
@@ -20,6 +22,7 @@ from altr_model.pipelines.prepare_scenario_asset_and_company_inputs._input_nodes
 )
 from altr_model.pipelines.prepare_scenario_asset_and_company_inputs.nodes import (
     FINANCIAL_SURFACE_COLUMNS,
+    STRUCTURAL_SURFACE_COLUMNS,
 )
 
 COMPANY_YEAR_KEYS = [
@@ -226,6 +229,18 @@ def combine_company_trajectory_cases(
     is_baseline = pathways["trajectory_type"].eq("baseline")
     is_late_sudden = pathways["trajectory_type"].eq("late_sudden_requested")
     ramping = price_ramp and alignment_year > shock_year
+    if price_ramp and alignment_year <= shock_year:
+        # `ramping` needs alignment_year > shock_year; with them equal the ramp
+        # is silently off and the surfaces hard-switch at the shock year,
+        # reinstating the near-term price windfall the ramp exists to remove.
+        warnings.warn(
+            f"price_ramp=True but alignment_year ({alignment_year}) is not after "
+            f"shock_year ({shock_year}): the ramp is disabled and the financial "
+            "surfaces hard-switch at the shock year, reinstating the near-term "
+            "price windfall the ramp exists to remove.",
+            UserWarning,
+            stacklevel=2,
+        )
     uses_target_surface = pathways["trajectory_type"].eq("target") | (
         is_late_sudden & pathways["year"].ge(shock_year) & ~ramping
     )
@@ -237,7 +252,11 @@ def combine_company_trajectory_cases(
     for column in FINANCIAL_SURFACE_COLUMNS:
         baseline_values = pathways[f"{column}_baseline"]
         target_values = pathways[f"{column}_target"]
-        if not ramping:
+        if not ramping or column in STRUCTURAL_SURFACE_COLUMNS:
+            # No ramp, OR a structural constant (lifetime, scrap-per-MW): the
+            # plant's physics take no fractional interim value, so they
+            # hard-switch baseline->target at the shock year (owner ruling
+            # 2026-09-05). Only the market environment below blends.
             late_sudden_values = np.where(
                 pathways["year"].ge(shock_year), target_values, baseline_values
             )

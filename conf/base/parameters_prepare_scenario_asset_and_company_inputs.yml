@@ -147,3 +147,87 @@ company_ids:
   - "CN_6741456596082465682"
   - "CP_3185202543523296674"
   - "CN_6894373266496773215"
+
+# ── Decommissioning cost calibration ──────────────────────────────────────────────
+# The scenarios input delivers `scrap_usd_per_mw` as -capital_cost/2: retiring a
+# plant is charged HALF of what building it costs (`include_decom_costs` in
+# parameters_calculate_asset_earnings.yml books it as a positive outflow, and the
+# terminal value's decommissioning floor prices standing capacity with the same
+# number). Real-world decommissioning for thermal and renewable plant runs closer
+# to 5–15% of build cost; nuclear is the exception.
+# Values: a number in [0, 1] rewrites scrap as -(fraction × capex_usd_per_mw)
+# for every scenario row, so BOTH consumers move together; null keeps the
+# delivered column (the 50% convention the golden was pinned under, kept
+# reachable for comparison). DEFAULT 0.15 by owner ruling (Jakub, 2026-09-04),
+# measured on the full universe as arms R11/R13 in
+# docs/superpowers/plans/measurement-batch-results.md.
+decom_cost_fraction_of_capex: 0.15
+
+# ── Capture prices ────────────────────────────────────────────────────────────────
+# The scenarios carry ONE electricity price per region-year, and the model pays
+# every technology that average. In real markets technologies capture different
+# prices: wind and solar below the average (they produce together, when prices
+# are low), dispatchable plant above it. Hirth (2013, "The market value of
+# variable renewables", Energy Economics 38) measures the VALUE FACTOR
+# (capture price / average price) falling with market share: wind ~1.1 at zero
+# share to 0.5-0.8 at 30%, solar reaching the same by ~15%.
+# method: "none" (DEFAULT) - factor 1.0 everywhere, the validated behaviour.
+#         "hirth2013" - wind and PV take intercept + slope x (their generation
+#         share of the region-year's GENERATION, rebuilt as capacity x capacity
+#         factor because `scenario_pathway` is capacity for power; leaf
+#         technologies only), floored at
+#         vre_floor; every other technology takes the residual that keeps the
+#         generation-weighted capture price equal to the system price, capped
+#         at dispatchable_cap. Shares come from the scenario's own pathways, so
+#         the factor is per scenario x region x year and moves with the
+#         transition. Held on the same functional form in both pathways.
+capture_price:
+  method: none
+  wind_intercept: 1.1
+  wind_slope: -1.5      # 0.65 at 30% share (Hirth: 0.5-0.8)
+  solar_intercept: 1.1
+  solar_slope: -3.5     # 0.575 at 15% share
+  vre_floor: 0.4
+  dispatchable_cap: 2.0
+
+# ── Price floor ───────────────────────────────────────────────────────────────────
+# IAM electricity prices are annual marginal-cost shadow prices. Under WITCH,
+# MESSAGE and REMIND they sit BELOW the full cost of the plants those pathways
+# keep building (WITCH China 2030: $25/MWh against a coal LRMC of ~$40) - a price
+# at which the scenario's own entrants could never recover their capital. In
+# long-run equilibrium the average price must at least cover the levelised cost
+# of the price-setting entrant, or nothing gets built.
+# method: "none" (DEFAULT) - the IAM price as delivered, the validated behaviour.
+#         "lrmc" - per region x year, the price in EVERY scenario becomes
+#         max(IAM price, LRMC of the BASELINE scenario's price-setting
+#         technology). The floor is the long-run cost level of the
+#         counterfactual market; the transition moves prices through the IAM
+#         target price and the carbon charge, not through the floor - which
+#         means the floor never falls in the transition even where the target's
+#         own marginal entrant becomes cheaper: late-transition target prices
+#         below the fossil-era cost level are lifted, and target revenues with
+#         them. (It is
+#         also not derivable from the target pathway: the extract's target
+#         capacity factors collapse to ~1e-12 for phased-out thermal plant while
+#         their generation columns do not - a marts inconsistency flagged
+#         2026-09-04.) The price
+#         setter is the largest thermal generator (generation = capacity x
+#         capacity factor: the extract's `scenario_pathway` is CAPACITY for power
+#         technologies, mislabelled MWh/yr) with positive generation whose
+#         cost inputs are all finite and positive (coal/gas/oil/biomass; the bare
+#         family names are aggregate parents and are never candidates; an
+#         unusable row is skipped for the next largest) and its LRMC = fuel/efficiency + O&M/hours + capex x CRF /
+#         hours from its own scenario columns. One market price: every
+#         technology in the region-year receives it. Wherever the IAM price is
+#         already above the LRMC the floor is inert - most region-years under
+#         IMAGE and AIM/CGE, few under WITCH, MESSAGE or REMIND. The raw IAM
+#         price stays in `scenario_price`; `price_floor_lrmc` reports the floor
+#         (0.0 where none applies) and `price_setter_technology` names the
+#         setter on the scenario surface (it is not carried to the assets).
+# discount_rate: the REAL cost of capital in the capital-recovery annuity
+#         (r(1+r)^L / ((1+r)^L - 1) over the technology's lifetime). It is the
+#         one assumption; 8% is on the high side for a utility, 5-6% is common,
+#         and a lower rate gives a lower floor. Consider tying it to `dcf`.
+price_floor:
+  method: none
+  discount_rate: 0.08

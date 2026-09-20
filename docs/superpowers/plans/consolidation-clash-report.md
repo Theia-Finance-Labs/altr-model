@@ -201,11 +201,37 @@ and a permanently loss-making asset gets an unbounded negative perpetuity. **If
 you disagree with the ported rule, this is the single line to discuss**
 (`has_terminal_fcff = final_fcff != 0`).
 
-### Q2-4 · Technology-differentiated discount rates · FYI
+### Q2-4 · Technology-differentiated discount rates · **RULED 2026-09-03**
 
 New: `dcf.brown_discount_spread` (+100 bps) and `dcf.green_discount_spread`
 (−50 bps), applied on top of the scenario base rate by `alignment_type`. Your
 tree had a uniform rate. Setting both to `0` restores it exactly.
+
+**Owner ruling 12 (proposal branch `feat/decision-proposals`).**
+`green_discount_spread` is deleted — Bolton & Kacperczyk measure a penalty on
+high emitters and no greenium — and the surviving penalty is charged by
+membership of an explicit `dcf.brown_technologies` list rather than by
+`alignment_type`. The carrier was producing misfires in both directions on the
+shipped fixture: `WindCap - Offshore` classed `misaligned_high_carbon` paid the
+fossil rate at 8.0%, and `OilCap` classed `misaligned_low_carbon` collected the
+greenium at 6.5%.
+
+**RESOLVED by owner ruling 13 (2026-09-04): the 12/13 carrier inconsistency is
+gone.** The terminal-growth spreads (`g_real_brown` / `g_real_green`) now select
+on the same `dcf.brown_technologies` list as the discount spread, so an asset
+that is "brown" for its rate is "brown" for its growth and vice versa — no asset
+can be one and not the other any more. On the fixture slice 61 of 721 valuation
+groups changed growth rate, in both directions: offshore wind (30), nuclear (21)
+and biomass (7) classed `misaligned_high_carbon` stopped growing at the fossil
+0%, and `OilCap` classed `misaligned_low_carbon` (3) stopped growing at 2%.
+
+**The one remaining `alignment_type` consumer in the valuation stage is the
+tier-2 annuity** — the "declining but profitable carbontech" selection in
+`compute_yearly_npv_trajectories`, which decides whether a group takes a finite
+10-year annuity instead of a perpetuity. Ruling 13 deliberately left it there;
+it awaits its own ruling if the owner wants it moved onto the technology list
+too. Everything else keyed on `alignment_type` in the stage is a grouping or
+passthrough column, not a selector.
 
 ### Q2-5 · Dynamic marginal EF and `carbon_cost_method` · FYI
 

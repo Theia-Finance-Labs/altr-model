@@ -19,6 +19,9 @@ from altr_model.pipelines.prepare_scenario_asset_and_company_inputs._asset_prepa
 from altr_model.pipelines.prepare_scenario_asset_and_company_inputs._input_nodes import (
     allocate_assets_to_companies,
     apply_ccs_suffix,
+    apply_decom_cost_fraction,
+    apply_lrmc_price_floor,
+    compute_capture_price_factor,
     assign_scenario_geographies_to_assets,
     determine_increasing_or_decreasing_techs,
     determine_lifetime_per_technology,
@@ -38,13 +41,25 @@ FINANCIAL_SURFACE_COLUMNS = [
     "efficiency_decimal",
     "lifetime_years",
     "scrap_usd_per_mw",
+    "capture_price_factor",
+    "price_floor_lrmc",
 ]
+
+#: The plant's physical constants, not part of the market environment. Under the
+#: price ramp these hard-switch baseline->target at the shock year rather than
+#: taking a fractional interim value (owner ruling 2026-09-05): a lifetime and a
+#: scrap-per-MW (which feeds decom_cost) are properties of the asset, not prices
+#: that transition. Everything else in FINANCIAL_SURFACE_COLUMNS blends.
+STRUCTURAL_SURFACE_COLUMNS = frozenset({"lifetime_years", "scrap_usd_per_mw"})
 
 
 def prepare_scenario_pathways(
     downloaded_scenarios: pd.DataFrame,
     target_scenario: str,
     baseline_scenario: str,
+    decom_cost_fraction_of_capex: float | None = None,
+    capture_price: dict | None = None,
+    price_floor: dict | None = None,
 ) -> pd.DataFrame:
     """Filter scenarios once and add all downstream trajectory/model fields."""
     # Some scenarios.csv deliveries use "scenario_name" instead of "scenario"
@@ -76,7 +91,9 @@ def prepare_scenario_pathways(
     scenarios["capacity_factor"] = scenarios["scenario_capacity_factor"]
     scenarios["capex_usd_per_mw"] = scenarios["capital_cost_usd_per_mw"]
     scenarios["fom_usd_per_mw_yr"] = scenarios["om_cost_usd_per_mw_per_yr"]
-    return scenarios
+    scenarios = apply_lrmc_price_floor(scenarios, price_floor, baseline_scenario)
+    scenarios = apply_decom_cost_fraction(scenarios, decom_cost_fraction_of_capex)
+    return compute_capture_price_factor(scenarios, capture_price)
 
 
 def prepare_asset_forecast_panel(

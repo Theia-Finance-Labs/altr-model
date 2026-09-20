@@ -168,9 +168,11 @@ def test_consolidation_preserves_the_asset_year_ownership_total():
     frame = _multi_stake_frame()
 
     before = frame.groupby(["asset_id", "year"]).ownership_percentage.sum()
-    after = _consolidate_ownership_stakes(frame).groupby(
-        ["asset_id", "year"]
-    ).ownership_percentage.sum()
+    after = (
+        _consolidate_ownership_stakes(frame)
+        .groupby(["asset_id", "year"])
+        .ownership_percentage.sum()
+    )
 
     pd.testing.assert_series_equal(before, after)
 
@@ -210,7 +212,7 @@ def test_equity_tier_selects_the_other_rung():
 
 
 def test_a_tier_the_data_does_not_carry_is_rejected():
-    """"indirect" is the documented-but-wrong name for the equity rung. Under
+    """ "indirect" is the documented-but-wrong name for the equity rung. Under
     the named schema it matches nothing, and an empty panel takes every company
     out of the run silently — so it must raise, naming what is available."""
     with pytest.raises(ValueError, match="indirect") as excinfo:
@@ -273,8 +275,12 @@ def test_ownership_level_schema_maps_onto_the_same_tiers():
     direct = filter_companies(frame, [], ownership_type="direct")
     indirect = filter_companies(frame, [], ownership_type="indirect")
 
-    assert direct.set_index(KEY)["ownership_percentage"].loc[("C1", "A1", 2030)] == 50.00
-    assert indirect.set_index(KEY)["ownership_percentage"].loc[("C1", "A1", 2030)] == 0.45
+    assert (
+        direct.set_index(KEY)["ownership_percentage"].loc[("C1", "A1", 2030)] == 50.00
+    )
+    assert (
+        indirect.set_index(KEY)["ownership_percentage"].loc[("C1", "A1", 2030)] == 0.45
+    )
 
 
 def test_a_companies_input_with_no_tier_column_keeps_every_row():
@@ -340,7 +346,9 @@ def test_an_equity_only_holder_is_dropped_by_tier_filter_and_kept_by_sum():
     summed = filter_companies(frame, [], ownership_aggregation="sum")
 
     assert "C3" not in set(tiered.company_id)
-    assert summed.set_index(KEY)["ownership_percentage"].loc[("C3", "A3", 2030)] == 10.00
+    assert (
+        summed.set_index(KEY)["ownership_percentage"].loc[("C3", "A3", 2030)] == 10.00
+    )
 
 
 def test_an_unknown_ownership_aggregation_names_both_options():
