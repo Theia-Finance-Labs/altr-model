@@ -22,9 +22,16 @@ the same tier in one asset-year, which do add up.
 ``_consolidate_ownership_stakes`` is still tested on its own, on a frame that
 mixes tiers, because its contract is "sum whatever you are given" and that is
 what the ordering above relies on.
+
+That ordering is the DEFAULT, not the only behaviour: the same ruling made it
+the ``ownership_aggregation: "tier_filter"`` mode, alongside ``"sum"``, which
+skips the tier selection so a company's direct and equity holdings are totalled
+(TRISK's reading). The tests up to ``test_a_companies_input_with_no_tier_column…``
+pin the default; the section after it pins the alternative.
 """
 
 import pandas as pd
+import pytest
 
 from altr_model.pipelines.prepare_scenario_asset_and_company_inputs._input_nodes import (  # noqa: E501
     _consolidate_ownership_stakes,
@@ -33,7 +40,8 @@ from altr_model.pipelines.prepare_scenario_asset_and_company_inputs._input_nodes
 
 KEY = ["company_id", "asset_id", "year"]
 
-#: The columns `_consolidate_ownership_stakes` groups on, plus the summed one.
+#: What `_consolidate_ownership_stakes` returns: the five keys it groups on,
+#: the two name labels it carries as `first`, and the summed percentage.
 #: `ownership_type` is deliberately absent — see the assertion below.
 CONSOLIDATED_COLUMNS = {
     "company_id",
@@ -90,12 +98,67 @@ def test_multi_stake_rows_collapse_to_one_summed_row():
 
 
 def test_consolidation_drops_the_tier_column():
-    """`ownership_type` is not a group key and not summed, so it does not
-    survive. That is the point: a company's total stake is direct + equity, and
-    once they are added the tier of the merged row is meaningless. Nothing
-    downstream may read it — the parameter of the same name is gone too."""
+    """`ownership_type` is not a group key, not carried, and not summed, so it
+    does not survive. That is the point: a company's total stake is direct +
+    equity, and once they are added the tier of the merged row is meaningless.
+    Nothing downstream may read it. The PARAMETER of the same name is still
+    live — `filter_companies` reads it to pick the tier BEFORE consolidating
+    (see the `tier_filter` tests below) — it is the per-row column that ends
+    here."""
     out = _consolidate_ownership_stakes(_multi_stake_frame())
     assert "ownership_type" not in out.columns
+
+
+def test_nan_in_cosmetic_group_column_does_not_delete_the_stake():
+    """`groupby` drops NaN keys by default, and `company_name` / `asset_name`
+    are labels nothing computes on. Keyed on, a blank one deleted that
+    company's stake outright, and the capacity with it, with no row count to
+    notice it by. They are carried as `first` instead, so they cannot."""
+    frame = _multi_stake_frame()
+    frame.loc[frame.company_id == "C2", "company_name"] = pd.NA
+
+    out = _consolidate_ownership_stakes(frame)
+
+    assert "C2" in set(out.company_id), "an unnamed company kept its stake"
+    assert out.set_index(KEY)["ownership_percentage"].loc[("C2", "A1", 2030)] == 20.00
+
+
+def test_siblings_disagreeing_about_a_name_are_still_one_stake():
+    """The other half of the same bug, and the reason the names are carried
+    rather than kept as NaN-tolerant keys.
+
+    Two rows of ONE stake — same company, asset, tier and year — where the
+    export filled the name on one and left it blank on the other. Keyed on the
+    name (NaN-tolerant or not) they land in different groups and the roll-up
+    emits TWO rows for one (company, asset, year): exactly the duplicate that
+    fails the per-asset pivot downstream with "Index contains duplicate
+    entries". They must sum to one row, and the row must be labelled from the
+    sibling that has a label."""
+    frame = pd.DataFrame(
+        [
+            ("A1", "plant-1", "C1", "Acme", 2030, "direct", 50.00),
+            ("A1", "plant-1", "C1", pd.NA, 2030, "direct", 20.00),
+        ],
+        columns=[
+            "asset_id",
+            "asset_name",
+            "company_id",
+            "company_name",
+            "year",
+            "ownership_type",
+            "ownership_percentage",
+        ],
+    ).assign(sector="Power", technology="CoalCap")
+
+    out = _consolidate_ownership_stakes(frame)
+
+    assert len(out) == 1, "one stake, one row — a blank name is not a second one"
+    assert out.loc[0, "ownership_percentage"] == 70.00
+    assert out.loc[0, "company_name"] == "Acme", "`first` skips the blank sibling"
+
+    # And through the tier selection, which is where it was first reproduced.
+    tiered = filter_companies(frame, [], ownership_type="direct")
+    assert not tiered.duplicated(KEY).any()
 
 
 def test_consolidation_preserves_the_asset_year_ownership_total():
@@ -138,10 +201,68 @@ def test_direct_tier_excludes_the_equity_stake_in_the_same_asset():
     assert out.set_index(KEY)["ownership_percentage"].loc[("C1", "A1", 2030)] == 50.00
 
 
-def test_indirect_tier_selects_the_other_rung():
-    out = filter_companies(_multi_stake_frame(), [], ownership_type="indirect")
+def test_equity_tier_selects_the_other_rung():
+    """The named schema's other rung is "equity". Selecting it returns the
+    equity rows — the direct 50.00 stake drops out and the 0.45 one remains."""
+    out = filter_companies(_multi_stake_frame(), [], ownership_type="equity")
 
-    assert set(out.company_id) == set()
+    assert out.set_index(KEY)["ownership_percentage"].loc[("C1", "A1", 2030)] == 0.45
+
+
+def test_a_tier_the_data_does_not_carry_is_rejected():
+    """"indirect" is the documented-but-wrong name for the equity rung. Under
+    the named schema it matches nothing, and an empty panel takes every company
+    out of the run silently — so it must raise, naming what is available."""
+    with pytest.raises(ValueError, match="indirect") as excinfo:
+        filter_companies(_multi_stake_frame(), [], ownership_type="indirect")
+
+    assert "'direct'" in str(excinfo.value) and "'equity'" in str(excinfo.value)
+
+
+def test_a_case_variant_of_the_tier_name_selects_the_same_rung():
+    """Matching normalizes both sides. The alternative — exact `==` against an
+    unnormalized column — accepts nothing and hands back the empty panel the
+    validation above exists to prevent, so a config typed "Direct" must select
+    the direct rung rather than quietly emptying the run."""
+    out = filter_companies(_multi_stake_frame(), [], ownership_type="  Direct ")
+
+    assert out.set_index(KEY)["ownership_percentage"].loc[("C1", "A1", 2030)] == 50.00
+
+
+def test_a_case_variant_in_the_data_is_matched_too():
+    """The same normalization applies to the column: an export that writes
+    "Equity" is the equity rung, not a tier the run does not carry."""
+    frame = _multi_stake_frame()
+    frame["ownership_type"] = frame["ownership_type"].str.capitalize()
+
+    out = filter_companies(frame, [], ownership_type="equity")
+
+    assert out.set_index(KEY)["ownership_percentage"].loc[("C1", "A1", 2030)] == 0.45
+
+
+def test_a_typo_under_the_numbered_schema_raises_instead_of_selecting_2_plus():
+    """The old numbered branch was `level == 1 if "direct" else level >= 2`, so
+    ANY value that was not exactly "direct" selected the indirect rungs. A
+    misspelled "dirct" therefore reported on the opposite tier and said
+    nothing. It must raise."""
+    frame = _multi_stake_frame().rename(columns={"ownership_type": "ownership_level"})
+    frame["ownership_level"] = frame["ownership_level"].map({"direct": 1, "equity": 2})
+
+    with pytest.raises(ValueError, match="dirct"):
+        filter_companies(frame, [], ownership_type="dirct")
+
+
+def test_a_numbered_rung_that_maps_to_nothing_is_rejected():
+    """The numbered schema keeps its rung semantics — "direct" is level 1,
+    "indirect"/"equity" are level 2+, a bare number is that level, and nothing
+    else is accepted — but a selection that maps to no row still raises rather
+    than emptying the panel. Here every row is level 1, so "equity" is a valid
+    name for a rung this frame does not carry."""
+    frame = _multi_stake_frame().rename(columns={"ownership_type": "ownership_level"})
+    frame["ownership_level"] = 1
+
+    with pytest.raises(ValueError, match="ownership_level"):
+        filter_companies(frame, [], ownership_type="equity")
 
 
 def test_ownership_level_schema_maps_onto_the_same_tiers():
@@ -164,3 +285,66 @@ def test_a_companies_input_with_no_tier_column_keeps_every_row():
     out = filter_companies(frame, [])
 
     assert out.set_index(KEY)["ownership_percentage"].loc[("C1", "A1", 2030)] == 50.45
+
+
+# ── ownership_aggregation ────────────────────────────────────────────────────
+# The owner ruling of 2026-09-01 made the tier-first ordering above a MODE
+# rather than the only behaviour: `tier_filter` (default, the validated
+# baseline) versus `sum` (total direct + equity per company-asset-year, the
+# TRISK-comparable reading). The tests above pin `tier_filter`; these pin the
+# alternative and the boundary between them.
+
+
+def _with_an_equity_only_holder() -> pd.DataFrame:
+    """The multi-stake frame plus a company whose ONLY stake is an equity one.
+
+    It is the case that separates the modes at the company level, not just the
+    percentage level: `tier_filter` on "direct" drops such a holder entirely,
+    `sum` keeps it.
+    """
+    equity_only = pd.DataFrame(
+        [("A3", "plant-3", "C3", "Gamma", 2030, "equity", 10.00)],
+        columns=[
+            "asset_id",
+            "asset_name",
+            "company_id",
+            "company_name",
+            "year",
+            "ownership_type",
+            "ownership_percentage",
+        ],
+    ).assign(sector="Power", technology="CoalCap")
+    return pd.concat([_multi_stake_frame(), equity_only], ignore_index=True)
+
+
+def test_sum_mode_totals_the_direct_and_equity_stakes_into_one_row():
+    """Sum semantics (TRISK-style): every holding enters, so Acme's 50.00 direct and
+    0.45 equity stakes in plant-1 become a single 50.45 row."""
+    out = filter_companies(_multi_stake_frame(), [], ownership_aggregation="sum")
+
+    assert not out.duplicated(KEY).any(), "duplicate (company, asset, year) keys"
+    assert out.set_index(KEY)["ownership_percentage"].loc[("C1", "A1", 2030)] == 50.45
+
+
+def test_tier_filter_is_the_default_and_keeps_only_the_selected_rung():
+    """The default is the validated baseline: the equity rung is not added in."""
+    out = filter_companies(_multi_stake_frame(), [])
+
+    assert out.set_index(KEY)["ownership_percentage"].loc[("C1", "A1", 2030)] == 50.00
+
+
+def test_an_equity_only_holder_is_dropped_by_tier_filter_and_kept_by_sum():
+    frame = _with_an_equity_only_holder()
+
+    tiered = filter_companies(frame, [], ownership_aggregation="tier_filter")
+    summed = filter_companies(frame, [], ownership_aggregation="sum")
+
+    assert "C3" not in set(tiered.company_id)
+    assert summed.set_index(KEY)["ownership_percentage"].loc[("C3", "A3", 2030)] == 10.00
+
+
+def test_an_unknown_ownership_aggregation_names_both_options():
+    with pytest.raises(ValueError, match="tier_filter"):
+        filter_companies(_multi_stake_frame(), [], ownership_aggregation="average")
+    with pytest.raises(ValueError, match="sum"):
+        filter_companies(_multi_stake_frame(), [], ownership_aggregation="average")

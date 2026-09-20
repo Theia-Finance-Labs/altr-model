@@ -11,11 +11,14 @@ run-configurations format.
 !!! warning "Maintainer tooling - most of this page is not in a sanitized copy"
     Everything on this page lives in this repository. What is excluded is the
     **sanitized copy** `scripts/build_export.py` produces on demand for
-    delivery: of the files documented here, only the `Dockerfile` and
-    `notebooks/walkthrough.ipynb` are on its allowlist - the Streamlit app,
-    `run_kedro_batch.py`, `generate_results.ipynb`, the example configuration
-    files and `docker-compose.yml` stay behind. If you received this site as
-    part of a sanitized copy, the supported path is the
+    delivery: of the files documented here, only the `Dockerfile` (with its
+    `.dockerignore`) and `notebooks/walkthrough.ipynb` are on its allowlist -
+    the Streamlit app, `run_kedro_batch.py`, `generate_results.ipynb`, the
+    example configuration files and `docker-compose.yml` stay behind. The
+    copy's `Dockerfile` is rewritten on export: its image runs the pipeline
+    itself (`kedro run`, with the local `data/` folder mounted per the
+    comments in the file) rather than the app described below. If you
+    received this site as part of a sanitized copy, the supported path is the
     [quickstart](quickstart.md); everything below describes tooling the
     maintainers run for you.
 
@@ -96,17 +99,16 @@ custom selection), run, and download every output as one zip. It expects the
 converted model inputs to already be in `data/05_model_input/` (quickstart
 steps 3-4).
 
-Run it natively:
+Maintainers run it natively from an internal build: sync the optional
+dependency group `pyproject.toml` declares for the app, then `streamlit run`
+the app module under `notebooks/`. No copy-and-paste form of that command is
+printed here, because the app module, the group and the compose file are all
+absent from a delivered copy - the group is stripped out of its
+`pyproject.toml` and `uv.lock` on export - so the command could only fail for
+a recipient.
 
-```bash
-uv run --group streamlit streamlit run notebooks/streamlit_app.py
-```
-
-Or in Docker, which needs nothing installed but Docker itself:
-
-```bash
-docker compose up --build
-```
+The same internal build also runs it in Docker via `docker compose up --build`,
+which needs nothing installed but Docker itself.
 
 Once the logs settle, open <http://localhost:8501>.
 

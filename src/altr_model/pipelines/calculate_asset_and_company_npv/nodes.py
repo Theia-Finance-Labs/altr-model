@@ -176,6 +176,14 @@ def compute_yearly_npv_trajectories(
     # anchor zone, corrupting 3,414 nonzero terminal values.
     agg_map = {col: "sum" for col in available_financial_cols}
     agg_map["discount_rate"] = "first"
+    # A cell whose FCFF rows are ALL missing sums to 0.0 -- pandas' default
+    # min_count=0 -- and a 0.0 reads as a loss year in the stranding test far
+    # below, so a data gap could write off an asset's whole terminal value.
+    # Carry the observation count through the collapse so a filled zero can be
+    # told apart from a measured one. ONLY the stranding test reads it: every
+    # present-value number keeps the summed 0.0 it has always had.
+    npv_data = npv_data.assign(_fcff_observed=npv_data["FCFF"].notna())
+    agg_map["_fcff_observed"] = "sum"
     pre_rows = len(npv_data)
     npv_data = npv_data.groupby(
         group_keys + ["year"], dropna=False, as_index=False
@@ -228,6 +236,8 @@ def compute_yearly_npv_trajectories(
     years = npv_data["year"].to_numpy()
     discount_rate = npv_data["discount_rate"].to_numpy(dtype=np.float64)
     fcff = npv_data["FCFF"].to_numpy(dtype=np.float64)
+    # True where this collapsed asset-year had at least one measured FCFF.
+    fcff_observed = npv_data["_fcff_observed"].to_numpy() > 0
 
     # Rows are year-sorted, so the group's first row carries its minimum year.
     base_year_per_group = years[starts].astype(np.int64)
@@ -293,7 +303,17 @@ def compute_yearly_npv_trajectories(
         if stranding_aware_tv:
             # Stranded: loss-making for N consecutive years at the horizon end
             # (Gourdel 2024) — a rational owner shuts down, so TV = 0.
-            strand_mask = pos_from_end < stranding_consecutive_years
+            # A group with FEWER than N observed years cannot show N
+            # consecutive loss years: its whole history is shorter than the
+            # test. Scoring it stranded off 1-2 observations writes off the
+            # asset's entire terminal value on evidence the criterion does not
+            # have. A MISSING year is not a loss either, so both the history
+            # length and the loss run count measured values, never the 0.0 the
+            # collapse above puts in a gap's place.
+            observed_per_group = np.bincount(gid[fcff_observed], minlength=n_groups)
+            has_full_history = observed_per_group >= stranding_consecutive_years
+            window = pos_from_end < stranding_consecutive_years
+            strand_mask = window & fcff_observed
             is_stranded = (
                 pd.Series(fcff[strand_mask] <= 0)
                 .groupby(gid[strand_mask])
@@ -302,7 +322,14 @@ def compute_yearly_npv_trajectories(
                 .to_numpy()
                 .astype(bool)
             )
-            stranded = has_terminal_fcff & is_stranded
+            # Every year of the trailing window must actually be measured:
+            # "loss, gap, loss" is not a run of three consecutive loss years.
+            window_is_complete = np.bincount(
+                gid[strand_mask], minlength=n_groups
+            ) == np.minimum(sizes, stranding_consecutive_years)
+            stranded = (
+                has_terminal_fcff & is_stranded & has_full_history & window_is_complete
+            )
             # Declining but still profitable carbontech: a finite annuity over
             # the remaining economic life instead of a perpetuity.
             annuity = (

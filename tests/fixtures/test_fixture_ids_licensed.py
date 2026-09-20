@@ -28,11 +28,11 @@ Run it whenever the fixture slice is re-cut, or against a built export::
         python -m pytest tests/fixtures/test_fixture_ids_licensed.py -q
 """
 import os
-import re
 from pathlib import Path
 
 import pandas as pd
 import pytest
+from scripts.sanitize_check import COMPANY_ID_RE
 
 DATA = Path(__file__).parent / "data"
 _DELIVERABLES_ENV = os.environ.get("ALTR_DELIVERABLES_DIR", "")
@@ -49,8 +49,13 @@ EXPORT_ROOT = Path(_EXPORT_ENV) if _EXPORT_ENV else None
 EXPECTED_COMPANY_ID_COUNT = 7512
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
-#: Company identifiers as they appear in text: `CN_` / `CP_` plus digits.
-COMPANY_ID = re.compile(r"\bC[NP]_[0-9]+\b")
+#: Company identifiers as they appear in text — the SANITIZER's pattern, not a
+#: second copy of it. This gate and the sanitizer gate must recognise exactly
+#: the same id shapes: an id form only one of them sees is an id form that can
+#: cross one boundary unnoticed. The `\b`-anchored form kept here previously
+#: missed every composite id ("NEW_CN_<id>_Power_HydroCap_EU"), which is the
+#: divergence the sanitizer had already fixed on its side.
+COMPANY_ID = COMPANY_ID_RE
 
 #: Text formats an export can carry an identifier in. Binary payloads are the
 #: sanitizer's business (it names its unscanned binaries); these are the ones
@@ -94,6 +99,28 @@ def test_deliverables_drop_is_the_licensed_universe(licensed_company_ids):
         f"{EXPECTED_COMPANY_ID_COUNT} - wrong or stale drop mounted; if the "
         "deliverables were legitimately re-issued, update "
         "EXPECTED_COMPANY_ID_COUNT in the same commit as the re-cut fixture"
+    )
+
+
+def test_every_licensed_id_is_one_the_sanitizer_pattern_can_see(licensed_company_ids):
+    """Pins the assumption the narrowed regex rests on: at least EIGHT digits.
+
+    `COMPANY_ID_RE` requires `CN_`/`CP_` followed by 8+ digits. The bound is
+    what keeps it from matching ordinary text, but it is an assumption about
+    the data, not a fact the pattern can enforce: a universe containing a
+    shorter identifier would be one the sanitizer cannot see, and such an id
+    could ship in a doc or a notebook with both gates reporting clean. Checked
+    against the real drop, so it fails when the assumption stops holding
+    rather than when someone remembers to re-derive it.
+    """
+    unmatched = sorted(
+        str(cid) for cid in licensed_company_ids if not COMPANY_ID.fullmatch(str(cid))
+    )
+    assert not unmatched, (
+        f"{len(unmatched)} licensed company id(s) do not match the sanitizer's "
+        f"pattern {COMPANY_ID.pattern!r}: {unmatched[:10]}. The gates cannot "
+        "see these ids, so they would ship unnoticed — widen COMPANY_ID_RE in "
+        "scripts/sanitize_check.py (the single definition both gates import)."
     )
 
 

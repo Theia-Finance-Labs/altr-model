@@ -21,9 +21,10 @@ notebooks/walkthrough.ipynb
 tests/
 scripts/prepare_inputs.py
 scripts/gen_param_docs.py
-scripts/pin_golden.py        # lets recipients pin their own golden baseline
+tests/golden/pin_golden.py        # lets recipients pin their own golden baseline
 pyproject.toml
 uv.lock
 LICENSE
-Dockerfile
+Dockerfile                   # entrypoint rewritten to `kedro run` — see build_export.py
+.dockerignore                # keeps a recipient's staged data/ out of the build context
 .gitignore

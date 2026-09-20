@@ -6,7 +6,7 @@
 | Tags | `altrisk` |
 | Runs after | [Stage 2 - `calculate_company_trajectories`](calculate_company_trajectories.md) |
 | Runs before | [Stage 4 - `calculate_asset_earnings`](calculate_asset_earnings.md) |
-| Nodes | 8 |
+| Nodes | 9 |
 
 ## Purpose
 
@@ -27,6 +27,13 @@ The asset panel is extended to the scenario horizon and given a retirement year
 here, using two functions that live in
 [stage 1](prepare_scenario_asset_and_company_inputs.md)'s
 `_asset_preparation.py`.
+
+Retirement is applied against a floor: the effective retirement year is
+`max(retirement_year, alignment_year + 1)`, so an asset dated to retire during
+or before the transition window keeps running until the year after alignment
+(`_allocation_nodes.py`). The `retirement_year` on the panel is the input to
+that clip, not the year capacity actually stops — see
+[Methodology notes](../methodology_notes.md#asset-retirement-refurbishment-wrap-around-not-a-hard-cutoff).
 
 ## Consumes
 
@@ -58,9 +65,9 @@ nothing in the earnings maths reads it: fixed costs use first-year capacity.
 | `split_company_pathways_by_technology_direction` | Splits the company table into the decreasing and increasing streams - a named node rather than an inline branch, so the methodology fork is visible in `kedro viz` |
 | `allocate_decreasing_company_trajectories_to_assets` | Allocates the company cut across assets - proportional scaling, or age-staggered g-weights with capped reductions - then flags permanently phased-out assets as retired |
 | `allocate_increasing_company_trajectories_to_assets` | Keeps real assets on their baseline path and adds the synthetic top-up asset |
-| `combine_asset_allocation_branches` | Concatenates both streams and restores the carried asset metadata (emission factor, retirement year, technology lifetime) |
+| `combine_asset_allocation_branches` | Concatenates both streams and restores the carried asset metadata (emission factor, retirement year, technology lifetime). Synthetic top-ups match nothing in that restore, so they are given the capacity-weighted emission factor of the real assets they were built out from - see [synthetic assets](../methodology_notes.md#synthetic-assets-for-increasing-technologies) |
 | `build_canonical_asset_trajectories` | Melts the wide asset frame into the long form downstream stages consume and joins the active financial surface onto each row |
-| `create_frozen_capacity_at_retirement` | Takes each retiring asset's capacity in the year before retirement - the retirement year is already zeroed - and extends that level across every year from retirement onward |
+| `create_frozen_capacity_at_retirement` | Takes each retiring asset's capacity in the year before its *effective* retirement (the raw `retirement_year`, floored at `alignment_year + 1` exactly as allocation floors it) - from that year on the capacity is zero - and extends that level across every year from retirement onward |
 | `reconcile_realized_company_trajectories` | Sums the allocated `latesudden` asset capacity back to company level and appends it as `late_sudden_realized` |
 
 ### The functions behind the nodes

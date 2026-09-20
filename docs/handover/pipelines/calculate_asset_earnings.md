@@ -12,11 +12,43 @@
 
 Converts each asset's physical trajectory into money. The canonical asset table
 arrives with the active price and cost surface already attached to every row, so
-this stage does no joining: it validates the contract, decomposes year-on-year
-capacity changes into new-build, roll-over and retirement flows and prices them
-into growth, replacement and decommissioning CapEx, then turns capacity into
-production and production into earnings. Fuel, fixed O&M and net carbon cost net
-to EBITDA, and EBITDA less CapEx gives free cash flow to the firm.
+this stage joins only one thing - the `frozen_capacity_at_retirement` lookup
+produced by stage 3, merged onto the panel in `validate_asset_trajectories`. It
+validates the contract, decomposes year-on-year capacity changes into
+new-build, roll-over and retirement flows and prices them into growth,
+replacement and decommissioning CapEx, then turns capacity into production and
+production into earnings. Fuel, fixed O&M and net carbon cost net to EBITDA,
+and EBITDA less CapEx gives free cash flow to the firm.
+
+### What `validate_asset_trajectories` repairs
+
+It is not only a contract check - it also normalises and repairs the table in
+place before the earnings maths runs, and every step changes numbers:
+
+* **Every numeric column is coerced first.** The eleven price, cost and factor
+  columns go through `pd.to_numeric(errors="coerce")`, so an unparseable value
+  - a stray text artefact in a price column - becomes `NaN` with no log line,
+  and then flows into the repairs below (a coerced emission factor is
+  forward-filled or zero-filled; a coerced price simply stays `NaN`). If a
+  number looks impossibly clean, check the raw input for text.
+* **NaN years are dropped.** A row with no year cannot be discounted or
+  ordered, and downstream integer casts would turn it into an astronomical
+  outlier rather than an error.
+* **Emission factors are forward-filled within each asset series.** A gap in
+  the EF column would otherwise zero that year's carbon cost, which reads as a
+  free year rather than a missing input.
+* **Renewables missing an emission factor are zero-filled.** For the seven
+  zero-carbon technologies a missing EF genuinely is zero, so they are filled
+  rather than dropped - a forward-fill alone cannot help an asset whose EF is
+  missing from its very first year.
+* **Synthetic top-ups arrive with an inherited emission factor.** A synthetic
+  asset has no plant record and so no measured EF. Rather than reaching this
+  stage empty and being zero-filled - which priced 181 biomass and oil top-ups
+  as emitting nothing - allocation gives each one the capacity-weighted EF of
+  the real assets it was built out from, in
+  [Stage 3](allocate_company_trajectories_to_assets.md). Nothing here treats
+  those rows specially; by the time they arrive their EF is populated like any
+  other asset's.
 
 This is the stage where the modelling choices bite hardest: how carbon costs are
 shared (`market_passthrough`), which cost elements are charged at all (the three
@@ -28,13 +60,29 @@ The arithmetic, in order:
 
 ```
 Q_t          = K_t × capacity_factor × 8760
+fuel_cost_per_mwh = fuel_price_usd_per_mwh_fuel ÷ efficiency_decimal
 var_cost_t   = Q_t × fuel_cost_per_mwh
 fixed_cost_t = fom_usd_per_mw_yr × K_for_fixed_cost_t
 carbon_t     = Q_t × carbon_price_usd_per_tco2 × emission_factor × (1 − market_passthrough)
 revenue_t    = Q_t × power_price_excarbon_usd_per_mwh
 EBITDA_t     = revenue_t − var_cost_t − fixed_cost_t − carbon_t
+
+capex_total_t = growth_t + replacement_t + decom_t, where
+  growth_t      = capex_usd_per_mw × new_buildout_cap_t    (if include_growth_capex)
+  replacement_t = capex_usd_per_mw × roll_over_cap_t       (if include_replacement_capex)
+  decom_t       = |scrap_usd_per_mw| × retired_max_cap_t   (if include_decom_costs)
+
 FCFF_t       = EBITDA_t − capex_total_t
 ```
+
+The three capacity flows come from the year-on-year capacity decomposition:
+`new_buildout_cap` is net new capacity on synthetic assets, `roll_over_cap` is
+`replacement_capex_rate` times the year's rolled-over real capacity, and
+`retired_max_cap` is the capacity a retirement removes. `scrap_usd_per_mw`
+arrives negative in the extracts; the `abs()` makes decommissioning a positive
+outflow either way, so retiring an asset always costs money and never pays its
+owner. The symbol names left of the `=` map back to input columns via the
+[rename table](../input_data.md#how-the-scenario-columns-appear-inside-the-model).
 
 `K_for_fixed_cost` is where continued O&M enters: for a decreasing-technology
 asset on a trajectory the switch covers, it is the trajectory's **first-year**
@@ -122,7 +170,7 @@ of `market_passthrough`. The keys are present so the differential path works if
 that adjustment is ever adopted.
 
 The price ramp that phases the financial surfaces across the shock window is a
-**stage 3** parameter, not one of this stage's: see
+**stage 2** parameter, not one of this stage's: see
 [`calculate_company_trajectories`](calculate_company_trajectories.md).
 
 ## Methodology reference

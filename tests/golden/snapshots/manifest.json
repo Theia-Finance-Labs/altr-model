@@ -1,0 +1,60 @@
+{
+  "pinned_at": "2026-09-02T09:06:44.899389+00:00",
+  "model_run_sha": "015a8613dda83f7da422bb352fe1f25b108b6f55",
+  "pinned_from_tree_sha": "015a8613dda83f7da422bb352fe1f25b108b6f55",
+  "run_dir": "data/07_model_output",
+  "inputs": [
+    {
+      "name": "scenarios.csv",
+      "sha256": "eae487606bba93e82a09d5ee98d6d38b3adccbe4295852094a49fefd3a46e552",
+      "bytes": "102691604"
+    },
+    {
+      "name": "assets_forecasts.csv",
+      "sha256": "5d13ba13374fbcd787b81a80d1ac5b799563cce2613d18d9f16d5c27197a3ef8",
+      "bytes": "29160431"
+    },
+    {
+      "name": "companies_ownerships.csv",
+      "sha256": "0ad7533d2edfbe98bfe2d39c0f6d5aaea7040c0edd9d9fe5e8e6eb9d49986c83",
+      "bytes": "177109964"
+    }
+  ],
+  "tables": [
+    {
+      "source": "asset_earnings.csv",
+      "snapshot": "asset_earnings.parquet",
+      "pinned_at": "2026-09-02T09:06:44.899389+00:00",
+      "model_run_sha": "015a8613dda83f7da422bb352fe1f25b108b6f55",
+      "rows": "1353716"
+    },
+    {
+      "source": "yearly_npv_trajectories.csv",
+      "snapshot": "yearly_npv_trajectories.parquet",
+      "pinned_at": "2026-09-02T09:06:44.899389+00:00",
+      "model_run_sha": "015a8613dda83f7da422bb352fe1f25b108b6f55",
+      "rows": "1371059"
+    },
+    {
+      "source": "asset_npv.csv",
+      "snapshot": "asset_npv.parquet",
+      "pinned_at": "2026-09-02T09:06:44.899389+00:00",
+      "model_run_sha": "015a8613dda83f7da422bb352fe1f25b108b6f55",
+      "rows": "26033"
+    },
+    {
+      "source": "company_technology_npv.csv",
+      "snapshot": "company_technology_npv.parquet",
+      "pinned_at": "2026-09-02T09:06:44.899389+00:00",
+      "model_run_sha": "015a8613dda83f7da422bb352fe1f25b108b6f55",
+      "rows": "7527"
+    },
+    {
+      "source": "company_npv.csv",
+      "snapshot": "company_npv.parquet",
+      "pinned_at": "2026-09-02T09:06:44.899389+00:00",
+      "model_run_sha": "015a8613dda83f7da422bb352fe1f25b108b6f55",
+      "rows": "4878"
+    }
+  ]
+}
