@@ -119,14 +119,16 @@ measured at 1.1% of the signal.
     The tiers are mutually exclusive and their counts sum to the group total,
     and the first node logs the census at `INFO` on every run, so the split is
     checkable rather than assumed. On the committed fixture slice, of 1,442
-    asset-trajectory groups: **80 stranded, 2 bounded negative, 658 perpetuity,
-    and 702 with no terminal anchor at all** (a
-    terminal FCFF of exactly zero). Separately, 804 of the 1,442 stand at zero
-    capacity at the horizon and are zeroed by `tv_anchor_policy: "operating"`
-    ahead of whatever tier claimed them.
+    asset-trajectory groups (one per plant-owner series per pathway): **42
+    stranded, 0 bounded negative, 698 perpetuity, and 702 with no terminal
+    anchor at all** (a terminal FCFF of exactly zero). The census is logged
+    before the retirement override: separately, 804 of the 1,442 stand at
+    zero capacity at the horizon and are zeroed by `tv_anchor_policy:
+    "operating"` ahead of whatever tier claimed them, and 603 groups end the
+    run with a non-zero terminal value.
 
-    The perpetuity is therefore neither universal nor rare here — it covers
-    roughly 43% of groups — and half the groups have no terminal value to
+    The perpetuity is therefore neither universal nor rare here — it claims
+    roughly 48% of groups — and half the groups have no terminal value to
     argue about. Expect a different split on the full universe.
 
 One structural detail worth knowing: before any row-indexed logic runs, the
@@ -215,7 +217,7 @@ Every key sits in the `dcf` block of
 | `dcf.spread_carrier` | `"technology"` | `"technology"` or `"alignment_type"` - what decides "brown" for **both** the spread and the growth rate |
 | `dcf.stranding_aware_tv` | `True` | Use the multi-tier terminal value instead of a single perpetuity |
 | `dcf.stranding_consecutive_years` | `3` | Consecutive loss-making years at the horizon end that mark an asset stranded |
-| `dcf.brown_remaining_life_years` | `10` | Annuity horizon for declining but profitable carbontech, and the fallback remaining life for the bounded negative branch |
+| `dcf.brown_remaining_life_years` | `10` | Fallback remaining life for the bounded negative branch where an asset carries no lifetime (the carbontech annuity that also read it was removed on 2026-09-05) |
 | `dcf.negative_tv_method` | `"bounded_annuity"` | `"perpetuity"` (unbounded below) or `"bounded_annuity"` (the least-bad exit) |
 | `dcf.tv_anchor_policy` | `"operating"` | `"raw"` or `"operating"` - whether zero-capacity groups are zeroed and decommissioning excluded from the anchor |
 
@@ -225,9 +227,10 @@ naming the key and the options, rather than falling through to the other branch
 and silently changing the model.
 
 That is the whole set - `PIPELINE_PARAMETERS` in `pipeline.py` lists them
-explicitly, so nothing else in the `dcf` block is visible to this stage. The two
-scenario discount rates ship equal, so out of the box the rate differential in
-`npv_change` comes from the technology spreads rather than from the scenario.
+explicitly, so nothing else in the `dcf` block is visible to this stage. There
+is one real rate for both pathways and the technology spread ships at `0.0`, so
+out of the box `npv_change` carries no rate differential at all: the whole
+baseline-vs-shock difference comes from the cash flows.
 
 The [parameters reference](../parameters.md) lists the `dcf` block as a single
 entry - nested sub-keys are annotated in the YAML file itself, which is the
