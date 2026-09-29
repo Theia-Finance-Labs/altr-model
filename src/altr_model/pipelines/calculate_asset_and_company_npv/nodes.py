@@ -1064,12 +1064,21 @@ def aggregate_to_company_npv(company_technology_npv: pd.DataFrame) -> pd.DataFra
         .reset_index()
     )
 
+    # Floor at zero (owner ruling 2026-09-29): a company loses at most
+    # everything, so npv_change cannot fall below -100%. Floored after netting
+    # technologies; the raw sums stay so totals still rebuild from assets.
+    npv_cols = ["baseline_npv", "latesudden_npv"]
+    unfloored = company_npv[npv_cols].copy()
+    company_npv[npv_cols] = unfloored.clip(lower=0.0)
+
     with np.errstate(divide="ignore", invalid="ignore"):
         base_c = company_npv["baseline_npv"].to_numpy(dtype=np.float64)
         shock_c = company_npv["latesudden_npv"].to_numpy(dtype=np.float64)
         change_c = np.true_divide((shock_c - base_c), abs(base_c))
     change_c = np.where(np.isfinite(change_c), change_c, np.nan)
     company_npv["npv_change"] = change_c
+    for col in npv_cols:
+        company_npv[f"{col}_unfloored"] = unfloored[col]
 
     logger.info(f"Aggregated to {len(company_npv)} company-level records")
 
