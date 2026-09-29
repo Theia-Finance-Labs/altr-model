@@ -154,6 +154,20 @@ dcf:
   # a loss-maker a free exit; this keeps the loss but bounds it.
   negative_tv_method: "bounded_annuity"  # "perpetuity" | "bounded_annuity"
 
+  # ── Year-by-year closure option (EXPERIMENTAL, branch feat/closure-option) ──
+  # The tiers above only let a loss-maker exit AFTER the horizon; inside the
+  # forecast window it runs on and books every loss. With this on, the owner
+  # closes the plant in the first year that paying to decommission it
+  # (-|scrap| x capacity entering the year) beats the value of running on,
+  # solved by backward induction with the terminal value above as the end
+  # value. A late & sudden series cannot close on the shock before `shock_year`
+  # (it inherits a pre-shock baseline closure instead). Closure stops every
+  # later cash flow, continued O&M included. Spec:
+  # docs/superpowers/specs/2026-09-29-closure-option.md
+  # DEFAULT False (owner ruling 2026-09-29): the partner-facing run keeps its
+  # values; this switch exists to measure the alternative.
+  closure_option: False
+
   # ── The terminal anchor (owner ruling 11) ───────────────────────────────────
   # What the terminal anchor is allowed to see. A perpetuity capitalises the
   # anchor forever, so anything one-off inside it is charged every year for the

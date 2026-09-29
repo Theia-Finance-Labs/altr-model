@@ -9,6 +9,8 @@ import pandas as pd
 
 from altr_model._validation import validate_choice
 
+from ._closure import apply_closure_option
+
 logger = logging.getLogger(__name__)
 
 
@@ -142,6 +144,8 @@ def compute_yearly_npv_trajectories(
     brown_remaining_life_years: int = 10,
     negative_tv_method: str = "perpetuity",
     tv_anchor_policy: str = "raw",
+    closure_option: bool = False,
+    shock_year: int | None = None,
 ) -> pd.DataFrame:
     """
     Node 1: Compute yearly NPV trajectories with all financial components.
@@ -241,6 +245,14 @@ def compute_yearly_npv_trajectories(
                 2. The anchor excludes decommissioning charges. Decom is a
                    one-off exit cost booked into `capex_total`; capitalising it
                    into a perpetuity charges it every year forever.
+        closure_option: EXPERIMENTAL (spec 2026-09-29-closure-option). The
+            owner closes a plant in the first year that decommissioning beats
+            running on, solved by backward induction over the forecast years
+            with the tiers above as the final value. Adds a `closure_year`
+            column. Off by default: the shipped run is unchanged.
+        shock_year: The late & sudden shock year. Required by
+            `closure_option`: a shock series cannot close on the shock before
+            it happens.
     """
 
     logger.info("Computing yearly NPV trajectories...")
@@ -461,6 +473,9 @@ def compute_yearly_npv_trajectories(
     has_decom = "decom_cost" in npv_data.columns
     if has_decom:
         agg_map["decom_cost"] = "sum"
+    # Capacity per asset-year, for the closure option's exit price only.
+    if closure_option and "asset_trajectory" in npv_data.columns:
+        agg_map["asset_trajectory"] = "max"
     pre_rows = len(npv_data)
     npv_data = npv_data.groupby(
         group_keys + ["year"], dropna=False, as_index=False
@@ -816,6 +831,23 @@ def compute_yearly_npv_trajectories(
                 )
                 terminal_value = np.where(retired_at_horizon, 0.0, terminal_value)
 
+    closure_year = None
+    if closure_option:
+        if shock_year is None:
+            raise ValueError("dcf.closure_option needs shock_year")
+        npv_data, terminal_value, closure_year = apply_closure_option(
+            npv_data,
+            gid,
+            starts,
+            sizes,
+            terminal_value,
+            anchor("scrap_usd_per_mw"),
+            int(shock_year),
+            [k for k in group_keys if k not in ("trajectory_type", "alignment_type")],
+            available_financial_cols,
+        )
+        npv_data["closure_year"] = closure_year[gid]
+
     # One terminal row per group with a non-zero terminal value, built as a
     # single frame (the old per-group Series.to_frame().T forced object dtype).
     add_groups = np.flatnonzero(terminal_value != 0)
@@ -860,6 +892,7 @@ def compute_yearly_npv_trajectories(
             "yearly_npv",
         ]
         + available_financial_cols
+        + (["closure_year"] if closure_option else [])
     )
     yearly_df = npv_data[[col for col in output_cols if col in npv_data.columns]].copy()
 

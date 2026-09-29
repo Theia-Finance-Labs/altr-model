@@ -23,6 +23,7 @@ PIPELINE_PARAMETERS = {
     "dcf.brown_discount_spread",
     "dcf.brown_remaining_life_years",
     "dcf.brown_technologies",
+    "dcf.closure_option",
     "dcf.discount_rate",
     "dcf.green_discount_spread",
     "dcf.negative_tv_method",
@@ -35,6 +36,7 @@ PIPELINE_PARAMETERS = {
     "dcf.terminal_value.method",
     "dcf.terminal_value.normalization_window",
     "dcf.tv_anchor_policy",
+    "shock_year",
 }
 
 
@@ -61,6 +63,8 @@ def create_pipeline(**kwargs) -> Pipeline:
                     "brown_remaining_life_years": "params:dcf.brown_remaining_life_years",
                     "negative_tv_method": "params:dcf.negative_tv_method",
                     "tv_anchor_policy": "params:dcf.tv_anchor_policy",
+                    "closure_option": "params:dcf.closure_option",
+                    "shock_year": "params:shock_year",
                 },
                 outputs="yearly_npv_trajectories",
                 name="calculate_yearly_npv_trajectories",
