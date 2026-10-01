@@ -16,6 +16,9 @@ from altr_model.pipelines.calculate_company_trajectories._baseline_nodes import 
 from altr_model.pipelines.prepare_scenario_asset_and_company_inputs._asset_preparation import (
     apply_reduce_granularity_from_asset_to_company_level,
 )
+from altr_model.pipelines.prepare_scenario_asset_and_company_inputs._carbon_price_fill import (
+    fill_missing_carbon_prices,
+)
 from altr_model.pipelines.prepare_scenario_asset_and_company_inputs._input_nodes import (
     allocate_assets_to_companies,
     apply_ccs_suffix,
@@ -60,6 +63,7 @@ def prepare_scenario_pathways(
     decom_cost_fraction_of_capex: float | None = None,
     capture_price: dict | None = None,
     price_floor: dict | None = None,
+    carbon_price_fill: str = "none",
 ) -> pd.DataFrame:
     """Filter scenarios once and add all downstream trajectory/model fields."""
     # Some scenarios.csv deliveries use "scenario_name" instead of "scenario"
@@ -71,6 +75,8 @@ def prepare_scenario_pathways(
         downloaded_scenarios = downloaded_scenarios.rename(
             columns={"scenario_name": "scenario"}
         )
+    # Before filtering: the fill reads the same scenario in OTHER models.
+    downloaded_scenarios = fill_missing_carbon_prices(downloaded_scenarios, carbon_price_fill)
     scenarios = filter_scenarios(
         downloaded_scenarios,
         target_scenario=target_scenario,
