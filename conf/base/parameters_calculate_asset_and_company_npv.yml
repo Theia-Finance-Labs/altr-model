@@ -189,3 +189,17 @@ dcf:
   # claims to be: a mild smoothing choice over comparable operating years, not
   # the lever that decides whether a retired asset has a terminal value at all.
   tv_anchor_policy: "operating"  # "raw" | "operating"
+
+# ── Company NPV floor (owner rulings 2026-09-29 and 2026-10-07) ─────────────────
+# Clips each company's baseline and late-and-sudden NPV at zero after netting
+# its technologies: a company loses at most everything, so npv_change cannot
+# fall below -100% (POLES ENGAGE, WITCH and IMAGE 3.0 carbon prices push some
+# companies far below it).
+# Values: false (DEFAULT) | true.
+# OFF by default because, summed across companies, the floor is asymmetric: a
+# negative baseline goes to 0 while the shock-case gain still counts. It flipped
+# the WITCH headline from -27.2% to +30.7% and the 2 Sep reference signal from
+# -3,980 to +1,936 bn. Turn it on for per-company reporting only. The raw sums
+# are always written as `baseline_npv_unfloored` / `latesudden_npv_unfloored`,
+# and aggregate totals should read those.
+company_npv_floor: false

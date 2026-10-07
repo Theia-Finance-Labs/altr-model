@@ -20,6 +20,7 @@ PIPELINE_OUTPUTS = {
     "yearly_npv_trajectories",
 }
 PIPELINE_PARAMETERS = {
+    "company_npv_floor",
     "dcf.brown_discount_spread",
     "dcf.brown_remaining_life_years",
     "dcf.brown_technologies",
@@ -79,7 +80,7 @@ def create_pipeline(**kwargs) -> Pipeline:
             ),
             node(
                 func=aggregate_to_company_npv,
-                inputs="company_technology_npv",
+                inputs=["company_technology_npv", "params:company_npv_floor"],
                 outputs="company_npv",
                 name="aggregate_npv_by_company",
             ),

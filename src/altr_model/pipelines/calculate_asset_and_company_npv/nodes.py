@@ -1037,7 +1037,9 @@ def aggregate_to_company_technology_npv(asset_npv: pd.DataFrame) -> pd.DataFrame
     return company_tech_npv
 
 
-def aggregate_to_company_npv(company_technology_npv: pd.DataFrame) -> pd.DataFrame:
+def aggregate_to_company_npv(
+    company_technology_npv: pd.DataFrame, company_npv_floor: bool = False
+) -> pd.DataFrame:
     """
     Node 3: Aggregate company-technology NPV to company level.
     """
@@ -1064,12 +1066,16 @@ def aggregate_to_company_npv(company_technology_npv: pd.DataFrame) -> pd.DataFra
         .reset_index()
     )
 
-    # Floor at zero (owner ruling 2026-09-29): a company loses at most
-    # everything, so npv_change cannot fall below -100%. Floored after netting
-    # technologies; the raw sums stay so totals still rebuild from assets.
+    # Optional floor at zero (`company_npv_floor`, rulings 2026-09-29 and
+    # 2026-10-07; OFF by default): a company loses at most everything, so
+    # npv_change cannot fall below -100%. Floored after netting technologies.
+    # Summed across companies it is asymmetric - a negative baseline goes to 0
+    # while the shock-case gain still counts - so aggregate headlines read the
+    # `*_unfloored` columns, which are always written.
     npv_cols = ["baseline_npv", "latesudden_npv"]
     unfloored = company_npv[npv_cols].copy()
-    company_npv[npv_cols] = unfloored.clip(lower=0.0)
+    if company_npv_floor:
+        company_npv[npv_cols] = unfloored.clip(lower=0.0)
 
     with np.errstate(divide="ignore", invalid="ignore"):
         base_c = company_npv["baseline_npv"].to_numpy(dtype=np.float64)
