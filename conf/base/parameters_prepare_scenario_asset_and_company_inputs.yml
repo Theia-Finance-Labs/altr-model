@@ -241,7 +241,7 @@ price_floor:
 # Values: "none" (DEFAULT) - prices as delivered; the partner-facing run.
 #         "peer_scenario_median" - a scenario at 0 in EVERY row takes, per year,
 #         the median over other providers of the SAME scenario name (ENGAGE
-#         protocols are shared; AIM's `900f` matches `900`) of each provider's
+#         protocols are shared; exact name, so `900f` never pools with `900`) of each provider's
 #         median-across-geographies price, in all its geographies. Filled rows
 #         carry `carbon_price_filled = True`. No priced peer -> stays 0 (GCAM
 #         NGFS, GCAM-PR, IMACLIM ADVANCE in the 2026-10-01 mart). Needs the

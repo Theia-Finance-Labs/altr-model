@@ -9,8 +9,10 @@ budget), so the same name in another model is the closest price available.
 Rule (owner ruling 2026-10-01): a scenario whose carbon price is 0 or missing
 in EVERY row takes, per year, the median over priced peer providers of each
 peer's median-across-geographies price, applied to all its geographies. A
-peer is another provider with the same protocol name (AIM's trailing `f`, as
-in `900f`, is ignored). No priced peer -> the scenario stays at 0. Must run
+peer is another provider with exactly the same protocol name: `900` (budget
+never exceeded) and `900f` (end-of-century budget, overshoot allowed) are
+different designs with different prices, so they are not pooled (ruling
+2026-10-06). No priced peer -> the scenario stays at 0. Must run
 BEFORE scenario filtering, which drops the peers.
 """
 
@@ -30,13 +32,12 @@ METHODS = ("none", "peer_scenario_median")
 
 
 def _protocol(scenario: pd.Series, provider: pd.Series) -> pd.Series:
-    """`AR6_<provider>_<protocol>` -> protocol, with AIM's `900f` read as `900`."""
+    """`AR6_<provider>_<protocol>` -> protocol."""
     prefix_len = provider.str.len() + len("AR6__")
-    stripped = pd.Series(
+    return pd.Series(
         [s[n:] if s.startswith(f"AR6_{p}_") else s for s, p, n in zip(scenario, provider, prefix_len)],
         index=scenario.index,
     )
-    return stripped.str.replace(r"(\d)f$", r"\1", regex=True)
 
 
 def fill_missing_carbon_prices(scenarios: pd.DataFrame, method: str) -> pd.DataFrame:
