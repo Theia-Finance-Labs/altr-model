@@ -158,7 +158,7 @@ company_ids:
 # Values: a number in [0, 1] rewrites scrap as -(fraction × capex_usd_per_mw)
 # for every scenario row, so BOTH consumers move together; null keeps the
 # delivered column (the 50% convention the golden was pinned under, kept
-# reachable for comparison). DEFAULT 0.15 by owner ruling (Jakub, 2026-09-04),
+# reachable for comparison). DEFAULT 0.15 by owner ruling (2026-09-04),
 # measured on the full universe as arms R11/R13 in
 # docs/superpowers/plans/measurement-batch-results.md.
 decom_cost_fraction_of_capex: 0.15
@@ -236,7 +236,7 @@ price_floor:
 # Six AR6 providers (AIM/CGE 2.2, COFFEE 1.1, GCAM 5.2/5.3, GCAM-PR 5.3, IMACLIM
 # 1.1) publish no regional Price|Carbon, so their scenarios arrive at 0 and
 # fossil plants pay nothing for carbon. There is no World-level series to fall
-# back on (Bertrand, 2026-09-30), and one global median would give every
+# back on (scenario data team, 2026-09-30), and one global median would give every
 # scenario the same price, erasing the baseline/target gap.
 # Values: "none" (DEFAULT) - prices as delivered; the partner-facing run.
 #         "peer_scenario_median" - a scenario at 0 in EVERY row takes, per year,
