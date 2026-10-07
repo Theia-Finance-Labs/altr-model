@@ -169,9 +169,23 @@ def check_ownership_allocation(frame: pd.DataFrame) -> None:
         f"within 99-101%={100 * sums.between(99, 101).mean():.1f}%"
     )
     if over > OVER_ALLOCATION_SHARE:
+        # Per tier, so a clean tier is not hidden behind a dirty one: the
+        # default run reads only the `ownership_type` tier (direct).
+        by_tier = (
+            ", ".join(
+                f"{tier} {share:.1%}"
+                for tier, share in (sums > OVER_ALLOCATION_PCT)
+                .groupby(level=tier_column)
+                .mean()
+                .items()
+            )
+            if tier_column
+            else "no tier column"
+        )
         warnings.warn(
             f"companies: {over:.1%} of asset-year-tiers sum to "
-            f">{OVER_ALLOCATION_PCT}% (median {sums.median():.1f}%). Within a "
+            f">{OVER_ALLOCATION_PCT}% (by tier: {by_tier}; a run reads only "
+            f"the `ownership_type` tier). Median {sums.median():.1f}%. Within a "
             "single ownership tier the rows must partition the asset (sum to "
             "100%) -- a tier that is over-allocated is fixed upstream, not by "
             "`_consolidate_ownership_stakes` (its merge is sum-preserving) nor "

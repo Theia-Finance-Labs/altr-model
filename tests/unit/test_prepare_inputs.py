@@ -297,3 +297,22 @@ def test_multi_tier_export_does_not_warn_when_each_tier_partitions():
     with warnings.catch_warnings():
         warnings.simplefilter("error")  # any warning becomes an error
         check_ownership_allocation(frame)  # must not warn
+
+
+def test_over_allocation_warning_names_the_share_per_tier():
+    """A clean direct tier must stay visible next to a chain-flattened equity tier.
+
+    The 2 Sep marts file: direct sums to 100% everywhere, equity lists every
+    rung of the chain at look-through (Ministry 100% + Government 100%). The
+    pooled share (here 50%) read as "the run is inflated" although the default
+    `tier_filter` on "direct" never sees the equity rows.
+    """
+    frame = pd.DataFrame(
+        [
+            {"asset_id": "A1", "year": 2030, "ownership_percentage": 100.0, "ownership_type": "direct"},
+            {"asset_id": "A1", "year": 2030, "ownership_percentage": 100.0, "ownership_type": "equity"},
+            {"asset_id": "A1", "year": 2030, "ownership_percentage": 100.0, "ownership_type": "equity"},
+        ]
+    )
+    with pytest.warns(UserWarning, match=r"direct 0\.0%, equity 100\.0%"):
+        check_ownership_allocation(frame)
