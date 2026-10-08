@@ -60,16 +60,6 @@ asset_horizon_attributes:
   type: pandas.CSVDataset
   filepath: data/07_model_output/asset_horizon_attributes.csv
 
-# # Company-technology level aggregated earnings
-# company_technology_earnings:
-#   type: pandas.CSVDataset
-#   filepath: data/07_model_output/company_technology_earnings.csv
-
-# # Company level aggregated earnings
-# company_earnings:
-#   type: pandas.CSVDataset
-#   filepath: data/07_model_output/company_earnings.csv
-
 # ================================================
 # ================== VALUATION MODEL OUTPUTS ===
 # ================================================

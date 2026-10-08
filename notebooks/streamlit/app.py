@@ -297,18 +297,14 @@ def render_step_parameters() -> None:
                     value=int(staggered_defaults.get("n_quantiles", 3)), step=1, key="p_n_quantiles",
                 )
 
-            col6, col7, col8 = st.columns(3)
+            col6, col7 = st.columns(2)
             with col6:
                 include_growth_capex = st.checkbox(
                     "include_growth_capex", value=bool(defaults.get("include_growth_capex", False)), key="p_growth_capex",
                 )
             with col7:
-                include_replacement_capex = st.checkbox(
-                    "include_replacement_capex", value=bool(defaults.get("include_replacement_capex", False)), key="p_repl_capex",
-                )
-            with col8:
                 include_decom_costs = st.checkbox(
-                    "include_decom_costs", value=bool(defaults.get("include_decom_costs", False)), key="p_decom",
+                    "include_decom_costs", value=bool(defaults.get("include_decom_costs", True)), key="p_decom",
                 )
             col9, col10 = st.columns(2)
             with col9:
@@ -325,26 +321,33 @@ def render_step_parameters() -> None:
             dcf_defaults = defaults.get("dcf", {})
             col11, col12 = st.columns(2)
             with col11:
-                discount_rate_baseline = st.number_input(
-                    "dcf.discount_rate_baseline",
-                    value=float(dcf_defaults.get("discount_rate_baseline", 0.07)), format="%.3f", key="p_disc_base",
+                discount_rate = st.number_input(
+                    "dcf.discount_rate",
+                    value=float(dcf_defaults.get("discount_rate", 0.07)), format="%.3f", key="p_disc_rate",
                 )
             with col12:
-                discount_rate_shock = st.number_input(
-                    "dcf.discount_rate_shock",
-                    value=float(dcf_defaults.get("discount_rate_shock", 0.07)), format="%.3f", key="p_disc_shock",
+                brown_discount_spread = st.number_input(
+                    "dcf.brown_discount_spread", min_value=0.0,
+                    value=float(dcf_defaults.get("brown_discount_spread", 0.0)), format="%.3f", key="p_brown_spread",
                 )
             terminal_defaults = dcf_defaults.get("terminal_value", {})
-            col13, col14 = st.columns(2)
+            col13, col14, col15 = st.columns(3)
             with col13:
                 terminal_value_method = st.selectbox(
                     "dcf.terminal_value.method", ["perpetuity", "none"],
                     index=["perpetuity", "none"].index(terminal_defaults.get("method", "perpetuity")), key="p_terminal_method",
                 )
+            # g_real_default is only a fallback for a null brown/green rate, so
+            # the two rates that actually apply are what the app exposes.
             with col14:
-                g_real_default = st.number_input(
-                    "dcf.terminal_value.g_real_default",
-                    value=float(terminal_defaults.get("g_real_default", 0.02)), format="%.3f", key="p_g_real",
+                g_real_brown = st.number_input(
+                    "dcf.terminal_value.g_real_brown",
+                    value=float(terminal_defaults.get("g_real_brown", 0.0)), format="%.3f", key="p_g_brown",
+                )
+            with col15:
+                g_real_green = st.number_input(
+                    "dcf.terminal_value.g_real_green",
+                    value=float(terminal_defaults.get("g_real_green", 0.02)), format="%.3f", key="p_g_green",
                 )
 
             params.update({
@@ -357,16 +360,16 @@ def render_step_parameters() -> None:
                     "n_quantiles": int(staggered_n_quantiles),
                 },
                 "include_growth_capex": bool(include_growth_capex),
-                "include_replacement_capex": bool(include_replacement_capex),
                 "include_decom_costs": bool(include_decom_costs),
                 "apply_continued_om_baseline": bool(apply_continued_om_baseline),
                 "apply_continued_om_shock": bool(apply_continued_om_shock),
                 "dcf": {
-                    "discount_rate_baseline": float(discount_rate_baseline),
-                    "discount_rate_shock": float(discount_rate_shock),
+                    "discount_rate": float(discount_rate),
+                    "brown_discount_spread": float(brown_discount_spread),
                     "terminal_value": {
                         "method": terminal_value_method,
-                        "g_real_default": float(g_real_default),
+                        "g_real_brown": float(g_real_brown),
+                        "g_real_green": float(g_real_green),
                     },
                 },
             })

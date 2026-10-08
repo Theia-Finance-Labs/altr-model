@@ -55,9 +55,13 @@ include_decom_costs: True          # Include decommissioning costs for retired a
 # decreasing-technology (high-carbon alignment) assets on the covered
 # trajectory; every other row is charged on actual capacity regardless.
 apply_continued_om_baseline: False
-# The single biggest stranding lever: on the fixture slice, turning this off
-# moves the median npv_change from -0.42 to -0.16. Same first-year-capacity
-# mechanics as the baseline switch above, applied to the shock pathway.
+# Same first-year-capacity mechanics as the baseline switch above, applied to
+# the shock pathway. Measured: on the full universe, turning this off moves the
+# headline shock-minus-baseline NPV by -165 bn, 4.8% of the signal, towards a
+# worse shock (R9 in docs/superpowers/plans/measurement-batch-results.md); on
+# the committed fixture slice (721 asset rows, five companies) it moves the
+# headline from +21.2 bn to +10.6 bn while the asset-level median npv_change
+# barely moves (-0.012 to -0.014). The baseline pathway is untouched either way.
 apply_continued_om_shock: True
 
 # ── Dispatch floor ────────────────────────────────────────────────────────────────

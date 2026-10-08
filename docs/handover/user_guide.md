@@ -243,15 +243,15 @@ after copying the previous outputs somewhere else, because a re-run overwrites
 The switches with the largest, most interpretable effect on the headline number:
 
 * **`apply_continued_om_shock`** (`True`/`False`, in
-  `parameters_calculate_asset_earnings.yml`) - the single biggest stranding
-  lever. When it is on, a decreasing-technology asset on the shock pathway pays
+  `parameters_calculate_asset_earnings.yml`) - the stranded-cost lever. When
+  it is on, a decreasing-technology asset on the shock pathway pays
   fixed O&M on its **first-year** capacity every year, not on the capacity it
   still has. A plant whose output the shock cuts to a fraction keeps paying the
   full fixed bill it can no longer earn against, and its shock NPV collapses.
-  Turn it off and stranding largely disappears from the result - which is
-  exactly why the shipped default has it on for the shock pathway and off for
-  the baseline (`apply_continued_om_baseline: False`). Flipping both to the same
-  value removes the asymmetry and, with it, most of the transition signal.
+  Turn it off and that stranded-cost charge disappears from the shock pathway -
+  which is exactly why the shipped default has it on for the shock pathway and
+  off for the baseline (`apply_continued_om_baseline: False`). Flipping both to
+  the same value removes the asymmetry.
 
     Why the asymmetry is deliberate: under a disorderly transition a plant
     sheds output faster than it sheds its fixed cost base - contracts, staffing
@@ -259,10 +259,15 @@ The switches with the largest, most interpretable effect on the headline number:
     the baseline pathway the plant winds down on schedule and sheds costs on
     schedule. The asymmetry is the stranded-cost mechanism itself, not an
     accounting trick. Size it on your own data before you present: flip the
-    switch, re-run, diff `company_npv.csv`. On the committed fixture slice,
-    turning `apply_continued_om_shock` off moves the median `npv_change` from
-    -0.42 to -0.16 - the switch carries roughly 60% of the median signal there,
-    and per-company effects range far wider.
+    switch, re-run, diff `company_npv.csv`. Measured on the full universe (R9
+    in `docs/superpowers/plans/measurement-batch-results.md`), turning
+    `apply_continued_om_shock` off moves the headline shock-minus-baseline NPV
+    by -165 bn, 4.8% of the signal, and towards a *worse* shock rather than a
+    milder one. On the committed fixture slice (721 asset rows across five
+    companies) the same flip moves the headline from +21.2 bn to +10.6 bn and
+    flips the sign of `npv_change` for 32 assets, while the asset-level median
+    `npv_change` barely moves (-0.012 to -0.014); per-company moves range from
+    -0.30 to +0.05.
 * **`dcf.discount_rate`** (in `parameters_calculate_asset_and_company_npv.yml`)
   - the one real rate for both pathways. See [Discount rates](#discount-rates)
   below.

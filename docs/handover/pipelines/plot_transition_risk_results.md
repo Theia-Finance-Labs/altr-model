@@ -42,16 +42,6 @@ The output directories are hardcoded in `nodes.py` rather than declared in
 - `data/08_reporting/asset_financial_trajectories/` — deleted and recreated on
   every run, so it can never mix stale figures with fresh ones
 
-!!! warning "Functions in `nodes.py` that are not nodes"
-    `nodes.py` also defines `reporting_validate_inputs`, `build_reporting_views`,
-    `plot_earnings_inner_workings`, `plot_valuation_authority_pack`,
-    `export_reporting_tables` and `reporting_qc_summary` — and those functions
-    carry the hardcoded `data/08_reporting/earnings_inner/`, `authority_pack/`
-    and `tables/` paths. **None of them is wired into `pipeline.py`**, so none
-    of them runs. A run of this tree produces no `validation_summary`, no
-    `compliance_ready/` export tables and no QC summary. Treat them as unwired
-    code, not as output you can expect.
-
 !!! warning "These paths cannot be redirected by configuration"
     Because they are literals in the node functions, a `conf/<env>/catalog.yml`
     override cannot move them — including in the `fixture` environment. That is

@@ -83,9 +83,11 @@ dcf:
     g_real_default: 0.02  # 2% real terminal growth rate (fallback)
     # WHICH rate an asset grows at is decided by the SAME `brown_technologies`
     # list above, not by `alignment_type` (owner ruling 13). The carrier matters
-    # more here than it does for the discount spread: the spread moves the
-    # perpetuity denominator by 100 bps, g moves it by 200, and on the shipped
-    # rates the two ends are 1/(0.08 - 0.00) = 12.5x and 1/(0.07 - 0.02) = 20x.
+    # more here than it does for the discount spread: the +100 bps spread
+    # sensitivity moves the perpetuity denominator by 100 bps, g moves it by
+    # 200, and on the shipped rates (7%, spread 0) the two ends are
+    # 1/(0.07 - 0.00) = 14.3x and 1/(0.07 - 0.02) = 20x; with the spread on,
+    # the brown end is 1/(0.08 - 0.00) = 12.5x.
     # For the assets this ruling actually moves — offshore wind and nuclear,
     # which are not on the list but were classed `misaligned_high_carbon` and so
     # grew at the fossil 0% — the rate stays at 7% and the multiple goes
@@ -117,7 +119,7 @@ dcf:
   brown_remaining_life_years: 10   # fallback remaining life for the bounded negative TV where an asset carries none
 
   # ── Bounded negative terminal value (decision D3) ───────────────────────────
-  # What a NON-stranded group losing money at the horizon is worth. Tier 3 above
+  # What a NON-stranded group losing money at the horizon is worth. Tier 2 above
   # hands it a Gordon Growth perpetuity, and on a negative cash flow that is
   # UNBOUNDED BELOW: the asset is valued at less than nothing, forever. 2,699
   # groups — 5.18% of the golden run — took one.

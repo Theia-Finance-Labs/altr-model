@@ -38,7 +38,10 @@ first.
 - `notebooks/`       exploratory analysis; only `walkthrough.ipynb` ships.
 - `scripts/`         `prepare_inputs.py` and `gen_param_docs.py` ship;
                      `build_export.py` and `sanitize_check.py` are
-                     internal-only export tooling. Golden pinning moved out to
+                     internal-only export tooling; `stage_marts_inputs.py`
+                     (marts drop -> deliverables contract) and `benchmarks/`
+                     (full-universe measurement harness) are internal-only
+                     maintainer tools. Golden pinning moved out to
                      `tests/golden/pin_golden.py`.
 - `tests/`           pytest suite, including the fixture regression gate.
 
@@ -59,10 +62,13 @@ Two suites need internal data and fail rather than skip without it:
   pattern and `test_fixture_ids_licensed.py` gates the licence; adding a
   `company-id` suppression for `conf/` is forbidden.
 
-## workspace/ convention (Bertrand, 2026-09-03)
+## workspace/ convention (Bertrand, 2026-09-03; revised 2026-10-08)
 `workspace/` is untracked scratch for ad-hoc/internal scripts (file selection,
-column slicing, one-off staging). `scripts/` holds only long-run tools:
-recipient-facing ingestion (prepare_inputs.py), docs generation
-(gen_param_docs.py), and the sanitized-delivery mechanism (build_export.py,
-sanitize_check.py, export_allowlist.txt) — data itself is delivered via the
-separately-shared Dropbox locations, never via this repository.
+column slicing, one-off experiments) and run outputs. Nothing under it is
+committed; a script worth keeping moves to `scripts/`. `scripts/` holds the
+long-run tools: recipient-facing ingestion (prepare_inputs.py), docs
+generation (gen_param_docs.py), the sanitized-delivery mechanism
+(build_export.py, sanitize_check.py, export_allowlist.txt), and the internal
+maintainer tools (stage_marts_inputs.py, benchmarks/). Only the files the
+allowlist names ship. Data itself is delivered via the separately-shared
+Dropbox locations, never via this repository.
