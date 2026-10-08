@@ -142,3 +142,124 @@ Capex (bn USD, both trajectories summed) and total capacity (GW):
 **Run ledger.** A2 256 s **29/29** ✓; A3 258 s **29/29** ✓; A4 275 s **29/29** ✓; A5 307 s **29/29** ✓ (second attempt); A6 270 s **29/29** ✓ — all compared. A1 failed at 17/29 after 2,588 s (disk exhaustion). A5's first attempt failed at 0/29 in 2 s (params defect above) and a later re-run was killed mid-flight when the machine slept; the run reported here is a clean 29/29. Two infrastructure interruptions (a network drop and a machine sleep) killed in-flight runs; those were restarted rather than reported as model behaviour.
 
 **`npv_change` NaN count is stable at 13** in the golden run and in every completed ablation — the zero-baseline-NPV companies, correctly `NaN` rather than `±inf`.
+
+---
+
+## Addendum (2026-09-04) — running the batch against `feat/decision-proposals`
+
+Written while fixing the dual review of that branch. Everything below was
+measured on the committed fixture slice at that branch's tip, not estimated.
+
+### The `--params` dcf-replacement trap has got worse
+
+The caveat above ("all 11 sibling `dcf` keys vanish") still holds, and the
+number has grown. The `dcf` block now carries **12 top-level keys**, and the
+valuation pipeline reads **16 dotted paths** once `terminal_value`'s five
+sub-keys are counted:
+
+```
+discount_rate_baseline   discount_rate_shock      brown_discount_spread
+green_discount_spread    spread_carrier           brown_technologies
+terminal_value{method, g_real_default, g_real_brown, g_real_green,
+               normalization_window}
+stranding_aware_tv       stranding_consecutive_years
+brown_remaining_life_years  negative_tv_method    tv_anchor_policy
+```
+
+Overriding ANY of them means respecifying ALL of them. This bit again during
+this session's measurement runs — a `{"dcf": {"spread_carrier": ...}}` override
+killed the run in two seconds with fourteen missing `params:dcf.*` inputs — so
+treat it as a certainty, not a hazard. The reliable pattern is to load the
+shipped block and splat it:
+
+```python
+shipped = yaml.safe_load(Path("conf/base/parameters_calculate_asset_and_company_npv.yml").read_text())["dcf"]
+extra_params = {"dcf": {**shipped, "spread_carrier": "alignment_type"}}
+```
+
+Flat top-level keys (`retirement_timing`, `apply_continued_om_shock`) are
+unaffected and can be passed on their own.
+
+### The ablation matrix has two kinds of row
+
+Not every decision on the branch is reachable by flipping a config value. Mixing
+the two kinds silently produces a matrix with unrunnable cells.
+
+**Toggle arms** — both behaviours reachable from config, so a one-switch
+ablation against the baseline is a single run:
+
+| Arm | Values | Decision |
+| --- | --- | --- |
+| `dcf.negative_tv_method` | `"perpetuity"` \| `"bounded_annuity"` | D3 |
+| `retirement_timing` | `"deferred_to_window"` \| `"natural"` | D9 |
+| `dcf.tv_anchor_policy` | `"raw"` \| `"operating"` | ruling 11 |
+| `dcf.spread_carrier` | `"technology"` \| `"alignment_type"` (pair with `green_discount_spread: 0.005`) | rulings 12 + 13 |
+| `dcf.brown_discount_spread` | `0.01` \| `0` | the spread's own magnitude |
+| g-uniform | `g_real_brown = g_real_green = 0.02` | the growth split's magnitude |
+| `apply_continued_om_shock` | `True` \| `False` | continued O&M on the shock path |
+
+**Branch-comparison only** — no config arm exists, so the effect is measured by
+running the same fixture at two commits:
+
+| Change | Why there is no arm |
+| --- | --- |
+| `dynamic_marginal_ef` deletion (ruling 14) | The code path was removed outright. `carbon_cost_method` survives, but its two branches coincide on today's inputs — the market-clearing adjustment that produced `marginal_emission_factor` is retired, so the column never arrives and the marginal EF is 0 either way. |
+| O&M zero-stop (ruling 15) | Bug-class fix, not a methodological choice. Adding a switch to reach the old behaviour would be shipping a knob whose only setting is "wrong". |
+| Past-lifetime exit arm (C2) | Rides inside `negative_tv_method: "bounded_annuity"`. Isolating it means comparing commits, not values. |
+
+For the two rulings that DO now have arms only because this fix cycle added
+them (`spread_carrier`, and `green_discount_spread` alongside it), note that
+before that they were branch-comparison-only too — the pre-ruling behaviour had
+been deleted from the tree.
+
+### D3 shifts a census bucket, it does not create one
+
+The valuation node logs a terminal-value tier census at `INFO`. Flipping
+`negative_tv_method` moves groups **between** buckets and changes no other
+count. On the fixture, of 1,442 groups:
+
+| `negative_tv_method` | stranded | annuity | bounded negative | perpetuity | no anchor |
+| --- | --- | --- | --- | --- | --- |
+| `"perpetuity"` | 80 | 33 | 0 | **627** | 702 |
+| `"bounded_annuity"` | 80 | 33 | **2** | **625** | 702 |
+
+Exactly two groups move out of the perpetuity bucket and into the bounded
+negative one; stranded, annuity and no-anchor are untouched. When reading the
+census across arms, compare the perpetuity and bounded-negative columns as a
+PAIR — a drop in "perpetuity" here is a reclassification, not a loss of coverage,
+and reading either column alone will suggest a change that did not happen.
+
+### Disk budget: `asset_horizon_attributes` is a new persisted output
+
+Stage 4 now writes a second table. It is one row per asset SERIES rather than
+per asset-year, so it is small — on the fixture, **213 KB against
+`asset_earnings`'s 13.96 MB**, about 1.5%. Budget for it at full-universe scale
+at roughly the same ratio and it will not be what fills the volume. Given that
+A1 already died at `[Errno 28] No space left on device` with 1-2 GiB free, the
+point is not that this table is large but that the free-space margin is thin
+enough that a new output has to be counted at all.
+
+### `retirement_timing` and `tv_anchor_policy` do not interact
+
+Measured, not assumed: the full 2x2 on the fixture, in absolute NPV.
+
+| | `tv_anchor_policy: raw` | `tv_anchor_policy: operating` |
+| --- | --- | --- |
+| `deferred_to_window` | baseline 13,497,110,317.75 / shock -4,685,794,990.12 | baseline 13,505,910,352.60 / shock -4,649,316,281.37 |
+| `natural` | baseline -23,449,821,315.70 / shock -17,775,464,326.01 | baseline -23,441,021,280.85 / shock -17,738,985,617.26 |
+
+Decomposed against the `deferred_to_window` + `raw` corner:
+
+| Pathway | retirement effect | anchor effect | sum of singles | joint | interaction |
+| --- | --- | --- | --- | --- | --- |
+| baseline | -36,946,931,633.45 | +8,800,034.85 | -36,938,131,598.60 | -36,938,131,598.60 | **0.00** |
+| shock | -13,089,669,335.89 | +36,478,708.75 | -13,053,190,627.14 | -13,053,190,627.14 | **0.00** |
+
+The interaction is exactly zero on both pathways — not small, zero — so these
+two arms are separable and the batch does not need their cross cell. That is
+what the one-switch design assumes throughout; this is the first pair where it
+has been checked rather than assumed, and it should be checked for at least one
+more pair before the assumption is relied on generally. The obvious candidate is
+`negative_tv_method` x `tv_anchor_policy`, which have a mechanical reason to
+interact: the operating anchor's zero-capacity rule fires on groups the bounded
+negative branch would otherwise have priced.

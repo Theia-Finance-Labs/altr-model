@@ -746,3 +746,300 @@ def determine_lifetime_per_technology(
     return unique_combinations
 
 
+# Share of new-build cost charged at retirement: 0 = free exit, 1 = a full rebuild.
+DECOM_FRACTION_BOUNDS = (0.0, 1.0)
+
+
+def apply_decom_cost_fraction(
+    scenarios: pd.DataFrame, fraction: float | None
+) -> pd.DataFrame:
+    """Recalibrate ``scrap_usd_per_mw`` as ``-fraction * capex_usd_per_mw``.
+
+    The marts drop delivers scrap at ``-capital_cost / 2``: retiring a plant is
+    charged half its build cost. ``None`` keeps the delivered column. A number
+    rewrites it for every scenario row, so both consumers -- the in-window
+    decommissioning charge and the terminal value's decommissioning floor --
+    price retirement at the same share of new-build cost. Kept negative: the
+    charge site takes ``abs()``.
+    """
+    if fraction is None:
+        return scenarios
+    lo, hi = DECOM_FRACTION_BOUNDS
+    if not (lo <= float(fraction) <= hi):
+        raise ValueError(
+            "decom_cost_fraction_of_capex must be within [0, 1] or null "
+            f"(share of capex_usd_per_mw charged at retirement); got {fraction!r}"
+        )
+    if "capex_usd_per_mw" not in scenarios.columns:
+        raise ValueError(
+            "decom_cost_fraction_of_capex needs the capex_usd_per_mw column, "
+            "which prepare_scenario_pathways derives from capital_cost_usd_per_mw"
+        )
+    return scenarios.assign(
+        scrap_usd_per_mw=-float(fraction) * scenarios["capex_usd_per_mw"]
+    )
+
+
+# Capture-price factors after Hirth (2013), "The market value of variable
+# renewables", Energy Economics 38. Hirth measures the VALUE FACTOR of wind and
+# solar (generation-weighted capture price / average system price) and finds
+# it falling with market share: wind from ~1.1 at zero share to 0.5-0.8 at 30%,
+# solar reaching the same by ~15%. The model otherwise pays every technology the
+# regional annual-average price. Dispatchable plant takes the residual so that
+# generation-weighted capture prices still average to the system price.
+def _generation_mwh(frame: pd.DataFrame) -> pd.Series:
+    """Generation per scenario row: ``scenario_pathway`` × ``scenario_capacity_factor`` × 8760.
+
+    For power technologies the extract's ``scenario_pathway`` is CAPACITY in MW
+    (labelled MWh/yr — a unit-label bug in ar6_scenario_workflow, commit
+    a93e2e1, confirmed 2026-09-05), so generation has to be rebuilt from it.
+    Where the capacity factor is absent or unusable the pathway is used as
+    delivered, which keeps hand-built frames without that column meaningful.
+    """
+    pathway = pd.to_numeric(frame["scenario_pathway"], errors="coerce")
+    if "scenario_capacity_factor" not in frame.columns:
+        return pathway
+    cf = pd.to_numeric(frame["scenario_capacity_factor"], errors="coerce")
+    cf = cf.where(np.isfinite(cf) & (cf > 0))
+    return (pathway * cf * 8760).where(cf.notna(), pathway)
+
+
+CAPTURE_PRICE_METHODS = ("none", "hirth2013")
+CAPTURE_WIND_TECHNOLOGIES = ("WindCap - Onshore", "WindCap - Offshore")
+CAPTURE_SOLAR_TECHNOLOGIES = ("SolarCap - PV",)
+_REGION_YEAR_KEYS = ["scenario", "scenario_geography", "year"]
+# Below this residual generation share the dispatchable factor is undefined (all-VRE).
+_CAPTURE_MIN_RESIDUAL_SHARE = 1e-9
+
+
+def compute_capture_price_factor(
+    scenarios: pd.DataFrame, params: dict | None
+) -> pd.DataFrame:
+    """Add ``capture_price_factor`` per scenario row (1.0 under ``method: none``).
+
+    Shares are computed on LEAF technologies only: the extract also carries
+    aggregate parents (``CoalCap`` = ``CoalCap - w/o CCS`` + ``CoalCap - w/ CCS``),
+    which would double-count generation. Wind and PV take Hirth's linear
+    value-factor-in-share form (floored); every other technology, CSP and the
+    parents included, takes the dispatchable residual (capped).
+    """
+    params = params or {}
+    method = params.get("method", "none")
+    if method not in CAPTURE_PRICE_METHODS:
+        raise ValueError(
+            f"capture_price.method must be one of {CAPTURE_PRICE_METHODS}; got {method!r}"
+        )
+    if method == "none":
+        return scenarios.assign(capture_price_factor=1.0)
+
+    techs = set(scenarios["technology"].unique())
+    parents = {t for t in techs if any(o.startswith(t + " - ") for o in techs)}
+    leaf = scenarios[~scenarios["technology"].isin(parents)].assign(
+        _generation=lambda f: _generation_mwh(f)
+    )
+    total = leaf.groupby(_REGION_YEAR_KEYS)["_generation"].sum().rename("total")
+    wind = (
+        leaf[leaf["technology"].isin(CAPTURE_WIND_TECHNOLOGIES)]
+        .groupby(_REGION_YEAR_KEYS)["_generation"]
+        .sum()
+        .rename("wind")
+    )
+    solar = (
+        leaf[leaf["technology"].isin(CAPTURE_SOLAR_TECHNOLOGIES)]
+        .groupby(_REGION_YEAR_KEYS)["_generation"]
+        .sum()
+        .rename("solar")
+    )
+    sh = pd.concat([total, wind, solar], axis=1).fillna(0.0)
+    positive = sh["total"] > 0
+    s_w = (sh["wind"] / sh["total"]).where(positive, 0.0)
+    s_s = (sh["solar"] / sh["total"]).where(positive, 0.0)
+    floor, cap = float(params["vre_floor"]), float(params["dispatchable_cap"])
+    vf_w = (params["wind_intercept"] + params["wind_slope"] * s_w).clip(lower=floor)
+    vf_s = (params["solar_intercept"] + params["solar_slope"] * s_s).clip(lower=floor)
+    residual_share = 1.0 - s_w - s_s
+    vf_d = (
+        (
+            (1.0 - s_w * vf_w - s_s * vf_s)
+            / residual_share.where(residual_share > _CAPTURE_MIN_RESIDUAL_SHARE)
+        )
+        .fillna(1.0)
+        .clip(upper=cap)
+    )
+    factors = pd.DataFrame({"_vf_w": vf_w, "_vf_s": vf_s, "_vf_d": vf_d})
+    out = scenarios.merge(
+        factors, left_on=_REGION_YEAR_KEYS, right_index=True, how="left"
+    )
+    is_wind = out["technology"].isin(CAPTURE_WIND_TECHNOLOGIES)
+    is_solar = out["technology"].isin(CAPTURE_SOLAR_TECHNOLOGIES)
+    out["capture_price_factor"] = np.where(
+        is_wind, out["_vf_w"], np.where(is_solar, out["_vf_s"], out["_vf_d"])
+    )
+    return out.drop(columns=["_vf_w", "_vf_s", "_vf_d"])
+
+
+# Long-run-marginal-cost price floor. IAM electricity prices are annual
+# marginal-cost shadow prices; under WITCH, MESSAGE and REMIND they sit below
+# the full cost of the plants those pathways keep building. In long-run
+# equilibrium the average price must at least cover the levelised cost of the
+# price-setting entrant, or nothing gets built (peak-load pricing, Boiteux).
+PRICE_FLOOR_METHODS = ("none", "lrmc")
+#: Technologies that can set the price: the region-year's largest thermal
+#: generator by scenario pathway. Nuclear and hydro are price-takers in practice.
+PRICE_SETTING_TECHNOLOGY_PREFIXES = ("CoalCap", "GasCap", "OilCap", "BiomassCap")
+HOURS_PER_YEAR = 8760
+#: The floor is one number per region-year, shared by every scenario in the run.
+_FLOOR_KEYS = ["scenario_geography", "year"]
+#: A real cost of capital must be a rate strictly between these bounds.
+DISCOUNT_RATE_BOUNDS = (0.0, 1.0)
+
+
+def capital_recovery_factor(rate: float, lifetime_years) -> float:
+    """Annuity factor: the equal yearly payment that repays one unit of capital
+    over ``lifetime_years`` at ``rate`` -- r(1+r)^L / ((1+r)^L - 1), evaluated
+    in the overflow-free form r / (1 - (1+r)^-L) so that any finite positive
+    lifetime, however long, returns a finite number (it tends to r)."""
+    return rate / -np.expm1(-lifetime_years * np.log1p(rate))
+
+
+def apply_lrmc_price_floor(
+    scenarios: pd.DataFrame, params: dict | None, baseline_scenario: str | None = None
+) -> pd.DataFrame:
+    """Lift ``power_price_excarbon_usd_per_mwh`` to the price-setter's LRMC.
+
+    The floor is derived from the BASELINE scenario only and applied, by
+    region x year, to every scenario in the frame. It represents the long-run
+    cost level a market must pay in the counterfactual; the transition changes
+    prices through the IAM target price and the carbon charge, not through the
+    floor. The consequence to keep in mind: the floor never falls in the
+    transition, even where the target pathway's own marginal entrant becomes
+    cheaper, so late-transition target prices below the fossil-era cost level
+    are lifted and target-pathway revenues with them.
+    Deriving it from the target pathway would also be unsafe: in the
+    2026-09-01 extract the target scenarios carry capacity factors of ~1e-12
+    for phased-out thermal technologies alongside unchanged generation
+    columns, which turns capital cost per MWh into 1e12.
+
+    Per region x year of the baseline, the price-setting technology is the LEAF
+    thermal technology with the largest finite positive ``scenario_pathway``
+    among those whose cost inputs are USABLE. The bare family names
+    (``CoalCap``, ``GasCap``, ``OilCap``, ``BiomassCap``) are aggregate parents
+    in the extract and are never candidates, nor is any name that another
+    name extends with `` - ``. A candidate is usable only when fuel price,
+    efficiency, O&M, capital cost, capacity factor and lifetime are all finite
+    and strictly positive; an unusable candidate is skipped and the next
+    largest usable one sets the price, so one broken row does not remove a
+    region-year's floor. The levelised cost per MWh is
+    ``fuel_price / efficiency + om / hours + capex x CRF(rate, lifetime) / hours``
+    with ``hours = capacity_factor x 8760``, all from the setter's own row.
+    The floor is ONE market price: every technology in the region-year receives
+    ``max(price, floor)`` (a missing price takes the floor). ``scenario_price``
+    keeps the raw IAM value for audit; ``price_floor_lrmc`` reports the floor
+    and ``price_setter_technology`` the setter. Both are empty (0.0 / None) --
+    and the price is left exactly as delivered, negative or zero included --
+    wherever no usable candidate exists or the method is ``none``. Ties on
+    generation resolve by technology name, independent of row order. The
+    setter's name is not part of the financial surface carried downstream. The
+    returned frame carries a fresh RangeIndex.
+    """
+    params = params or {}
+    method = params.get("method", "none")
+    if method not in PRICE_FLOOR_METHODS:
+        raise ValueError(
+            f"price_floor.method must be one of {PRICE_FLOOR_METHODS}; got {method!r}"
+        )
+    if method == "none":
+        return scenarios.assign(price_floor_lrmc=0.0, price_setter_technology=None)
+    try:
+        rate = float(params.get("discount_rate"))
+    except (TypeError, ValueError):
+        rate = float("nan")
+    lo, hi = DISCOUNT_RATE_BOUNDS
+    if not (lo < rate < hi):
+        raise ValueError(
+            "price_floor.discount_rate must be a real rate within (0, 1), e.g. 0.08; "
+            f"got {params.get('discount_rate')!r}"
+        )
+
+    if baseline_scenario is None:
+        raise ValueError(
+            "price_floor.method 'lrmc' needs the baseline_scenario name to derive "
+            "the floor from"
+        )
+    if "scenario" not in scenarios.columns:
+        raise ValueError("price_floor: the scenarios frame has no 'scenario' column")
+    present = set(scenarios["scenario"].dropna().unique())
+    if baseline_scenario not in present:
+        raise ValueError(
+            f"price_floor: baseline scenario {baseline_scenario!r} is not in the "
+            f"scenarios frame (present: {sorted(map(str, present))})"
+        )
+    base = scenarios[scenarios["scenario"] == baseline_scenario]
+    named = base["technology"].notna()
+    tech = base["technology"].where(named, "").astype(str)
+    names = set(tech[named].unique())
+    parents = set(PRICE_SETTING_TECHNOLOGY_PREFIXES) | {
+        t for t in names if any(o.startswith(t + " - ") for o in names)
+    }
+
+    def usable(column: str) -> pd.Series:
+        values = pd.to_numeric(base[column], errors="coerce")
+        return values.where(np.isfinite(values) & (values > 0))
+
+    generation = _generation_mwh(base)
+    generation = generation.where(np.isfinite(generation) & (generation > 0))
+    hours = usable("scenario_capacity_factor") * HOURS_PER_YEAR
+    lrmc = (
+        usable("fuel_price") / usable("efficiency_decimal")
+        + usable("om_cost_usd_per_mw_per_yr") / hours
+        + usable("capital_cost_usd_per_mw")
+        * capital_recovery_factor(rate, usable("lifetime_years"))
+        / hours
+    )
+    candidate = (
+        named
+        & ~tech.isin(parents)
+        & tech.str.startswith(PRICE_SETTING_TECHNOLOGY_PREFIXES)
+        & generation.notna()
+        & np.isfinite(lrmc)
+        & (lrmc > 0)
+    )
+    setter = (
+        base.loc[candidate, _FLOOR_KEYS]
+        .assign(
+            _generation=generation[candidate],
+            price_floor_lrmc=lrmc[candidate],
+            price_setter_technology=tech[candidate],
+        )
+        .sort_values(
+            ["_generation", "price_setter_technology"],
+            ascending=[False, True],
+            kind="mergesort",
+        )
+        .drop_duplicates(_FLOOR_KEYS)
+        .drop(columns="_generation")
+        .reset_index(drop=True)
+    )
+    out = scenarios.merge(setter, on=_FLOOR_KEYS, how="left", validate="many_to_one")
+    out["price_floor_lrmc"] = out["price_floor_lrmc"].fillna(0.0)
+    out["price_setter_technology"] = out["price_setter_technology"].where(
+        out["price_setter_technology"].notna(), None
+    )
+    has_floor = out["price_floor_lrmc"] > 0
+    price = out["power_price_excarbon_usd_per_mwh"]
+    # `np.fmax(NaN, floor) == floor`: a row the IAM gave no price for is lifted
+    # to the floor and becomes revenue-bearing. That is intended ("a missing
+    # price takes the floor"), but unlike the dispatch floor and the carbon
+    # charge it left no trace, so a run could silently manufacture revenue.
+    # Count the fabricated prices so the lift is visible.
+    lifted_from_missing = int((has_floor & price.isna()).sum())
+    logger.info(
+        "LRMC price floor: %d of %d floored rows had a missing delivered price "
+        "lifted to the floor",
+        lifted_from_missing,
+        int(has_floor.sum()),
+    )
+    out["power_price_excarbon_usd_per_mwh"] = price.where(
+        ~has_floor, np.fmax(price, out["price_floor_lrmc"])
+    )
+    return out

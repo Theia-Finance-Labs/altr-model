@@ -13,6 +13,13 @@ asset-trajectory group (Gourdel 2024), in this order:
     3. PERPETUITY  - everything else: Gordon Growth at the technology's own
                      terminal growth rate.
 
+PROPOSAL BRANCH: a fourth outcome sits between 1 and 3. A non-stranded group
+with a NEGATIVE terminal FCFF no longer takes a negative perpetuity; it takes
+the least bad of running its remaining life out at a loss and paying to
+decommission. That is decision D3, resolved - see `test_tv_bounded_negative.py`
+for the arithmetic, and `negative_tv_method` in the shipped config for the
+switch back.
+
 The tests below hand-build small frames and assert the EXACT arithmetic each
 tier produces, from closed forms written out independently of the
 implementation (which sums the annuity factor in a Python loop and computes
@@ -23,8 +30,9 @@ All of them run the SHIPPED configuration from
 `conf/base/parameters_calculate_asset_and_company_npv.yml`, not the node's
 signature defaults - the two disagree (`stranding_aware_tv` is False in the
 signature and True in the shipped config), so neither is used bare. That also
-means the discount rate carries the shipped technology spreads: 8.0% on
-carbontech (7% + 100 bps) and 6.5% on greentech (7% - 50 bps).
+means the discount rate carries the shipped technology spread: 8.0% on a
+`brown_technologies` member (7% + 100 bps) and the 7.0% base rate on everything
+else (owner ruling 12 removed the greenium).
 
 TWO THINGS THIS PINS THAT ARE WORTH THE OWNERS' ATTENTION
     - `g_real_brown: 0.0` is very nearly INERT under the shipped config. A
@@ -34,13 +42,13 @@ TWO THINGS THIS PINS THAT ARE WORTH THE OWNERS' ATTENTION
       a number only for carbontech that reaches the perpetuity tier, i.e.
       carbontech with a NEGATIVE terminal FCFF that escapes stranding. See
       `test_healthy_carbontech_never_reaches_the_perpetuity_tier`.
-    - A negative terminal FCFF that escapes the stranding test takes a
-      negative perpetuity, unbounded below. That is decision clash D3
-      (`docs/superpowers/plans/decision-ablations.md`), still open: the
-      perpetuity anchor is `final_fcff != 0` (Jakub) rather than
-      `final_fcff > 0` (Bertrand). 2,699 groups, 5.18% of the golden run, take
-      one today. The behaviour is CHARACTERIZED here, not endorsed - see
-      `test_negative_terminal_fcff_without_stranding_takes_a_negative_perpetuity`.
+    - A negative terminal FCFF that escapes the stranding test USED TO take a
+      negative perpetuity, unbounded below - decision clash D3
+      (`docs/superpowers/plans/decision-ablations.md`), where the perpetuity
+      anchor is `final_fcff != 0` (Jakub) rather than `final_fcff > 0`
+      (Bertrand). 2,699 groups, 5.18% of the golden run, took one. This branch
+      resolves it a third way, bounding rather than zeroing the loss - see
+      `test_negative_terminal_fcff_without_stranding_takes_a_bounded_negative`.
 
 AND ONE THAT SURFACED WHILE WRITING THESE (reported, not fixed)
     A missing FCFF year is read two different ways in the same function. The
@@ -80,25 +88,42 @@ META = dict(
 CARBONTECH = "misaligned_high_carbon"
 GREENTECH = "aligned_low_carbon"
 
+#: Rulings 12 and 13: the discount SPREAD and the terminal GROWTH rate are both
+#: keyed on `brown_technologies`, while the tier-2 annuity stays keyed on
+#: `alignment_type`. Every frame below therefore carries a technology that
+#: matches the tier it exercises, so `R_BROWN` / `R_GREEN` and the growth rates
+#: alike remain what these tests were written against.
+TECHNOLOGY_FOR = {
+    CARBONTECH: "GasCap - w/o CCS",
+    GREENTECH: "SolarCap - PV",
+}
+
 #: `conf/base/parameters_calculate_asset_and_company_npv.yml`, verbatim.
 SHIPPED = dict(
-    discount_rate_baseline=0.07,
-    discount_rate_shock=0.07,
+    discount_rate=0.07,
     terminal_method="perpetuity",
     terminal_growth_rate=0.02,
     terminal_growth_rate_brown=0.0,
     terminal_growth_rate_green=0.02,
     terminal_normalization_window=3,
     brown_discount_spread=0.01,
-    green_discount_spread=0.005,
+    # PROPOSAL BRANCH (ruling 12): membership is by technology, and the -50 bps
+    # `green_discount_spread` is gone — B&K measure no greenium.
+    brown_technologies=["CoalCap - w/o CCS", "GasCap - w/o CCS", "OilCap - w/o CCS"],
     stranding_aware_tv=True,
     stranding_consecutive_years=3,
     brown_remaining_life_years=10,
+    # PROPOSAL BRANCH: ships "bounded_annuity" here, "perpetuity" on main.
+    # A non-stranded group with a negative terminal FCFF no longer takes an
+    # unbounded negative perpetuity - see `test_tv_bounded_negative.py`.
+    negative_tv_method="bounded_annuity",
 )
 
-#: The discount rates the shipped spreads produce off the 7% baseline rate.
+#: The discount rates the shipped spread produces off the 7% baseline rate.
+#: Ruling 12 removed the greenium, so everything outside `brown_technologies`
+#: sits at the base rate itself - `R_GREEN` is now a name for "no spread".
 R_BROWN = 0.08
-R_GREEN = 0.065
+R_GREEN = 0.07
 
 #: Last forecast year of every frame below; the terminal row lands at +1.
 FINAL_YEAR = 2050
@@ -112,7 +137,13 @@ def _frame(fcff: list[float], alignment_type: str) -> pd.DataFrame:
     first_year = FINAL_YEAR - len(fcff) + 1
     return pd.DataFrame(
         [
-            {**META, "alignment_type": alignment_type, "year": year, "FCFF": value}
+            {
+                **META,
+                "technology": TECHNOLOGY_FOR[alignment_type],
+                "alignment_type": alignment_type,
+                "year": year,
+                "FCFF": value,
+            }
             for year, value in zip(range(first_year, FINAL_YEAR + 1), fcff)
         ]
     )
@@ -141,6 +172,19 @@ def _annuity_factor(rate: float, years: int) -> float:
     transcription of the code under test.
     """
     return (1.0 - (1.0 + rate) ** -years) / rate
+
+
+@pytest.mark.parametrize(("rate", "years"), [(0.07, 10), (0.08, 15), (0.065, 1)])
+def test_the_annuity_factor_helper_is_independent_of_the_implementation(rate, years):
+    """The closed form above IS the explicit sum the implementation accumulates.
+
+    Without this, `_annuity_factor` is only ASSERTED to be an independent
+    check; every expected value in this directory rests on it, so the claim is
+    pinned rather than believed.
+    """
+    assert _annuity_factor(rate, years) == pytest.approx(
+        sum(1.0 / (1.0 + rate) ** t for t in range(1, years + 1))
+    )
 
 
 def _gordon(terminal_cf: float, rate: float, growth: float, years: int) -> float:
@@ -176,10 +220,17 @@ def test_stranding_is_what_zeroes_it_not_the_missing_terminal_fcff_gate():
     sends the identical frame to the perpetuity tier, where its negative
     terminal FCFF produces a large negative value - which is exactly the
     unbounded exposure the stranding tiers exist to bound (ablation A5).
+
+    This is a ONE-switch ablation of `stranding_aware_tv`, so the negative
+    branch is pinned to "perpetuity" alongside it: on this proposal branch the
+    shipped `bounded_annuity` would bound the same frame a second time, and
+    the hand-off being demonstrated here is the stranding tier's, not that one.
     """
     frame = _frame([100.0, 100.0, 100.0, -10.0, -10.0, -10.0], CARBONTECH)
 
-    without_tiers = _terminal_value(_run(frame, stranding_aware_tv=False))
+    without_tiers = _terminal_value(
+        _run(frame, stranding_aware_tv=False, negative_tv_method="perpetuity")
+    )
 
     # window = 3 -> normalised terminal FCFF is the mean of the three -10s.
     # carbontech g = 0, so terminal_cf = -10; base 2045 -> terminal 2051.
@@ -190,45 +241,6 @@ def test_stranding_is_what_zeroes_it_not_the_missing_terminal_fcff_gate():
 # ---------------------------------------------------------------------------
 # Tier 2 - ANNUITY
 # ---------------------------------------------------------------------------
-
-
-def test_declining_but_profitable_carbontech_takes_the_finite_annuity():
-    """Tier 2 fires, and pays exactly the 10-year annuity, not a perpetuity.
-
-    FCFF declines 500 -> 100 but never turns negative, so the group is not
-    stranded; it is carbontech with a positive normalised terminal FCFF, which
-    is precisely the annuity tier's condition.
-
-    The annuity factor discounts t = 1..10 back to the FINAL year, so the
-    outer discounting runs from the final year (2050 - 2046 = 4 periods), not
-    from the terminal year - one period fewer than the perpetuity below.
-    """
-    out = _run(_frame([500.0, 400.0, 300.0, 200.0, 100.0], CARBONTECH))
-
-    normalised_fcff = (300.0 + 200.0 + 100.0) / 3.0
-    expected = (
-        normalised_fcff  # x (1 + g_brown), and g_brown is 0
-        * _annuity_factor(R_BROWN, SHIPPED["brown_remaining_life_years"])
-        * (1.0 + R_BROWN) ** -4
-    )
-
-    assert _terminal_value(out) == pytest.approx(expected)
-    assert len(_terminal_rows(out)) == 1
-
-
-def test_the_annuity_is_strictly_smaller_than_the_perpetuity_it_replaces():
-    """Hand-off proof for tier 2: it is a discount, not a relabelling.
-
-    A finite 10-year annuity on the same cash flow must be worth less than the
-    growing perpetuity the group would otherwise receive. If the tier were
-    quietly falling through to tier 3, these two would be equal.
-    """
-    frame = _frame([500.0, 400.0, 300.0, 200.0, 100.0], CARBONTECH)
-
-    annuity = _terminal_value(_run(frame))
-    perpetuity = _terminal_value(_run(frame, stranding_aware_tv=False))
-
-    assert NO_TERMINAL_VALUE < annuity < perpetuity
 
 
 # ---------------------------------------------------------------------------
@@ -247,34 +259,6 @@ def test_healthy_greentech_takes_the_perpetuity_at_the_green_growth_rate():
 
     assert _terminal_value(out) == pytest.approx(expected)
     assert _terminal_rows(out)["terminal_growth_rate"].eq(green_growth).all()
-
-
-def test_healthy_carbontech_never_reaches_the_perpetuity_tier():
-    """`g_real_brown` is unreachable for a profitable carbontech asset.
-
-    Tier 2 catches it first. This is not a defect - the tiers are ordered
-    deliberately - but it does mean `g_real_brown: 0.0` is close to inert
-    under the shipped configuration, since inside the annuity it appears only
-    as `x (1 + 0)`. Recorded so a future change to `g_real_brown` is not
-    expected to move a healthy fossil asset's valuation: it will not.
-    """
-    frame = _frame([100.0, 110.0, 120.0], CARBONTECH)
-
-    at_zero_growth = _terminal_value(_run(frame))
-    at_five_percent_growth = _terminal_value(
-        _run(frame, terminal_growth_rate_brown=0.05)
-    )
-
-    normalised_fcff = (100.0 + 110.0 + 120.0) / 3.0
-    annuity = (
-        normalised_fcff
-        * _annuity_factor(R_BROWN, SHIPPED["brown_remaining_life_years"])
-        * (1.0 + R_BROWN) ** -2
-    )
-    assert at_zero_growth == pytest.approx(annuity)
-    # Not equal, because g still scales terminal_cf - but it is the ANNUITY
-    # that moved, at 1.05x, not a Gordon denominator at 1 / (r - g).
-    assert at_five_percent_growth == pytest.approx(annuity * 1.05)
 
 
 def test_carbontech_takes_the_brown_growth_rate_once_the_tiers_are_off():
@@ -326,22 +310,32 @@ def test_the_default_growth_rate_is_used_when_neither_brown_nor_green_is_given()
 # ---------------------------------------------------------------------------
 
 
-def test_two_losses_on_a_short_history_fall_through_to_the_perpetuity():
+def test_two_losses_on_a_short_history_fall_through_to_the_bounded_negative():
     """Boundary: the minimum-history guard, and where the group lands.
 
     `test_stranding_min_history.py` already pins that a two-year history is
     not stranded. This adds the other half - WHICH tier catches it, and for
     how much. The annuity tier rejects it too (it screens on the raw loss run,
-    before the history guard), so it lands on the perpetuity at the exact
-    value below.
+    before the history guard), so on this branch it lands on the BOUNDED
+    NEGATIVE branch rather than the perpetuity it used to take.
+
+    The frame carries no `scrap_usd_per_mw`, so there is no exit quote and no
+    floor: the run-out annuity stands alone, over the fallback horizon.
     """
     out = _run(_frame([-10.0, -10.0], CARBONTECH))
 
-    # Normalised over min(window, size) = 2 rows; base 2049 -> terminal 2051.
-    expected = _gordon(-10.0, R_BROWN, 0.0, 2)
+    # Normalised over min(window, size) = 2 rows; base 2049, final 2050, and
+    # the annuity factor discounts back to the FINAL year - so 1 period, not 2.
+    expected = (
+        -10.0
+        * _annuity_factor(R_BROWN, SHIPPED["brown_remaining_life_years"])
+        * (1.0 + R_BROWN) ** -1
+    )
 
     assert _terminal_value(out) == pytest.approx(expected)
     assert expected < NO_TERMINAL_VALUE
+    # Bounded, not unbounded: strictly less bad than the perpetuity it replaces.
+    assert expected > _gordon(-10.0, R_BROWN, 0.0, 2)
 
 
 def test_loss_gap_loss_is_not_a_run_of_consecutive_losses():
@@ -367,13 +361,26 @@ def test_loss_gap_loss_is_not_a_run_of_consecutive_losses():
     """
     out = _run(_frame([-5.0, -5.0, -5.0, -10.0, float("nan"), -10.0], CARBONTECH))
 
-    # base 2045 -> terminal 2051 is 6 periods.
+    # base 2045, final 2050: the bounded-negative annuity discounts back to the
+    # FINAL year, so 5 periods. No scrap on this frame, so no exit floor.
     gap_counted_as_zero = (-10.0 + 0.0 + -10.0) / 3.0
-    expected = _gordon(gap_counted_as_zero, R_BROWN, 0.0, 6)
+    expected = (
+        gap_counted_as_zero
+        * _annuity_factor(R_BROWN, SHIPPED["brown_remaining_life_years"])
+        * (1.0 + R_BROWN) ** -5
+    )
 
     assert _terminal_value(out) == pytest.approx(expected)
     # The measured-years-only reading would be a third larger in magnitude.
-    assert expected == pytest.approx(_gordon(-10.0, R_BROWN, 0.0, 6) * 2 / 3)
+    # This is the point of the test and it is UNCHANGED by the proposal: the
+    # gap asymmetry lives in the terminal ANCHOR, upstream of every tier.
+    assert expected == pytest.approx(
+        -10.0
+        * _annuity_factor(R_BROWN, SHIPPED["brown_remaining_life_years"])
+        * (1.0 + R_BROWN) ** -5
+        * 2
+        / 3
+    )
 
 
 def test_a_terminal_fcff_of_exactly_zero_gets_no_terminal_value():
@@ -390,26 +397,105 @@ def test_a_terminal_fcff_of_exactly_zero_gets_no_terminal_value():
     assert _terminal_rows(out).empty
 
 
-def test_negative_terminal_fcff_without_stranding_takes_a_negative_perpetuity():
-    """Boundary, CHARACTERIZATION ONLY: the open D3 clash.
+def test_negative_terminal_fcff_without_stranding_takes_a_bounded_negative():
+    """Boundary: D3, RESOLVED on this branch.
 
     A window of (-30, +5, +5) averages negative but is not a run of losses, so
-    the group escapes the stranding tier and is handed a NEGATIVE growing
-    perpetuity: the asset is valued at less than nothing, forever. That is the
-    current behaviour of the `final_fcff != 0` anchor, and it is the subject
-    of decision clash D3 in `docs/superpowers/plans/decision-ablations.md` -
-    Bertrand's `final_fcff > 0` alternative would floor this at zero. This
-    test asserts what the model does TODAY so the clash can be resolved
-    deliberately; it is not an endorsement of either side.
+    the group escapes the stranding tier. It USED to be handed a negative
+    growing perpetuity - the asset valued at less than nothing, forever, off
+    the `final_fcff != 0` anchor. That was decision clash D3 in
+    `docs/superpowers/plans/decision-ablations.md`, characterized here rather
+    than endorsed.
+
+    The proposal resolves it: the group takes the least bad of running its
+    remaining life out at a loss and paying to exit. Bertrand's
+    `final_fcff > 0` alternative would have floored it at zero instead, which
+    hands a loss-maker a free exit; this keeps the loss, but bounds it.
+
+    The exact arithmetic of both bounds, including the exit floor, is pinned
+    in `test_tv_bounded_negative.py`. This frame carries no scrap price, so
+    here the run-out annuity stands alone.
     """
     out = _run(_frame([-30.0, 5.0, 5.0], GREENTECH))
 
     normalised_fcff = (-30.0 + 5.0 + 5.0) / 3.0
-    green_growth = SHIPPED["terminal_growth_rate_green"]
-    expected = _gordon(normalised_fcff * (1.0 + green_growth), R_GREEN, green_growth, 3)
+    # base 2048, final 2050 -> the annuity discounts back 2 periods.
+    expected = (
+        normalised_fcff
+        * _annuity_factor(R_GREEN, SHIPPED["brown_remaining_life_years"])
+        * (1.0 + R_GREEN) ** -2
+    )
 
     assert _terminal_value(out) == pytest.approx(expected)
     assert expected < NO_TERMINAL_VALUE, (
-        "D3 characterization: an asset losing money at the horizon is being "
-        "valued below zero in perpetuity, with no floor"
+        "the loss is kept, not floored away at zero - the asset really is "
+        "worth less than nothing at the horizon"
     )
+
+    green_growth = SHIPPED["terminal_growth_rate_green"]
+    unbounded = _gordon(
+        normalised_fcff * (1.0 + green_growth), R_GREEN, green_growth, 3
+    )
+    assert (
+        expected > unbounded
+    ), "D3 resolved: bounded above the unbounded perpetuity it replaces"
+
+
+# ── no tier-2 annuity: a profitable brown asset takes its 0%-growth perpetuity ─
+
+
+def _profitable_group(technology, alignment_type):
+    years = list(range(2025, 2031))
+    return pd.DataFrame(
+        {
+            "asset_id": "A",
+            "asset_name": "A",
+            "company_id": "C",
+            "company_name": "C",
+            "is_synthetic": False,
+            "scenario_geography": "EU",
+            "sector": "Power",
+            "technology": technology,
+            "alignment_type": alignment_type,
+            "trajectory_type": "baseline",
+            "scenario_type": "baseline",
+            "year": years,
+            "FCFF": 100.0,
+            "EBITDA": 100.0,
+            "decom_cost": 0.0,
+            "capex_total": 0.0,
+            "asset_trajectory": 10.0,
+        }
+    )
+
+
+def _tv(frame, **overrides):
+    kwargs = dict(
+        discount_rate=0.07,
+        terminal_growth_rate=0.02,
+        terminal_method="perpetuity",
+        terminal_growth_rate_brown=0.0,
+        terminal_growth_rate_green=0.02,
+        terminal_normalization_window=1,
+        brown_technologies=["CoalCap - w/o CCS"],
+        spread_carrier="technology",
+        stranding_aware_tv=True,
+        brown_remaining_life_years=10,
+        negative_tv_method="bounded_annuity",
+        tv_anchor_policy="raw",
+    )
+    kwargs.update(overrides)
+    return float(
+        compute_yearly_npv_trajectories(frame, None, **kwargs)["terminal_value"].sum()
+    )
+
+
+def test_a_profitable_brown_asset_takes_the_zero_growth_perpetuity_whatever_its_label():
+    coal_aligned = _tv(_profitable_group("CoalCap - w/o CCS", "aligned_low_carbon"))
+    coal_misaligned = _tv(
+        _profitable_group("CoalCap - w/o CCS", "misaligned_high_carbon")
+    )
+    wind = _tv(_profitable_group("WindCap - Offshore", "misaligned_high_carbon"))
+    assert coal_aligned == pytest.approx(coal_misaligned)
+    # same anchor, brown at 0% growth vs green at 2%: (1/0.07) vs (1.02/0.05)
+    assert wind / coal_aligned == pytest.approx((1.02 / 0.05) / (1.0 / 0.07), rel=1e-9)

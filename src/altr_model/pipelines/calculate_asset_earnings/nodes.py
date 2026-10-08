@@ -5,16 +5,21 @@ import logging
 import numpy as np
 import pandas as pd
 
+from altr_model._validation import validate_choice
+
 logger = logging.getLogger(__name__)
+
+#: How emission factors enter the carbon cost. The two branches charge
+#: different amounts, and the second is reached by an `else`, so an
+#: unrecognised value must raise rather than select it.
+CARBON_COST_METHODS = ("full_ef", "differential_ef")
 
 # Constants
 HOURS_PER_YEAR = 8760
+#: `dispatch_floor` methods: "none" pays the average price; "own_variable_cost"
+#: bounds a fuelled plant's captured price below by its fuel cost per MWh.
+DISPATCH_FLOOR_METHODS = ("none", "own_variable_cost")
 
-# Annual capital maintenance as a fraction of installed capacity. 1-3% of
-# replacement cost per year is the standard utility benchmark (EPRI, Lazard
-# LCOE methodology); 2% is the value the handover branch charged. Only a
-# fallback for direct callers — the pipeline reads params:replacement_capex_rate.
-REPLACEMENT_CAPEX_RATE = 0.02
 
 # A physical asset can legitimately appear once per owner. Every time-series
 # operation must therefore use the complete canonical asset-series grain, not
@@ -26,6 +31,18 @@ ASSET_SERIES_KEYS = [
     "sector",
     "technology",
     "trajectory_type",
+]
+
+# State of the asset at the last forecast year, which the valuation stage prices
+# an exit off. These are per-series CONSTANTS, not flows, so they travel in their
+# own one-row-per-series table rather than repeated down every row of
+# ``asset_earnings`` — that table is one row per asset-year-flow, and widening it
+# with horizon scalars invites a "first"-aggregation hack downstream.
+HORIZON_ATTRIBUTE_COLUMNS = [
+    "lifetime_years",
+    "asset_age",
+    "scrap_usd_per_mw",
+    "asset_trajectory",
 ]
 
 
@@ -68,8 +85,14 @@ def validate_asset_trajectories(
 
     assets = asset_trajectories.copy()
 
-    frozen_keys = ["asset_id", "company_id", "scenario_geography", "sector",
-                   "technology", "year"]
+    frozen_keys = [
+        "asset_id",
+        "company_id",
+        "scenario_geography",
+        "sector",
+        "technology",
+        "year",
+    ]
     if (
         frozen_capacity_at_retirement is not None
         and not frozen_capacity_at_retirement.empty
@@ -141,9 +164,10 @@ def validate_asset_trajectories(
         "NuclearCap",
         "GeothermalCap",
     }
-    renewable_missing = assets["technology"].isin(renewable_technologies) & assets[
-        "emission_factor"
-    ].isna()
+    renewable_missing = (
+        assets["technology"].isin(renewable_technologies)
+        & assets["emission_factor"].isna()
+    )
     assets.loc[renewable_missing, "emission_factor"] = 0.0
 
     duplicate_years = assets.duplicated(ASSET_SERIES_KEYS + ["year"], keep=False)
@@ -172,12 +196,9 @@ def validate_asset_trajectories(
     return assets.reset_index(drop=True)
 
 
-def validate_capacity_flow_identity(
-    asset_panel_enriched: pd.DataFrame,
-    replacement_capex_rate: float = REPLACEMENT_CAPEX_RATE,
-):
+def validate_capacity_flow_identity(asset_panel_enriched: pd.DataFrame):
     """
-    Validate the capacity flow identity: K_t = K_{t-1} - retired + replaced + new_build
+    Validate the capacity flow identity: K_t = K_{t-1} - retired + new_build
 
     This function checks that the upstream pipeline correctly calculated capacity flows
     and logs any discrepancies for debugging.
@@ -212,7 +233,7 @@ def validate_capacity_flow_identity(
     ).reset_index()
 
     # Ensure all flow columns exist
-    for col in ["new_buildout_cap", "roll_over_cap", "retired_max_cap"]:
+    for col in ["new_buildout_cap", "retired_max_cap"]:
         if col not in flows_pivot.columns:
             flows_pivot[col] = 0.0
 
@@ -228,11 +249,10 @@ def validate_capacity_flow_identity(
         "asset_trajectory"
     ].shift(1)
 
-    # Apply flow identity: K_t = K_{t-1} - retired + replaced + new_build
+    # Apply flow identity: K_t = K_{t-1} - retired + new_build
     validation_data["K_calculated"] = (
         validation_data["K_prev"]
         - validation_data["retired_max_cap"]
-        + (validation_data["roll_over_cap"] / replacement_capex_rate)
         + validation_data["new_buildout_cap"]
     )
 
@@ -277,17 +297,16 @@ def validate_capacity_flow_identity(
                 )
 
 
-def compute_capacity_flows(
-    asset_panel: pd.DataFrame, replacement_capex_rate: float = REPLACEMENT_CAPEX_RATE
-) -> pd.DataFrame:
+def compute_capacity_flows(asset_panel: pd.DataFrame) -> pd.DataFrame:
     """
     Compute capacity flows from capacity changes in the asset panel (vectorized).
 
     Creates flow indicators, exactly one per asset-year:
     - new_buildout_cap: Net new capacity on synthetic assets (shock growth)
-    - roll_over_cap: replacement_capex_rate of a real asset's installed capacity
     - retired_max_cap: Capacity retired on a real asset (reduction from baseline)
-    - none: everything else (a synthetic asset with no capacity event)
+    - none: everything else — standing capacity carries no annual capital
+      charge. Replacement CapEx (a roll-over charge on installed capacity) was
+      removed on 2026-09-04: IAM O&M already bundles annualised capital upkeep.
     """
 
     logger.info("Computing capacity flows from capacity changes...")
@@ -327,22 +346,8 @@ def compute_capacity_flows(
         retirement_data["capex_capacity"] = retirement_data["capacity_change"].abs()
         flow_records.append(retirement_data)
 
-    # 3. Replacement flows (replacement_capex_rate of existing installed capacity
-    # annually for real assets). Routine capital maintenance/refurbishment is a
-    # fraction of replacement cost per year (EPRI, Lazard LCOE methodology), so it
-    # is charged on what is standing, not on the year's growth — a flat asset still
-    # pays it. Excludes retiring assets, which are already charged decom costs.
-    replacement_mask = is_real & ~retirement_mask
-    if replacement_mask.any():
-        replacement_data = data[replacement_mask].copy()
-        replacement_data["capex_indicator"] = "roll_over_cap"
-        replacement_data["capex_capacity"] = (
-            replacement_data["asset_trajectory"] * replacement_capex_rate
-        )
-        flow_records.append(replacement_data)
-
-    # 4. No-flow records (synthetic assets with no capacity events need placeholders)
-    no_flow_mask = ~(new_buildout_mask | retirement_mask | replacement_mask)
+    # 3. No-flow records: every asset-year without a capacity event
+    no_flow_mask = ~(new_buildout_mask | retirement_mask)
     if no_flow_mask.any():
         no_flow_data = data[no_flow_mask].copy()
         no_flow_data["capex_indicator"] = "none"
@@ -380,30 +385,23 @@ def compute_capacity_flows(
 def compute_flow_based_capex(
     asset_panel_enriched: pd.DataFrame,
     include_growth_capex: bool,
-    include_replacement_capex: bool,
     include_decom_costs: bool,
-    replacement_capex_rate: float = REPLACEMENT_CAPEX_RATE,
 ) -> pd.DataFrame:
     """
     Node 5: Compute CapEx using flow-based approach.
 
     Computes capacity flows from capacity changes and then calculates:
     - GrowthCapEx_t = κ_t * new_buildout_cap
-    - ReplaceCapEx_t = κ_t * roll_over_cap
     - DecomCost_t = δ_decom * retired_max_cap
     """
 
     logger.info("Computing flow-based CapEx...")
 
     # Compute capacity flows from the data
-    capex_data = compute_capacity_flows(asset_panel_enriched, replacement_capex_rate)
+    capex_data = compute_capacity_flows(asset_panel_enriched)
 
-    # NOTE: Flow identity validation disabled because it's based on flawed assumptions:
-    # - Roll-over flows are replacement_capex_rate of INSTALLED capacity annually
-    #   (EPRI/Lazard benchmark), which is not a capacity movement at all
-    # - The validation expects flows to fully explain capacity trajectories, which they don't by design
-    # - The flows themselves are correct and properly used in CapEx calculations
-    # validate_capacity_flow_identity(capex_data, replacement_capex_rate)
+    # Flow identity validation is a debugging aid, not part of the run:
+    # validate_capacity_flow_identity(capex_data)
 
     # Ensure capex_capacity is numeric and fill NaNs
     capex_data["capex_capacity"] = pd.to_numeric(
@@ -424,18 +422,6 @@ def compute_flow_based_capex(
         capex_data["growth_capex"] = 0.0
         logger.info("Growth CapEx switched OFF - setting to zero")
 
-    # Replacement CapEx: rolled over capacity (can be switched off)
-    if include_replacement_capex:
-        rollover_mask = capex_data["capex_indicator"] == "roll_over_cap"
-        capex_data["replace_capex"] = np.where(
-            rollover_mask,
-            capex_data["capex_usd_per_mw"] * capex_data["capex_capacity"],
-            0.0,
-        )
-    else:
-        capex_data["replace_capex"] = 0.0
-        logger.info("Replacement CapEx switched OFF - setting to zero")
-
     # Decommissioning costs: retired capacity (can be switched off).
     # scrap_usd_per_mw is negative (= -capex/2), representing the cost to
     # decommission. abs() makes decom_cost POSITIVE in capex_total — a real cash
@@ -453,11 +439,7 @@ def compute_flow_based_capex(
         logger.info("Decommissioning costs switched OFF - setting to zero")
 
     # Total CapEx
-    capex_data["capex_total"] = (
-        capex_data["growth_capex"]
-        + capex_data["replace_capex"]
-        + capex_data["decom_cost"]
-    )
+    capex_data["capex_total"] = capex_data["growth_capex"] + capex_data["decom_cost"]
 
     # Log summary by flow type
     flow_summary = (
@@ -466,7 +448,6 @@ def compute_flow_based_capex(
             {
                 "capex_capacity": "sum",
                 "growth_capex": "sum",
-                "replace_capex": "sum",
                 "decom_cost": "sum",
             }
         )
@@ -476,11 +457,10 @@ def compute_flow_based_capex(
     logger.info("CapEx summary by flow type:")
     for idx, row in flow_summary.iterrows():
         logger.info(
-            "  %s: %.0f MW -> Growth: $%.0f, Replace: $%.0f, Decom: $%.0f",
+            "  %s: %.0f MW -> Growth: $%.0f, Decom: $%.0f",
             idx,
             row["capex_capacity"],
             row["growth_capex"],
-            row["replace_capex"],
             row["decom_cost"],
         )
 
@@ -495,7 +475,7 @@ def compute_ops_block(
     apply_continued_om_baseline: bool = False,
     apply_continued_om_shock: bool = True,
     carbon_cost_method: str = "full_ef",
-    dynamic_marginal_ef: bool = False,
+    dispatch_floor: str = "none",
 ) -> pd.DataFrame:
     """
     Node 8: Compute operations block (production, costs, revenue, EBITDA).
@@ -519,22 +499,21 @@ def compute_ops_block(
               only the excess over the price-setting generator. Right for IAMs
               whose prices already embed the marginal generator's carbon cost
               (AIM/CGE: a $64/MWh spread).
-        dynamic_marginal_ef: Let the marginal emission factor decay with the VRE
-            capacity share, marginal_ef(t) = marginal_EF × (1 − vre_share(t))²,
-            so that a technology loses its carbon rent as renewables push it off
-            the margin. Quadratic rather than linear because the merit order
-            turns over non-linearly: at low VRE only coal and oil are displaced,
-            at high VRE gas itself is.
 
-    Both knobs act on ``marginal_emission_factor``, which is produced by the
-    market-clearing-price adjustment. That adjustment is retired in this tree
-    (2026-09-01 owner ruling), so the column is absent, the marginal EF is 0 and
-    the two methods coincide: every technology pays its full EF. They are ported
-    so the differential path is available if the adjustment ever returns — see
-    docs/superpowers/plans/consolidation-clash-report.md, entry Q2-5.
+    ``carbon_cost_method`` reads ``marginal_emission_factor``, which the
+    market-clearing-price adjustment PRODUCED. That adjustment is retired in
+    this tree (2026-09-01 owner ruling), so the column does not arrive, the
+    marginal EF defaults to 0 and the two methods coincide on today's inputs:
+    every technology pays its full EF. The switch is kept so the differential
+    path is there if the adjustment ever returns — see
+    docs/superpowers/plans/consolidation-clash-report.md, entry Q2-5 — and
+    `test_carbon_cost_method.py` exercises it against an injected non-zero
+    marginal EF so it is not merely carried untested.
     """
 
     logger.info("Computing operations block...")
+
+    validate_choice("carbon_cost_method", carbon_cost_method, CARBON_COST_METHODS)
 
     if apply_continued_om_baseline or apply_continued_om_shock:
         logger.info(
@@ -615,25 +594,42 @@ def compute_ops_block(
             is_shock & apply_continued_om_shock
         )
 
-        # Final mask: decreasing technologies AND configured trajectory types
-        decreasing_mask = is_decreasing & apply_to_trajectory
+        # Continued O&M charges a RETIRING asset the fixed costs of the plant
+        # it used to be, which is the point: a plant being wound down does not
+        # shed its cost base in step with its output. A plant that is GONE does.
+        # Past zero capacity there is no site, no crew and no contract, so the
+        # first-year basis stops and the charge falls to zero with the capacity
+        # (owner ruling 15). Without this the asset paid its original fixed
+        # costs every year to 2050 — measured on the golden run at 1.27 tn
+        # charged on plant standing at zero MW, one nuclear asset alone paying
+        # 1.26 bn/yr for the twelve years after it closed.
+        is_alive = ops_data["K_avg"] > 0
+
+        # Final mask: decreasing technologies AND configured trajectory types,
+        # for as long as the asset itself is still standing.
+        decreasing_mask = is_decreasing & apply_to_trajectory & is_alive
 
         ops_data["K_for_fixed_cost"] = np.where(
             decreasing_mask, ops_data["initial_capacity"], ops_data["K_avg"]
         )
 
         baseline_count = (
-            is_decreasing & is_baseline & apply_continued_om_baseline
+            is_decreasing & is_baseline & apply_continued_om_baseline & is_alive
         ).sum()
-        shock_count = (is_decreasing & is_shock & apply_continued_om_shock).sum()
+        shock_count = (
+            is_decreasing & is_shock & apply_continued_om_shock & is_alive
+        ).sum()
+        retired_rows = (is_decreasing & apply_to_trajectory & ~is_alive).sum()
 
         logger.info(
             "Applied constant initial capacity to %s asset-year rows total: "
             "%s baseline rows, %s shock rows (decreasing techs only). "
-            "Increasing techs use actual capacity.",
+            "Increasing techs use actual capacity. "
+            "%s rows are past zero capacity and pay no fixed cost.",
             decreasing_mask.sum(),
             baseline_count,
             shock_count,
+            retired_rows,
         )
     else:
         ops_data["K_for_fixed_cost"] = ops_data["K_avg"]
@@ -654,9 +650,6 @@ def compute_ops_block(
             errors="coerce",
         ).fillna(0.0)
 
-    if dynamic_marginal_ef:
-        marginal_ef = marginal_ef * (1 - _vre_capacity_share(ops_data)) ** 2
-
     excess_ef = (ops_data["emission_factor"] - marginal_ef).clip(lower=0.0)
 
     ops_data["carbon_cost_net"] = (
@@ -673,8 +666,43 @@ def compute_ops_block(
         excess_ef.mean(),
     )
 
-    # Revenue (ex-carbon price)
-    ops_data["revenue"] = ops_data["Q"] * ops_data["power_price_excarbon_usd_per_mwh"]
+    # Revenue (ex-carbon price), at the technology's capture price: the regional
+    # system price times `capture_price_factor` (1.0 unless capture_price.method
+    # is set in the input-preparation parameters).
+    capture = pd.to_numeric(
+        ops_data.get("capture_price_factor", pd.Series(1.0, index=ops_data.index)),
+        errors="coerce",
+    ).fillna(1.0)
+    captured_price = ops_data["power_price_excarbon_usd_per_mwh"] * capture
+    # Rational dispatch: a plant with fuel only runs in hours where the price
+    # covers that fuel, so the hours the scenario says it runs carry a price of
+    # at least its own variable cost. Bounds the captured price below by
+    # fuel_cost_per_mwh for fuelled plant; never pays fixed costs, never
+    # touches a plant without fuel.
+    if dispatch_floor not in DISPATCH_FLOOR_METHODS:
+        raise ValueError(
+            f"dispatch_floor must be one of {DISPATCH_FLOOR_METHODS}; got {dispatch_floor!r}"
+        )
+    if dispatch_floor == "own_variable_cost":
+        fuelled = ops_data["fuel_cost_per_mwh"] > 0
+        captured_price = captured_price.where(
+            ~fuelled, np.fmax(captured_price, ops_data["fuel_cost_per_mwh"])
+        )
+        logger.info(
+            "Dispatch floor: %s of %s fuelled asset-year rows lifted to their own "
+            "variable cost",
+            int(
+                (
+                    fuelled
+                    & (
+                        ops_data["power_price_excarbon_usd_per_mwh"] * capture
+                        < ops_data["fuel_cost_per_mwh"]
+                    )
+                ).sum()
+            ),
+            int(fuelled.sum()),
+        )
+    ops_data["revenue"] = ops_data["Q"] * captured_price
 
     # EBITDA
     ops_data["EBITDA"] = (
@@ -687,25 +715,6 @@ def compute_ops_block(
     logger.info("Computed operations for %s asset-year rows", len(ops_data))
 
     return ops_data
-
-
-def _vre_capacity_share(ops_data: pd.DataFrame) -> pd.Series:
-    """VRE share of installed capacity per geography-year, per trajectory."""
-    vre_technologies = {
-        "SolarCap - PV",
-        "SolarCap - CSP",
-        "WindCap - Onshore",
-        "WindCap - Offshore",
-    }
-    group_columns = ["trajectory_type", "scenario_geography", "year"]
-    capacity = ops_data["K_avg"]
-    total = capacity.groupby([ops_data[c] for c in group_columns]).transform("sum")
-    vre = (
-        capacity.where(ops_data["technology"].isin(vre_technologies), 0.0)
-        .groupby([ops_data[c] for c in group_columns])
-        .transform("sum")
-    )
-    return (vre / total.clip(lower=1e-6)).clip(0.0, 1.0).fillna(0.0)
 
 
 def compute_fcff(asset_ops_block: pd.DataFrame) -> pd.DataFrame:
@@ -764,7 +773,7 @@ def write_asset_earnings_series(asset_cashflows: pd.DataFrame) -> pd.DataFrame:
         "asset_age",  # used in reporting
         "capacity_factor",  # used in reporting
         # "efficiency_decimal",
-        # "lifetime_years",
+        # "lifetime_years",  # NPV reads it from asset_horizon_attributes
         # "aligned",
         # "increasing",
         "alignment_type",
@@ -779,7 +788,7 @@ def write_asset_earnings_series(asset_cashflows: pd.DataFrame) -> pd.DataFrame:
         # "carbon_price_usd_per_tco2",
         # "fom_usd_per_mw_yr",
         # "capex_usd_per_mw",
-        # "scrap_usd_per_mw",
+        # "scrap_usd_per_mw",  # NPV reads it from asset_horizon_attributes
         # Earnings series
         "Q",  # used in reporting
         "revenue",
@@ -789,8 +798,11 @@ def write_asset_earnings_series(asset_cashflows: pd.DataFrame) -> pd.DataFrame:
         "EBITDA",
         # CapEx & decom (flow-based)
         # "growth_capex",
-        # "replace_capex",
-        # "decom_cost",
+        # NPV: the terminal anchor takes operating cash flow, so it needs the
+        # one-off exit charge inside capex_total identified rather than netted.
+        # A per-asset-year FLOW, unlike the horizon scalars in
+        # asset_horizon_attributes — this is the table flows belong in.
+        "decom_cost",
         "capex_total",
         # Cash
         "FCFF",
@@ -811,3 +823,69 @@ def write_asset_earnings_series(asset_cashflows: pd.DataFrame) -> pd.DataFrame:
     )
 
     return final_output
+
+
+def write_asset_horizon_attributes(asset_panel_enriched: pd.DataFrame) -> pd.DataFrame:
+    """Node 11: each asset series' state in its LAST forecast year.
+
+    One row per asset series — ``ASSET_SERIES_KEYS``, i.e. one physical asset per
+    owner per trajectory — carrying the four scalars the valuation stage needs to
+    price a terminal exit: the asset's ``lifetime_years`` and ``asset_age`` (their
+    difference is the remaining economic life at the horizon), its
+    ``scrap_usd_per_mw`` (the same rate ``include_decom_costs`` books its charge
+    at), and the ``asset_trajectory`` capacity still standing.
+
+    Built from the panel BEFORE the CapEx flow split, where one asset-year is
+    still one row: ``validate_asset_trajectories`` raises on a duplicate
+    ``ASSET_SERIES_KEYS + year``, so the last row of a year-sorted group IS the
+    horizon, with no aggregation choice to make. Taking the same values off
+    ``asset_earnings`` would mean collapsing its flow rows with a "first"
+    aggregation, which reads a per-year constant as though it were a flow.
+    """
+
+    logger.info("Writing asset horizon attributes...")
+
+    present = [
+        c for c in HORIZON_ATTRIBUTE_COLUMNS if c in asset_panel_enriched.columns
+    ]
+    absent = [c for c in HORIZON_ATTRIBUTE_COLUMNS if c not in present]
+    if absent:
+        logger.warning(
+            "Asset panel carries no %s; the valuation stage falls back where a "
+            "horizon attribute is missing",
+            ", ".join(absent),
+        )
+
+    horizon = (
+        asset_panel_enriched.sort_values(ASSET_SERIES_KEYS + ["year"])
+        .groupby(ASSET_SERIES_KEYS, dropna=False)
+        # tail(1) is the group's LAST ROW, not its last non-null value per
+        # column: a NaN at the horizon must stay NaN rather than silently
+        # inherit an earlier year's number.
+        .tail(1)[ASSET_SERIES_KEYS + present]
+        .copy()
+    )
+    for column in present:
+        horizon[column] = pd.to_numeric(horizon[column], errors="coerce")
+
+    horizon = horizon.sort_values(ASSET_SERIES_KEYS).reset_index(drop=True)
+
+    logger.info("Asset horizon attributes: %s asset series", len(horizon))
+
+    # POSTCONDITION, not input validation: the groupby(...).tail(1) above
+    # already guarantees one row per key group, so this can only fire if a
+    # future refactor replaces that collapse with something weaker. Input
+    # duplicates are caught upstream (validate_asset_trajectories) and a
+    # stale/malformed table loaded from disk is caught at the valuation
+    # boundary, where the named-offenders check actually protects the run.
+    duplicated = horizon.duplicated(subset=ASSET_SERIES_KEYS)
+    if bool(duplicated.any()):
+        offenders = (
+            horizon.loc[duplicated, ASSET_SERIES_KEYS].head(5).to_dict("records")
+        )
+        raise ValueError(
+            f"asset_horizon_attributes holds {int(duplicated.sum())} duplicate "
+            f"asset series — the valuation merge would abort mid-run. First "
+            f"offenders: {offenders}"
+        )
+    return horizon

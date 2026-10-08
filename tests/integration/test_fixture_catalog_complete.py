@@ -26,6 +26,9 @@ BASE_DATASETS = {
     # REMOVED_DATASETS comment.
     "frozen_capacity_at_retirement",
     "asset_earnings",
+    # PROPOSAL (decision #5 / clash D3, reworked): the per-series horizon
+    # scalars the valuation stage prices a terminal exit off.
+    "asset_horizon_attributes",
     "yearly_npv_trajectories",
     "asset_npv",
     "company_technology_npv",

@@ -1,37 +1,98 @@
 # Asset and company NPV parameters
 dcf:
-  # Discount rate configuration
-  # Baseline scenarios use standard discount rate
-  discount_rate_baseline: 0.07  # 7% real discount rate for baseline pathways
+  # ── Discount rate ────────────────────────────────────────────────────────────
+  # ONE real rate for both pathways (owner ruling 2026-09-05; until then the
+  # baseline and shock rates were separate keys that shipped equal at 7%, and
+  # the shock key was inert under the price ramp anyway). The whole
+  # baseline-vs-shock difference comes from the cash flows; the only rate
+  # differentiation is the technology carbon-risk spread below. The LRMC price
+  # floor's capital-recovery rate (`price_floor.discount_rate`, 8%) is a
+  # separate, deliberately higher cost-of-capital assumption for new entrants.
+  discount_rate: 0.07
 
-  # The shock-pathway rate. It ships EQUAL to the baseline rate, so no discount
-  # premium is applied: the shipped configuration values the two pathways at the
-  # same 7%, and the whole baseline-vs-shock difference comes from the cash
-  # flows, not from the rate. Raise it here to price transition risk into the
-  # rate as well — regulatory uncertainty, stranded-asset risk, market
-  # volatility and policy-implementation risk are the usual grounds.
-  # NOTE: this key is INERT whenever the pathway actually ramps — that is
-  # `price_ramp: True` AND `alignment_year` > `shock_year`, which is the shipped
-  # configuration (2038 > 2033). `alignment_year: 2033` is legal and switches
-  # the ramp off, which makes this key live again, as does `price_ramp: False`.
-  # See the user guide's "Discount rates" section and the stage-5 pipeline page.
-  discount_rate_shock: 0.07  # 7% real discount rate for transition shock pathways
+  # ── Technology-differentiated discount rates (owner ruling 12) ──────────────
+  # A carbon risk PENALTY, and nothing on the other side. Bolton & Kacperczyk
+  # (2021, 2023) measure roughly 1.5-2.5% higher equity returns for high-emission
+  # firms — a 60-150 bps WACC spread — and measure no corresponding discount for
+  # clean firms, so under the shipped technology carrier no greenium is applied
+  # (the parameter below exists only for the measurement arm). Set the penalty
+  # to 0 for a uniform rate. Added to the scenario base rate above; a negative value is
+  # rejected rather than applied as a discount.
+  # DEFAULT 0 by owner ruling (2026-09-05): the transition scenario already
+  # prices transition risk into the cash flows, so a rate premium on top counts
+  # it twice and, because a higher rate compresses every later-year cash flow,
+  # it NARROWS the measured signal (WITCH: by 22%, R6) whatever the provider.
+  # Kept as a documented sensitivity: 0.01 restores the Bolton & Kacperczyk
+  # +100 bps carbon premium on the brown technologies.
+  brown_discount_spread: 0.0    # +0 bps; 0.01 = the measured carbon-premium sensitivity
 
-  # ── Technology-differentiated discount rates ────────────────────────────────
-  # The empirical carbon risk premium: high-emission firms face roughly 1.5-2.5%
-  # higher equity returns (Bolton & Kacperczyk 2021, 2023), which translates to a
-  # 60-150 bps WACC spread. Shell's 2024 annual report uses 7.5% for oil & gas
-  # against 6.0% for renewables — a 150 bps spread. Set both to 0 for uniform
-  # rates. Added to / subtracted from the scenario base rate above.
-  brown_discount_spread: 0.01   # +100 bps carbon risk premium on carbontech
-  green_discount_spread: 0.005  # -50 bps greenium on greentech
+  # The GREENIUM leg, restored as a MEASURABLE parameter rather than a deleted
+  # one. It ships at 0.0 and is IGNORED (with a warning) under the shipped
+  # `spread_carrier: "technology"`, because Bolton & Kacperczyk find no discount
+  # for clean firms. It is live only under `spread_carrier: "alignment_type"`,
+  # where -50 bps (0.005) reproduces the pre-ruling-12 behaviour exactly. Kept
+  # so the ablation batch can MEASURE what ruling 12 removed instead of quoting
+  # a number nobody can reproduce from the shipped tree.
+  green_discount_spread: 0.0    # 0 bps; 0.005 + alignment carrier = pre-ruling-12
+
+  # ── WHICH carrier decides "brown" (owner rulings 12 and 13) ────────────────
+  # ONE switch for BOTH the discount spread above and the terminal growth rate
+  # below. Ruling 13 tied them together deliberately: an asset must not be able
+  # to be brown for its discount rate and green for its growth rate.
+  #   "technology"     — membership of `brown_technologies` below. What a lender
+  #                      prices is what the plant burns. Shipped.
+  #   "alignment_type" — membership of `misaligned_high_carbon` /
+  #                      `aligned_high_carbon`, the pre-ruling behaviour, kept
+  #                      reachable for the ablation batch. Alignment describes
+  #                      an asset's TRAJECTORY against its scenario, not what it
+  #                      burns, so it misfired in both directions at once:
+  #                      offshore wind and nuclear classed `misaligned_high_
+  #                      carbon` paid the fossil penalty AND grew at the fossil
+  #                      0%, while oil classed `misaligned_low_carbon` collected
+  #                      the greenium.
+  # No other consumer of the carrier remains (the tier-2 carbontech annuity
+  # was removed on 2026-09-05, measured at 1.1% of the signal).
+  spread_carrier: "technology"  # "technology" | "alignment_type"
+
+  # WHICH assets pay it — by TECHNOLOGY, not by `alignment_type`. Alignment is a
+  # statement about an asset's TRAJECTORY against its scenario, so it moved the
+  # rate for reasons that have nothing to do with carbon: offshore wind classed
+  # `misaligned_high_carbon` was paying the fossil penalty, and oil classed
+  # `misaligned_low_carbon` was collecting the greenium. What a lender prices is
+  # what the plant burns, and that is the technology.
+  #
+  # The CCS variants are IN the list, which is A REVIEWABLE CHOICE: a coal plant
+  # with capture still carries fossil fuel-price, policy and stranding exposure,
+  # but a reader who holds that capture removes the carbon risk premium should
+  # take the three ` - w/ CCS` entries out. Both suffixes are listed because the
+  # suffix is applied upstream from the `ccs_on` switch, so only one set exists
+  # in any given run. Biomass is deliberately ABSENT — it is classed
+  # `misaligned_high_carbon` today and so has been paying the penalty, but it is
+  # not a fossil technology.
+  brown_technologies:
+    - "CoalCap - w/o CCS"
+    - "CoalCap - w/ CCS"
+    - "GasCap - w/o CCS"
+    - "GasCap - w/ CCS"
+    - "OilCap - w/o CCS"
+    - "OilCap - w/ CCS"
 
   # Terminal value configuration
   terminal_value:
     method: "perpetuity"  # "none" | "perpetuity"
     g_real_default: 0.02  # 2% real terminal growth rate (fallback)
-    g_real_brown: 0.0     # 0% for carbontech — declining assets, no perpetual growth
-    g_real_green: 0.02    # 2% for greentech — growing clean energy cash flows
+    # WHICH rate an asset grows at is decided by the SAME `brown_technologies`
+    # list above, not by `alignment_type` (owner ruling 13). The carrier matters
+    # more here than it does for the discount spread: the spread moves the
+    # perpetuity denominator by 100 bps, g moves it by 200, and on the shipped
+    # rates the two ends are 1/(0.08 - 0.00) = 12.5x and 1/(0.07 - 0.02) = 20x.
+    # For the assets this ruling actually moves — offshore wind and nuclear,
+    # which are not on the list but were classed `misaligned_high_carbon` and so
+    # grew at the fossil 0% — the rate stays at 7% and the multiple goes
+    # 14.3x -> 20x. Alignment is a statement about an asset's trajectory against
+    # its scenario, not about whether its cash flows can grow.
+    g_real_brown: 0.0     # 0% for the brown technologies — declining assets, no perpetual growth
+    g_real_green: 0.02    # 2% for everything else — growing clean energy cash flows
 
     # How many final years are averaged into the terminal FCFF. Terminal value
     # should rest on normalized, sustainable cash flow, not on whatever the last
@@ -43,13 +104,86 @@ dcf:
     normalization_window: 3
 
   # ── Stranding-aware terminal value (Gourdel 2024) ───────────────────────────
-  # Three tiers instead of one perpetuity for every asset:
+  # Two tiers instead of one perpetuity for every asset:
   #   1. STRANDED — FCFF <= 0 for the last N years: TV = 0. A rational owner
   #      exercises the abandonment option rather than funding perpetual losses.
-  #   2. DECLINING BUT PROFITABLE CARBONTECH — TV = a finite annuity over
-  #      brown_remaining_life_years, reflecting a fossil asset's finite remaining
-  #      economic life in a transition, rather than a growing perpetuity.
-  #   3. EVERYTHING ELSE — standard Gordon Growth perpetuity, unchanged.
+  #   2. EVERYTHING ELSE — standard Gordon Growth perpetuity (a brown asset at
+  #      its 0% growth), with a negative anchor bounded by `negative_tv_method`.
+  # A third tier — a finite annuity for a still-profitable fossil asset — was
+  # REMOVED on 2026-09-05 (owner ruling): it moved the signal by 1.1% (R20 vs
+  # R19) and few brown assets are profitable at the horizon anyway.
   stranding_aware_tv: True
   stranding_consecutive_years: 3   # a company weathers 1-2 bad years, not N in a row
-  brown_remaining_life_years: 10   # annuity horizon for tier 2
+  brown_remaining_life_years: 10   # fallback remaining life for the bounded negative TV where an asset carries none
+
+  # ── Bounded negative terminal value (decision D3) ───────────────────────────
+  # What a NON-stranded group losing money at the horizon is worth. Tier 3 above
+  # hands it a Gordon Growth perpetuity, and on a negative cash flow that is
+  # UNBOUNDED BELOW: the asset is valued at less than nothing, forever. 2,699
+  # groups — 5.18% of the golden run — took one.
+  #   "perpetuity"      — the unbounded negative above. The pre-proposal
+  #                       behaviour, kept reachable for the ablation batch.
+  #   "bounded_annuity" — the least bad of the two choices an owner actually
+  #                       has, both of them negative:
+  #                           run it out = final_fcff * annuity(r, N_remaining)
+  #                           exit now   = -decom_cost
+  #                           TV         = max(run_out, exit_now)
+  #                       `r` is the group's own rate, spreads included;
+  #                       `N_remaining` is `lifetime_years - asset_age` at the
+  #                       horizon, falling back to brown_remaining_life_years
+  #                       where the asset carries no lifetime; `decom_cost` is
+  #                       `abs(scrap_usd_per_mw) * capacity` at the horizon,
+  #                       the same scrap price `include_decom_costs` charges.
+  #                       Where scrap is unavailable there is no floor and the
+  #                       run-out annuity stands alone.
+  #                       PAST ITS LIFETIME AND STILL STANDING (N_remaining <=
+  #                       0, capacity > 0) the run-out arm does not exist —
+  #                       there is no life left to run out — so the exit arm
+  #                       binds and TV = -decom_cost (owner ruling C2,
+  #                       2026-09-04). Clamping N_remaining to zero and keeping
+  #                       the arm gives run_out = 0, which beats every negative
+  #                       exit bill and hands the asset a FREE EXIT; that held
+  #                       for 20.5% of the fixture's asset series. Where
+  #                       NEITHER arm is available — past its lifetime and no
+  #                       scrap price to quote an exit at — the group takes no
+  #                       terminal value.
+  # A loss-maker does not run at a loss forever — it exits. Bertrand's
+  # `final_fcff > 0` alternative would floor this at zero instead, which hands
+  # a loss-maker a free exit; this keeps the loss but bounds it.
+  negative_tv_method: "bounded_annuity"  # "perpetuity" | "bounded_annuity"
+
+  # ── The terminal anchor (owner ruling 11) ───────────────────────────────────
+  # What the terminal anchor is allowed to see. A perpetuity capitalises the
+  # anchor forever, so anything one-off inside it is charged every year for the
+  # rest of time.
+  #   "raw"       — the mean FCFF of the last `normalization_window` years,
+  #                 whatever those years contain, and a group standing at zero
+  #                 capacity valued like any other. The pre-proposal behaviour,
+  #                 kept reachable for the ablation batch.
+  #   "operating" — two corrections:
+  #                 1. ZERO CAPACITY AT THE HORIZON => TV = 0, hard, ahead of
+  #                    every tier. A retired asset has no terminal value: there
+  #                    is no plant to run out, nothing to decommission twice,
+  #                    nothing to grow. The tiers cannot see this on their own
+  #                    because the anchor is a WINDOW — at window 3 a plant that
+  #                    retired two years early still has live years inside it,
+  #                    and was handed a terminal value off cash flows it can no
+  #                    longer earn (measured: -615 bn fabricated on assets that
+  #                    had already retired — PROVISIONAL, from the golden-run
+  #                    investigation; the full-universe measurement batch is
+  #                    pending and will supersede this figure).
+  #                 2. DECOMMISSIONING IS EXCLUDED from the anchor years' FCFF.
+  #                    Decom is the one-off cost of leaving, booked into
+  #                    capex_total; an asset shedding capacity through the
+  #                    transition books one every year, and r-g turned those
+  #                    exit bills into infinite series of themselves (measured:
+  #                    -1.26 tn of negative terminal value from decom at the
+  #                    horizon capitalised into perpetuities — PROVISIONAL,
+  #                    full-universe measurement batch pending). The charge is
+  #                    added back exactly — capex_total carries it as a positive
+  #                    outflow — so the anchor is the FCFF of an asset that did
+  #                    not retire.
+  # With both fixes in, `normalization_window` above returns to being what it
+  # claims to be: a mild smoothing choice over comparable operating years, not
+  # the lever that decides whether a retired asset has a terminal value at all.
+  tv_anchor_policy: "operating"  # "raw" | "operating"

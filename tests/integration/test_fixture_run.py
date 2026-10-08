@@ -167,6 +167,11 @@ ASSET_EARNINGS_COLUMNS = [
     "fixed_cost",
     "carbon_cost_net",
     "EBITDA",
+    # PROPOSAL (ruling 11): the terminal anchor takes OPERATING cash flow, so
+    # the one-off exit charge inside `capex_total` has to be identified rather
+    # than netted. A schema change, re-pinned here — unlike the VALUE pins
+    # below, which stay unre-derived until the owner decides.
+    "decom_cost",
     "capex_total",
     "FCFF",
 ]
@@ -218,6 +223,9 @@ ASSET_TRAJECTORIES_COLUMNS = [
     "efficiency_decimal",
     "lifetime_years",
     "scrap_usd_per_mw",
+    # Capture-price factor (1.0 under method "none"); schema change, re-pinned.
+    "capture_price_factor",
+    "price_floor_lrmc",
     "increasing",
     "aligned",
 ]
@@ -242,15 +250,24 @@ def test_full_pipeline_on_fixture(fixture_run):
     assert list(FIXTURE_OUT.rglob("*.csv")), "fixture run produced no CSV outputs"
 
 
-def test_valuation_output_shape_stable(fixture_run):
+# ── schema and shape: GREEN on this branch ──────────────────────────────────
+#
+# These used to be bundled into the same xfail as the value pins below, which
+# meant a genuine SCHEMA regression — a dropped column, a lost row, a NaN NPV —
+# would have been absorbed by an xfail that exists to cover a deliberate
+# NUMERIC change. The two are separated so the structural contract keeps
+# failing loudly while the value pins wait for the owner.
+
+
+def test_valuation_output_schema_is_stable(fixture_run):
+    """Columns, the company set, the row count and finiteness — no values.
+
+    The rulings on this branch move numbers, not shape, so this must be green
+    throughout, and it is.
+    """
     company_npv = _read("company_npv").sort_values("company_id").reset_index(drop=True)
     assert list(company_npv.columns) == COMPANY_NPV_COLUMNS
     assert list(company_npv["company_id"]) == sorted(COMPANY_NPV_VALUES)
-
-    for _, row in company_npv.iterrows():
-        expected_baseline, expected_shock = COMPANY_NPV_VALUES[row["company_id"]]
-        assert row["baseline_npv"] == pytest.approx(expected_baseline, rel=1e-9)
-        assert row["latesudden_npv"] == pytest.approx(expected_shock, rel=1e-9)
 
     asset_npv = _read("asset_npv")
     assert list(asset_npv.columns) == ASSET_NPV_COLUMNS
@@ -258,7 +275,9 @@ def test_valuation_output_shape_stable(fixture_run):
     for col in ("baseline_npv", "latesudden_npv"):
         assert np.isfinite(asset_npv[col]).all(), f"{col} has non-finite values"
 
-    for (asset_id, company_id), expected in ASSET_NPV_VALUES.items():
+    # Every pinned asset is still present exactly once — the KEY contract,
+    # independent of what its value has become.
+    for asset_id, company_id in ASSET_NPV_VALUES:
         rows = asset_npv.loc[
             (asset_npv["asset_id"] == asset_id)
             & (asset_npv["company_id"] == company_id)
@@ -266,21 +285,132 @@ def test_valuation_output_shape_stable(fixture_run):
         assert len(rows) == 1, (
             f"{asset_id}/{company_id}: expected 1 row, found {len(rows)}"
         )
-        row = rows.iloc[0]
+
+
+# ── the value pins: deliberately RED until the owner decides ────────────────
+
+
+@pytest.mark.xfail(
+    reason=(
+        "proposal branch — the VALUE pins are intentionally not re-derived "
+        "until the owner decides; the branch exists to show the diffs. Six "
+        "rulings move them by design: the bounded negative terminal value "
+        "(D3), its exit-arm reading for a past-lifetime asset (C2), natural "
+        "retirement timing (D9), the operating terminal anchor (ruling 11), "
+        "and the technology carrier for the discount spread and terminal "
+        "growth (rulings 12 and 13), and the removal of replacement CapEx "
+        "(2026-09-04). strict=True on purpose: if this ever "
+        "PASSES, the branch has stopped changing the numbers it exists to "
+        "change, and that is a failure too. The schema half is a separate "
+        "test and is green."
+    ),
+    strict=True,
+)
+def test_valuation_value_pins(fixture_run):
+    company_npv = _read("company_npv").sort_values("company_id").reset_index(drop=True)
+    for _, row in company_npv.iterrows():
+        expected_baseline, expected_shock = COMPANY_NPV_VALUES[row["company_id"]]
+        assert row["baseline_npv"] == pytest.approx(expected_baseline, rel=1e-9)
+        assert row["latesudden_npv"] == pytest.approx(expected_shock, rel=1e-9)
+
+    asset_npv = _read("asset_npv")
+    for (asset_id, company_id), expected in ASSET_NPV_VALUES.items():
+        row = asset_npv.loc[
+            (asset_npv["asset_id"] == asset_id)
+            & (asset_npv["company_id"] == company_id)
+        ].iloc[0]
         assert row["baseline_npv"] == pytest.approx(expected[0], rel=1e-9)
         assert row["latesudden_npv"] == pytest.approx(expected[1], rel=1e-9)
 
 
-def test_earnings_output_shape_stable(fixture_run):
+def test_earnings_output_schema_is_stable(fixture_run):
+    """Columns, row count, finiteness and the pinned keys' presence.
+
+    Green: the `decom_cost` column ruling 11 added is re-pinned above, because
+    a schema change IS a thing this gate should assert, not something to hide
+    behind the value pins' xfail.
+    """
     earnings = _read("asset_earnings")
     assert list(earnings.columns) == ASSET_EARNINGS_COLUMNS
     assert len(earnings) == ASSET_EARNINGS_ROWS
     assert np.isfinite(earnings["FCFF"]).all(), "FCFF has non-finite values"
 
     fcff = earnings.groupby(["asset_id", "company_id"])["FCFF"].sum()
-    for key, expected in ASSET_EARNINGS_FCFF.items():
+    for key in ASSET_EARNINGS_FCFF:
         assert key in fcff.index, f"{key} missing from earnings"
+
+
+@pytest.mark.xfail(
+    reason=(
+        "proposal branch — the VALUE pins are intentionally not re-derived "
+        "until the owner decides. THREE rulings move the worked example, "
+        "INTERNAL_A_L100000201220_int_ast_power_gem_stage2 / "
+        "CN_6166477550945836346: natural retirement timing (D9) takes its FCFF "
+        "total from -210,086,705.59 to -370,319,739.62, ruling 15's "
+        "continued-O&M stop then takes it to -362,853,474.39, and the removal "
+        "of replacement CapEx (2026-09-04) to -339,462,744.24. All three "
+        "figures measured on this tree on 2026-09-04, each at the commit that "
+        "landed the ruling. The earliest reason attributed the whole move to "
+        "D9 and quoted the intermediate value as if it were the current one. "
+        "strict=True: a pass here means the branch "
+        "has stopped moving what it exists to move. The schema half — the "
+        "`decom_cost` column included — is a separate test and is green."
+    ),
+    strict=True,
+)
+def test_earnings_fcff_pins(fixture_run):
+    earnings = _read("asset_earnings")
+    fcff = earnings.groupby(["asset_id", "company_id"])["FCFF"].sum()
+    for key, expected in ASSET_EARNINGS_FCFF.items():
         assert fcff[key] == pytest.approx(expected, rel=1e-9)
+
+
+def test_natural_retirement_is_not_bunched_into_the_window_year(fixture_run):
+    """PROPOSAL (D9): the 2039 cliff is gone at fixture scale.
+
+    Under `retirement_timing: deferred_to_window` every natural retirement
+    dated on or before `alignment_year` (2038) was held back to 2039: 112 of
+    the fixture's assets retired in that one year and NONE retired in the
+    thirteen years before it. Under "natural" the same 112 land on their own
+    dates across 2026-2039, and the years after the window are untouched.
+
+    Both pathways must also agree year for year - that is the isolation
+    property the clamp was reaching for, now holding by construction.
+    """
+    trajectories = _read("asset_trajectories")
+
+    def first_zero_year_counts(trajectory_type):
+        rows = trajectories[trajectories["trajectory_type"] == trajectory_type]
+        counts = {}
+        for _, group in rows.sort_values("year").groupby(["asset_id", "company_id"]):
+            capacity = group["asset_trajectory"]
+            if capacity.iloc[0] <= 0.0:
+                continue
+            retired = group.loc[capacity.eq(0.0), "year"]
+            if not retired.empty:
+                year = int(retired.min())
+                counts[year] = counts.get(year, 0) + 1
+        return counts
+
+    baseline = first_zero_year_counts("baseline")
+    latesudden = first_zero_year_counts("latesudden")
+
+    assert baseline == latesudden, (
+        "a natural retirement must land on the same year in both pathways, "
+        "or it does not cancel out of the shock-minus-baseline difference"
+    )
+
+    window_year = 2039
+    inside_window = sum(
+        count for year, count in baseline.items() if year < window_year
+    )
+    assert inside_window > 0, (
+        "no asset retires before the window year - the clamp is still bunching"
+    )
+    assert baseline.get(window_year, 0) < inside_window, (
+        f"{baseline.get(window_year, 0)} assets still pile into {window_year}, "
+        f"against {inside_window} spread across every earlier year"
+    )
 
 
 def test_asset_allocation_output_shape_stable(fixture_run):

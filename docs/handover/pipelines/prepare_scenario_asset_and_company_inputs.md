@@ -139,6 +139,22 @@ company-technology, and the plots lose their per-asset detail when it is on.
 | `baseline_scenario`, `target_scenario` | `conf/base/parameters_prepare_scenario_asset_and_company_inputs.yml` |
 | `company_ids`, `ownership_type`, `ownership_aggregation`, `ccs_on`, `max_forecast_horizon` | `conf/base/parameters_prepare_scenario_asset_and_company_inputs.yml` |
 | `reduce_granularity_from_asset_to_company_level` | `conf/base/parameters_prepare_scenario_asset_and_company_inputs.yml` |
+| `decom_cost_fraction_of_capex`, `price_floor`, `capture_price` | `conf/base/parameters_prepare_scenario_asset_and_company_inputs.yml` |
+
+Three keys adjust the scenario surface before anything downstream reads it, in
+this order: `price_floor` (method `lrmc` lifts the regional power price, in
+every scenario, to at least the levelised cost of the **baseline** scenario's
+price-setting thermal technology for that region-year — the largest thermal
+generator whose cost inputs are usable — one market price for every technology; the raw IAM value stays in `scenario_price` and the floor is
+reported in `price_floor_lrmc`, 0.0 where none applies), `decom_cost_fraction_of_capex`
+(rewrites `scrap_usd_per_mw` as a share of build cost) and `capture_price`
+(method `hirth2013` adds a per-technology `capture_price_factor` the earnings
+stage multiplies into revenue). `price_floor` and `capture_price` ship at
+`none`, the delivered behaviour; `decom_cost_fraction_of_capex` ships at 0.15 by
+owner ruling (null restores the delivered scrap value). The order matters only
+for which columns exist when each step runs: none of the three reads another's
+output, and the earnings stage multiplies the (floored) price by the capture
+factor regardless.
 
 Every key this stage reads is defined in its own file - the pipeline declares
 them explicitly in `PIPELINE_PARAMETERS`, so a key it does not list is not

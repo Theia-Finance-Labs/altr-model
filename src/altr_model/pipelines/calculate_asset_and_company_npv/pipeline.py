@@ -12,7 +12,7 @@ from .nodes import (
 )
 
 NAMESPACE = "calculate_asset_and_company_npv"
-PIPELINE_INPUTS = {"asset_earnings"}
+PIPELINE_INPUTS = {"asset_earnings", "asset_horizon_attributes"}
 PIPELINE_OUTPUTS = {
     "asset_npv",
     "company_npv",
@@ -22,9 +22,11 @@ PIPELINE_OUTPUTS = {
 PIPELINE_PARAMETERS = {
     "dcf.brown_discount_spread",
     "dcf.brown_remaining_life_years",
-    "dcf.discount_rate_baseline",
-    "dcf.discount_rate_shock",
+    "dcf.brown_technologies",
+    "dcf.discount_rate",
     "dcf.green_discount_spread",
+    "dcf.negative_tv_method",
+    "dcf.spread_carrier",
     "dcf.stranding_aware_tv",
     "dcf.stranding_consecutive_years",
     "dcf.terminal_value.g_real_brown",
@@ -32,6 +34,7 @@ PIPELINE_PARAMETERS = {
     "dcf.terminal_value.g_real_green",
     "dcf.terminal_value.method",
     "dcf.terminal_value.normalization_window",
+    "dcf.tv_anchor_policy",
 }
 
 
@@ -42,8 +45,8 @@ def create_pipeline(**kwargs) -> Pipeline:
                 func=compute_yearly_npv_trajectories,
                 inputs={
                     "asset_earnings": "asset_earnings",
-                    "discount_rate_baseline": "params:dcf.discount_rate_baseline",
-                    "discount_rate_shock": "params:dcf.discount_rate_shock",
+                    "asset_horizon_attributes": "asset_horizon_attributes",
+                    "discount_rate": "params:dcf.discount_rate",
                     "terminal_growth_rate": "params:dcf.terminal_value.g_real_default",
                     "terminal_method": "params:dcf.terminal_value.method",
                     "terminal_growth_rate_brown": "params:dcf.terminal_value.g_real_brown",
@@ -51,9 +54,13 @@ def create_pipeline(**kwargs) -> Pipeline:
                     "terminal_normalization_window": "params:dcf.terminal_value.normalization_window",
                     "brown_discount_spread": "params:dcf.brown_discount_spread",
                     "green_discount_spread": "params:dcf.green_discount_spread",
+                    "brown_technologies": "params:dcf.brown_technologies",
+                    "spread_carrier": "params:dcf.spread_carrier",
                     "stranding_aware_tv": "params:dcf.stranding_aware_tv",
                     "stranding_consecutive_years": "params:dcf.stranding_consecutive_years",
                     "brown_remaining_life_years": "params:dcf.brown_remaining_life_years",
+                    "negative_tv_method": "params:dcf.negative_tv_method",
+                    "tv_anchor_policy": "params:dcf.tv_anchor_policy",
                 },
                 outputs="yearly_npv_trajectories",
                 name="calculate_yearly_npv_trajectories",

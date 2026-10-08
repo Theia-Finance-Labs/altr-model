@@ -8,20 +8,19 @@ from .nodes import (
     compute_ops_block,
     validate_asset_trajectories,
     write_asset_earnings_series,
+    write_asset_horizon_attributes,
 )
 
 NAMESPACE = "calculate_asset_earnings"
 PIPELINE_INPUTS = {"asset_trajectories", "frozen_capacity_at_retirement"}
-PIPELINE_OUTPUTS = {"asset_earnings"}
+PIPELINE_OUTPUTS = {"asset_earnings", "asset_horizon_attributes"}
 PIPELINE_PARAMETERS = {
     "apply_continued_om_baseline",
     "apply_continued_om_shock",
     "carbon_cost_method",
-    "dynamic_marginal_ef",
+    "dispatch_floor",
     "include_decom_costs",
     "include_growth_capex",
-    "include_replacement_capex",
-    "replacement_capex_rate",
     "market_passthrough",
 }
 
@@ -43,8 +42,6 @@ def create_pipeline(**kwargs) -> Pipeline:
                 inputs=dict(
                     asset_panel_enriched="_temp_asset_panel_enriched",
                     include_growth_capex="params:include_growth_capex",
-                    include_replacement_capex="params:include_replacement_capex",
-                    replacement_capex_rate="params:replacement_capex_rate",
                     include_decom_costs="params:include_decom_costs",
                 ),
                 outputs="_temp_asset_capex_block",
@@ -58,7 +55,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                     apply_continued_om_baseline="params:apply_continued_om_baseline",
                     apply_continued_om_shock="params:apply_continued_om_shock",
                     carbon_cost_method="params:carbon_cost_method",
-                    dynamic_marginal_ef="params:dynamic_marginal_ef",
+                    dispatch_floor="params:dispatch_floor",
                 ),
                 outputs="_temp_asset_ops_block",
                 name="calculate_operating_earnings",
@@ -78,6 +75,14 @@ def create_pipeline(**kwargs) -> Pipeline:
                 ),
                 outputs="asset_earnings",
                 name="write_asset_earnings",
+            ),
+            node(
+                func=write_asset_horizon_attributes,
+                inputs=dict(
+                    asset_panel_enriched="_temp_asset_panel_enriched",
+                ),
+                outputs="asset_horizon_attributes",
+                name="write_asset_horizon_attributes",
             ),
         ],
         inputs=PIPELINE_INPUTS,

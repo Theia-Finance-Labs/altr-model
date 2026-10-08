@@ -2,7 +2,7 @@
 terminal-value anchor.
 
 compute_capacity_flows emits separate component rows per asset-year (operating,
-decom, rollover). Their FCFFs sum correctly for PV, but the TV anchor indexes by
+decom). Their FCFFs sum correctly for PV, but the TV anchor indexes by
 ROW. The valuation node must therefore collapse to one row per asset-year first:
 a frame with flow-split rows and its pre-aggregated equivalent must produce
 identical NPVs and terminal values.
@@ -51,7 +51,5 @@ def test_flow_split_rows_match_aggregated_rows():
             (2050, -30.0),
         ]
     )
-    agg = _frame(
-        [(2046, 50.0), (2047, 60.0), (2048, 65.0), (2049, 68.0), (2050, 70.0)]
-    )
+    agg = _frame([(2046, 50.0), (2047, 60.0), (2048, 65.0), (2049, 68.0), (2050, 70.0)])
     assert _totals(dup) == _totals(agg)

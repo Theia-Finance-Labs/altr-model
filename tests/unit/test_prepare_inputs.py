@@ -19,6 +19,7 @@ Pinned behaviours:
 * nothing is written until every dataset has been built and validated.
 """
 
+import warnings
 from pathlib import Path
 
 import pandas as pd
@@ -275,3 +276,24 @@ def test_nothing_is_written_when_a_later_dataset_fails_validation(
     with pytest.raises(ValueError, match="scenario_price"):
         main(["--source", str(source), "--dest", str(dest)])
     assert not list(dest.glob("*.csv"))
+
+
+def test_multi_tier_export_does_not_warn_when_each_tier_partitions():
+    """direct + equity rungs each summing to 100% are alternative views, not additive.
+
+    The marts export carries both a "direct" and an "equity" rung, each
+    restating ~100% per asset-year. `tier_filter` selects ONE rung before
+    allocation, so the run is correct -- but the check summed across rungs and
+    fired "over-allocated, must sum to 100%", the wrong remedy for well-formed
+    multi-tier data. The over-allocation test is now per tier: the tier that
+    `tier_filter` would select.
+    """
+    frame = pd.DataFrame(
+        [
+            {"asset_id": "A1", "year": 2030, "ownership_percentage": 100.0, "ownership_type": "direct"},
+            {"asset_id": "A1", "year": 2030, "ownership_percentage": 100.0, "ownership_type": "equity"},
+        ]
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")  # any warning becomes an error
+        check_ownership_allocation(frame)  # must not warn

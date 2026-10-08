@@ -7,8 +7,12 @@ import logging
 import numpy as np
 import pandas as pd
 
+from altr_model._validation import validate_choice
 from altr_model.pipelines.allocate_company_trajectories_to_assets._allocation_nodes import (
+    RETIREMENT_TIMING_DEFERRED,
+    RETIREMENT_TIMINGS,
     compute_asset_baseline_trajectories,
+    effective_retirement_year,
     flag_phased_out_assets_as_retired,
     melt_asset_staggered_trajectories,
     split_late_sudden_trajectories_by_alignment_type,
@@ -115,8 +119,10 @@ def compute_asset_baselines(
     extended_asset_panel: pd.DataFrame,
     apply_retirement_baseline: bool,
     alignment_year: int,
+    retirement_timing: str = RETIREMENT_TIMING_DEFERRED,
 ) -> pd.DataFrame:
     """Compute the asset baseline using retirement carried on the asset panel."""
+    validate_choice("retirement_timing", retirement_timing, RETIREMENT_TIMINGS)
     return compute_asset_baseline_trajectories(
         companies_late_sudden_trajectories=_legacy_company_pathways(
             company_pathways_pre_allocation
@@ -125,6 +131,7 @@ def compute_asset_baselines(
         assets_retirement_dates=_retirement_lookup(extended_asset_panel),
         apply_retirement_baseline=apply_retirement_baseline,
         alignment_year=alignment_year,
+        retirement_timing=retirement_timing,
     )
 
 
@@ -150,8 +157,10 @@ def allocate_decreasing_company_trajectories_to_assets(
     apply_decreasing_staggered_shock: bool,
     g_k: float,
     n_quantiles: int,
+    retirement_timing: str = RETIREMENT_TIMING_DEFERRED,
 ) -> pd.DataFrame:
     """Allocate decreasing pathways using the selected proportional/staggered mode."""
+    validate_choice("retirement_timing", retirement_timing, RETIREMENT_TIMINGS)
     decreasing_assets, _ = stagger_decreasing_technologies(
         late_sudden_trajectories=decreasing_company_pathways,
         assets_with_baseline_trajectory=assets_with_baseline,
@@ -162,6 +171,7 @@ def allocate_decreasing_company_trajectories_to_assets(
         apply_decreasing_staggered_shock=apply_decreasing_staggered_shock,
         g_k=g_k,
         n_quantiles=n_quantiles,
+        retirement_timing=retirement_timing,
     )
     return flag_phased_out_assets_as_retired(decreasing_assets)
 
@@ -385,6 +395,7 @@ FROZEN_CAPACITY_COLUMNS = ASSET_KEYS + ["year", "frozen_capacity_at_retirement"]
 def create_frozen_capacity_at_retirement(
     asset_allocation_wide: pd.DataFrame,
     alignment_year: int | None = None,
+    retirement_timing: str = RETIREMENT_TIMING_DEFERRED,
 ) -> pd.DataFrame:
     """Capacity each retiring asset last stood at, carried through its retirement.
 
@@ -393,11 +404,11 @@ def create_frozen_capacity_at_retirement(
     already zeroed it — and extend that level across every year from retirement
     onward.
 
-    Retirement here means the EFFECTIVE retirement year, not the raw one:
-    allocation never retires an asset before `alignment_year + 1`
-    (`_allocation_nodes.py`), so anchoring on the raw `retirement_year` of an
-    asset due to retire on or before the alignment year would read a year the
-    asset is still running and freeze the wrong capacity.
+    Retirement here means the EFFECTIVE retirement year, on whichever timing
+    rule allocation itself used (`effective_retirement_year`). The anchor reads
+    the year before retirement, so a mismatch between the two would read a year
+    the asset is still running — or one it has already been retired for — and
+    freeze the wrong capacity.
 
     This is a lookup table, not a cost driver: fixed costs use first-year
     capacity (``compute_ops_block``'s ``initial_capacity``), so nothing in the
@@ -405,6 +416,7 @@ def create_frozen_capacity_at_retirement(
     branch carries it and the 2026-09-01 owner ruling ports Q4 — it is the
     surface a stranded-capacity view would be built on.
     """
+    validate_choice("retirement_timing", retirement_timing, RETIREMENT_TIMINGS)
     if asset_allocation_wide.empty or "capacity_after_shock" not in (
         asset_allocation_wide.columns
     ):
@@ -416,10 +428,11 @@ def create_frozen_capacity_at_retirement(
     if assets.empty:
         return pd.DataFrame(columns=FROZEN_CAPACITY_COLUMNS)
 
-    effective_retirement = assets["retirement_year"].astype(int)
-    if alignment_year is not None:
-        effective_retirement = effective_retirement.clip(lower=int(alignment_year) + 1)
-    assets = assets.assign(_eff_retirement_year=effective_retirement)
+    assets = assets.assign(
+        _eff_retirement_year=effective_retirement_year(
+            assets["retirement_year"].astype(int), alignment_year, retirement_timing
+        )
+    )
 
     last_active = assets.loc[assets["year"].eq(assets["_eff_retirement_year"] - 1)]
     if last_active.empty:

@@ -52,6 +52,14 @@ asset_earnings:
   type: pandas.CSVDataset
   filepath: data/07_model_output/asset_earnings.csv
 
+# One row per asset series: its lifetime, age, scrap price and capacity in the
+# LAST forecast year. The valuation stage prices a terminal exit off these four
+# scalars; they are per-series constants, so they are not repeated down every
+# row of asset_earnings.
+asset_horizon_attributes:
+  type: pandas.CSVDataset
+  filepath: data/07_model_output/asset_horizon_attributes.csv
+
 # # Company-technology level aggregated earnings
 # company_technology_earnings:
 #   type: pandas.CSVDataset
