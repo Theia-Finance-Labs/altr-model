@@ -5,7 +5,7 @@
 # under data/09_benchmarks/<label>/ (override with ALTR_BENCH_RUNS). The dcf
 # block must be respecified whole when overriding any nested key.
 set -euo pipefail
-B=workspace/benchmarks
+B=scripts/benchmarks
 run() { uv run python $B/bench_run.py "$1" "$2" && uv run python $B/bench_metrics.py extract "$1"; }
 DCF=$(uv run python -c "import yaml,json; print(json.dumps(yaml.safe_load(open('conf/base/parameters_calculate_asset_and_company_npv.yml'))['dcf']))")
 run DEFAULT   '{}'
