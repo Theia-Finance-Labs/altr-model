@@ -65,11 +65,10 @@ asset-company ownership link per year.
 | `year` | int | Year this ownership link applies to. |
 | `ownership_percentage` | float | Share of the asset owned by the company, on the **0-100 percent scale**. |
 | `ownership_type` | string | Which rung of the ownership tree the row records: `direct` or `equity`. Matching is case- and whitespace-insensitive; any other value raises rather than silently selecting the wrong tier. |
-| `ownership_level` | int | Alternative to `ownership_type`: numbers the rungs - `1` = direct, `2` and above = indirect/equity. Under this schema the configured `ownership_type: "direct"` selects level 1, `"indirect"`/`"equity"` select levels 2+, and a bare number selects exactly that level. Deliver one of the two columns, not both. |
 
 !!! warning "The ownership tier column is required"
-    A companies file carrying neither `ownership_type` nor `ownership_level`
-    is rejected by `scripts/prepare_inputs.py` with a `ValueError` naming the
+    A companies file without an `ownership_type` column (a numbered
+    `ownership_level` is not read in its place) is rejected by `scripts/prepare_inputs.py` with a `ValueError` naming the
     column. It is not an optional refinement: the tiers are alternative views
     of the same capacity, so without one the whole ownership chain enters the
     run and the same plant is allocated to every rung that claims it. On the

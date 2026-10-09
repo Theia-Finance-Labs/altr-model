@@ -45,12 +45,9 @@ target_scenario: "AR6_AIM/CGE 2.2_EN_NPi2020_900f"
 
 # ── Ownership tier ────────────────────────────────────────────────────────────────
 # Which rung of the ownership tree attaches assets to companies.
-# Values: whatever the companies input's tier column actually holds. The column
-# comes from the marts export; under the NAMED schema (`ownership_type`) its
-# values there are "direct" and "equity" — not "indirect". Under the NUMBERED
-# schema (`ownership_level`) "direct" selects level 1, "indirect"/"equity"
-# select level 2+, and a bare number selects that level; anything else raises
-# rather than being taken as "some indirect rung".
+# Values: whatever the companies input's `ownership_type` column holds - in the
+# marts export "direct" (financial control) and "equity". A numbered
+# `ownership_level` column is not read (review of #60, 2026-10-08).
 # Matching ignores case and surrounding whitespace on both sides.
 # The 2026-08-25 deliverables drop carries NEITHER column, and
 # `scripts/prepare_inputs.py` refuses such a file rather than letting every rung

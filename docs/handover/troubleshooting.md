@@ -82,7 +82,7 @@ or a file re-saved by a spreadsheet application (which silently renames or
 reorders columns). The script validates everything before it writes anything, so
 `data/05_model_input/` is untouched: fix the source file and re-run.
 
-A companies file with no `ownership_type` (or `ownership_level`) column fails
+A companies file with no `ownership_type` column fails (a numbered `ownership_level` is not read in its place)
 the same way: the 2026-08-25 deliverables drop predates that column, so it needs
 the re-exported version rather than a conversion of what you have.
 

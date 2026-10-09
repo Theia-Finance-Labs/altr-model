@@ -110,7 +110,7 @@ of their own.
 | --- | --- |
 | `check_input_parameters` | Raises if `alignment_year` is below `shock_year`. Wired as a node in [stage 2](calculate_company_trajectories.md), where the two keys live |
 | `filter_scenarios` | Keeps the baseline/target pair only. Names are matched verbatim against the `scenario` column — it asserts both are present and prefixes nothing (the data must already carry `AR6_<provider>_`; `workspace/stage_marts_inputs.py` restores it for marts extracts that ship bare names) |
-| `_select_ownership_tier` | Keeps one rung of the ownership tree, per `ownership_type`; handles both the `ownership_type` and `ownership_level` company schemas. Skipped under `ownership_aggregation: "sum"` |
+| `_select_ownership_tier` | Keeps one rung of the ownership tree, per `ownership_type` (`direct` or `equity`); a numbered `ownership_level` column is not read. Skipped under `ownership_aggregation: "sum"` |
 | `_consolidate_ownership_stakes` | Sums the stakes it is given - one tier's worth under `"tier_filter"`, every tier under `"sum"` - into a single row per company-asset-year |
 | `filter_companies` | Selects the tier (`"tier_filter"` only), consolidates, then applies the `company_ids` filter; raises on an `ownership_aggregation` that is neither mode |
 | `apply_ccs_suffix` | Points Coal/Gas/Biomass/Oil at the with- or without-CCS scenario variant |

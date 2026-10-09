@@ -24,8 +24,8 @@ companies_ownerships.csv    none. ``sector`` / ``technology`` / ``asset_name``
                             are KEPT: ``_consolidate_ownership_stakes`` groups
                             on the first two and carries the third, so dropping
                             any of them breaks the roll-up. An
-                            ownership TIER column (``ownership_type``, or the
-                            newer ``ownership_level``) is required -- see
+                            ownership TIER column (``ownership_type``,
+                            "direct"/"equity") is required -- see
                             ``require_ownership_tier``.
 scenarios.csv               ``scenario_name`` -> ``scenario``. Names must
                             already carry the full ``AR6_<provider>_`` prefix:
@@ -67,9 +67,10 @@ COMPANIES_REQUIRED = [
 ]
 # The companies input must also say which RUNG of the ownership tree each row
 # sits on. Either schema satisfies it: `ownership_type` names the rungs (the
-# marts export holds "direct" and "equity"), `ownership_level` numbers them.
+# marts export holds "direct" and "equity"). The numbered `ownership_level`
+# schema is not read (review of #60, 2026-10-08).
 # Not folded into COMPANIES_REQUIRED because either column will do.
-OWNERSHIP_TIER_COLUMNS = ("ownership_type", "ownership_level")
+OWNERSHIP_TIER_COLUMNS = ("ownership_type",)
 # Ownership check: an asset-year whose CONSOLIDATED ownership sums above
 # OVER_ALLOCATION_PCT is over-allocated, and the warning fires once more than
 # OVER_ALLOCATION_SHARE of asset-years exceed it.
@@ -114,8 +115,8 @@ def require_ownership_tier(frame: pd.DataFrame) -> None:
     if any(column in frame.columns for column in OWNERSHIP_TIER_COLUMNS):
         return
     raise ValueError(
-        "companies: missing required column 'ownership_type' (the newer "
-        "'ownership_level' satisfies this too). Without it every ownership "
+        "companies: missing required column 'ownership_type' ('direct' / "
+        "'equity'; a numbered 'ownership_level' is not read). Without it every ownership "
         "rung enters and capacity is over-allocated -- on the 2026-08-25 "
         "drop, 92% of asset-years sum above 105% (median 227%). Regenerate "
         "the deliverables export including ownership_type from the marts."

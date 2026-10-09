@@ -242,45 +242,18 @@ def test_a_case_variant_in_the_data_is_matched_too():
     assert out.set_index(KEY)["ownership_percentage"].loc[("C1", "A1", 2030)] == 0.45
 
 
-def test_a_typo_under_the_numbered_schema_raises_instead_of_selecting_2_plus():
-    """The old numbered branch was `level == 1 if "direct" else level >= 2`, so
-    ANY value that was not exactly "direct" selected the indirect rungs. A
-    misspelled "dirct" therefore reported on the opposite tier and said
-    nothing. It must raise."""
+def test_ownership_level_is_not_read_as_a_tier_column(caplog):
+    """Only `ownership_type` selects a tier (review of #60, 2026-10-08). A frame
+    carrying just the numbered `ownership_level` takes the no-tier branch:
+    it warns and keeps every row, the same as a frame with no tier column."""
     frame = _multi_stake_frame().rename(columns={"ownership_type": "ownership_level"})
-    frame["ownership_level"] = frame["ownership_level"].map({"direct": 1, "equity": 2})
+    frame["ownership_level"] = frame["ownership_level"].map({"direct": 0, "equity": 1})
 
-    with pytest.raises(ValueError, match="dirct"):
-        filter_companies(frame, [], ownership_type="dirct")
+    with caplog.at_level("WARNING"):
+        out = filter_companies(frame, [], ownership_type="direct")
 
-
-def test_a_numbered_rung_that_maps_to_nothing_is_rejected():
-    """The numbered schema keeps its rung semantics — "direct" is level 1,
-    "indirect"/"equity" are level 2+, a bare number is that level, and nothing
-    else is accepted — but a selection that maps to no row still raises rather
-    than emptying the panel. Here every row is level 1, so "equity" is a valid
-    name for a rung this frame does not carry."""
-    frame = _multi_stake_frame().rename(columns={"ownership_type": "ownership_level"})
-    frame["ownership_level"] = 1
-
-    with pytest.raises(ValueError, match="ownership_level"):
-        filter_companies(frame, [], ownership_type="equity")
-
-
-def test_ownership_level_schema_maps_onto_the_same_tiers():
-    """The newer companies schema numbers the rungs instead of naming them."""
-    frame = _multi_stake_frame().rename(columns={"ownership_type": "ownership_level"})
-    frame["ownership_level"] = frame["ownership_level"].map({"direct": 1, "equity": 2})
-
-    direct = filter_companies(frame, [], ownership_type="direct")
-    indirect = filter_companies(frame, [], ownership_type="indirect")
-
-    assert (
-        direct.set_index(KEY)["ownership_percentage"].loc[("C1", "A1", 2030)] == 50.00
-    )
-    assert (
-        indirect.set_index(KEY)["ownership_percentage"].loc[("C1", "A1", 2030)] == 0.45
-    )
+    assert "ownership_type" in caplog.text
+    assert out.set_index(KEY)["ownership_percentage"].loc[("C1", "A1", 2030)] == 50.45
 
 
 def test_a_companies_input_with_no_tier_column_keeps_every_row():

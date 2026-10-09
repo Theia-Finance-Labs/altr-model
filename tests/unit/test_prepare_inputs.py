@@ -12,7 +12,7 @@ Pinned behaviours:
   third, so dropping any of them breaks the roll-up;
 * a missing required column raises ``ValueError`` naming the column;
 * a companies input with no ownership TIER column (``ownership_type`` or
-  ``ownership_level``) is refused outright -- owner ruling of 2026-09-01 that a
+  the marts' ``ownership_type``) is refused outright -- owner ruling of 2026-09-01 that a
   tier-less export is a data defect, not a run-time mode;
 * the ownership check warns (it does not raise) when consolidated ownership
   over-allocates an asset;
@@ -197,24 +197,19 @@ def test_companies_with_a_tier_column_pass_through(tmp_path: Path):
     assert len(out) == 5
 
 
-def test_companies_with_the_numbered_tier_column_pass_through(tmp_path: Path):
-    """`ownership_level` is the OTHER schema the guard accepts (1 = direct,
-    2+ = indirect), and the newer of the two. It has only ever been tested on
-    the refusal path — that a frame carrying it is not refused — which does not
-    pin that the build hands the column on for `_select_ownership_tier` to read.
-    A build that quietly dropped it would take the tier-less branch downstream
-    and over-allocate, with nothing here to notice."""
+def test_companies_with_only_the_numbered_tier_column_are_refused(tmp_path: Path):
+    """Only the named schema is read (review of #60, 2026-10-08): the marts
+    deliver `ownership_type` as "direct"/"equity". The numbered
+    `ownership_level` column numbers rungs from 0 (= direct), which the old
+    branch read as 1 = direct, so it is no longer accepted in its place."""
     companies = deliverables_companies().rename(
         columns={"ownership_type": "ownership_level"}
     )
-    companies["ownership_level"] = 1
+    companies["ownership_level"] = 0
     source = stage(tmp_path / "01_raw", companies_ownerships=companies)
 
-    out = build_companies(source)
-
-    assert list(out["ownership_level"]) == [1] * 5
-    assert "ownership_type" not in out.columns, "the named schema is not invented"
-    assert len(out) == 5
+    with pytest.raises(ValueError, match="ownership_type"):
+        build_companies(source)
 
 
 def test_a_tier_less_companies_input_writes_nothing(tmp_path: Path):

@@ -183,16 +183,6 @@ def _consolidate_ownership_stakes(companies_ownerships: pd.DataFrame) -> pd.Data
     ]
 
 
-#: Configured `ownership_type` values the NUMBERED (`ownership_level`) schema
-#: understands, mapped to the rung they select. These are the two names the
-#: NAMED schema uses plus "indirect", the numbered schema's own word for 2+.
-#: A bare integer ("2") selects that level exactly. ANYTHING ELSE RAISES: the
-#: previous `level >= 2` fallback turned every typo into a silent request for
-#: the indirect rungs, so "dirct" quietly reported on the wrong tier.
-_NUMBERED_DIRECT = frozenset({"direct"})
-_NUMBERED_INDIRECT = frozenset({"indirect", "equity"})
-
-
 def _normalize_tier(value: object) -> str:
     """Case- and whitespace-insensitive form of one tier label."""
     return str(value).strip().casefold()
@@ -201,90 +191,41 @@ def _normalize_tier(value: object) -> str:
 def _select_ownership_tier(
     companies_ownerships: pd.DataFrame, ownership_type: str
 ) -> pd.DataFrame:
-    """Keep one rung of the ownership tree.
+    """Keep one rung of the ownership tree, named by `ownership_type`.
 
-    A company's stake in an asset is recorded at several tiers - a direct
-    holding and the equity stakes that roll up through subsidiaries. They are
-    alternative views of the same capacity, not additive ones, so a run picks
-    the tier it reports on. Summing across tiers would allocate the same plant
-    to the same company twice.
+    A company's stake in an asset is recorded at several tiers - "direct"
+    (financial control) and "equity" (the stakes rolling up through
+    subsidiaries). They are alternative views of the same capacity, not
+    additive ones, so a run picks the tier it reports on.
 
-    Two schemas are in circulation: `ownership_type`, which names the rungs
-    ("direct" and "equity" in the marts export), and the newer
-    `ownership_level`, which numbers them (1 = direct, 2+ = indirect).
-
-    A tier the data does not carry is a configuration error, not an empty
-    result: silently returning an empty panel takes every company out of the
-    run and the failure only surfaces as zero rows several stages later. Both
-    schemas therefore raise `ValueError` naming the configured value and what
-    the frame actually offers.
-
-    Matching is case- and whitespace-insensitive on BOTH sides, and the
-    selection uses the same normalized comparison the validation does - a
-    check that accepted "Direct" and then filtered on `== "Direct"` would
-    hand back the empty panel this exists to prevent. Under the numbered
-    schema only the labels in `_NUMBERED_DIRECT` / `_NUMBERED_INDIRECT` and a
-    bare integer are accepted; a typo raises instead of falling through to
-    "level >= 2".
-
-    Neither path can return zero rows without raising first. Two silent
-    reductions remain OUTSIDE this function, and both are handled where they
-    happen: the no-tier-column branch below keeps every row (and
-    `scripts/prepare_inputs.py` refuses a delivered file that reaches it), and
-    `_consolidate_ownership_stakes` keeps the cosmetic name columns out of its
-    group keys (and groups with `dropna=False`) so a blank name cannot delete
-    a stake.
+    Only the named `ownership_type` column is read (review of #60,
+    2026-10-08): the marts deliver it as "direct"/"equity". A tier the data
+    does not carry raises, naming what the frame offers, rather than silently
+    emptying the run. Matching ignores case and surrounding whitespace on both
+    sides. A frame with no `ownership_type` column keeps every row with a
+    warning; `scripts/prepare_inputs.py` refuses such a delivered file.
     """
-    if "ownership_type" in companies_ownerships.columns:
-        column = companies_ownerships["ownership_type"]
-        available = sorted(str(v) for v in column.dropna().unique())
-        wanted = _normalize_tier(ownership_type)
-        matches = column.map(_normalize_tier).eq(wanted) & column.notna()
-        if not matches.any():
-            raise ValueError(
-                f"ownership_type {ownership_type!r} is not present in the "
-                f"companies input; its 'ownership_type' column holds "
-                f"{available}. Set `ownership_type` in "
-                "conf/base/parameters_prepare_scenario_asset_and_company_inputs"
-                ".yml to one of those (matching ignores case and surrounding "
-                "whitespace)."
-            )
-        selected = companies_ownerships.loc[matches]
-    elif "ownership_level" in companies_ownerships.columns:
-        level = pd.to_numeric(companies_ownerships["ownership_level"], errors="coerce")
-        rungs = sorted(str(v) for v in level.dropna().unique())
-        wanted = _normalize_tier(ownership_type)
-        if wanted in _NUMBERED_DIRECT:
-            mask = level.eq(1)
-        elif wanted in _NUMBERED_INDIRECT:
-            mask = level.ge(2)
-        elif wanted.isdigit():
-            mask = level.eq(int(wanted))
-        else:
-            raise ValueError(
-                f"ownership_type {ownership_type!r} means nothing under the "
-                f"'ownership_level' schema, whose column holds {rungs}. Use "
-                f"{sorted(_NUMBERED_DIRECT)} for level 1, "
-                f"{sorted(_NUMBERED_INDIRECT)} for level 2+, or a bare level "
-                "number. It is NOT taken as 'some indirect rung': that "
-                "fallback reported a typo on the wrong tier without saying so."
-            )
-        selected = companies_ownerships.loc[mask]
-        if selected.empty:
-            raise ValueError(
-                f"ownership_type {ownership_type!r} selects no rung of the "
-                f"'ownership_level' column, which holds {rungs} "
-                "('direct' selects level 1, 'indirect'/'equity' select level "
-                "2+, a bare number selects that level)."
-            )
-    else:
+    if "ownership_type" not in companies_ownerships.columns:
         logger.warning(
-            "Neither 'ownership_type' nor 'ownership_level' is present in the "
-            "companies input; keeping every ownership row. Capacity may be "
-            "allocated more than once per company."
+            "No 'ownership_type' column in the companies input; keeping every "
+            "ownership row. Capacity may be allocated more than once per company."
         )
         return companies_ownerships
 
+    column = companies_ownerships["ownership_type"]
+    available = sorted(str(v) for v in column.dropna().unique())
+    wanted = _normalize_tier(ownership_type)
+    matches = column.map(_normalize_tier).eq(wanted) & column.notna()
+    if not matches.any():
+        raise ValueError(
+            f"ownership_type {ownership_type!r} is not present in the "
+            f"companies input; its 'ownership_type' column holds "
+            f"{available}. Set `ownership_type` in "
+            "conf/base/parameters_prepare_scenario_asset_and_company_inputs"
+            ".yml to one of those (matching ignores case and surrounding "
+            "whitespace)."
+        )
+    selected = companies_ownerships.loc[matches]
     logger.info(
         "Ownership tier '%s': kept %s of %s ownership rows",
         ownership_type,
