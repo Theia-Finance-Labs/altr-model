@@ -65,9 +65,12 @@ COMPANY_NPV_COLUMNS = [
     "latesudden_discount_rate",
     "asset_count",
     "npv_change",
+    "baseline_npv_unfloored",
+    "latesudden_npv_unfloored",
 ]
 
-# company_id -> (baseline_npv, latesudden_npv), sorted by company_id.
+# company_id -> (baseline_npv, latesudden_npv) before the zero floor (the
+# *_unfloored columns), sorted by company_id.
 #
 # CN_6488161088428600082's late-and-sudden value was re-derived on 2026-09-02
 # when synthetic top-ups began inheriting the emission factor of the assets they
@@ -310,8 +313,8 @@ def test_valuation_value_pins(fixture_run):
     company_npv = _read("company_npv").sort_values("company_id").reset_index(drop=True)
     for _, row in company_npv.iterrows():
         expected_baseline, expected_shock = COMPANY_NPV_VALUES[row["company_id"]]
-        assert row["baseline_npv"] == pytest.approx(expected_baseline, rel=1e-9)
-        assert row["latesudden_npv"] == pytest.approx(expected_shock, rel=1e-9)
+        assert row["baseline_npv_unfloored"] == pytest.approx(expected_baseline, rel=1e-9)
+        assert row["latesudden_npv_unfloored"] == pytest.approx(expected_shock, rel=1e-9)
 
     asset_npv = _read("asset_npv")
     for (asset_id, company_id), expected in ASSET_NPV_VALUES.items():

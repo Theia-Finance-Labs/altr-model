@@ -14,6 +14,7 @@ PIPELINE_OUTPUTS = {"asset_forecast_panel", "company_projection_inputs"}
 PIPELINE_PARAMETERS = {
     "baseline_scenario",
     "capture_price",
+    "carbon_price_fill",
     "ccs_on",
     "company_ids",
     "decom_cost_fraction_of_capex",
@@ -38,6 +39,7 @@ def create_pipeline(**kwargs) -> Pipeline:
                     "decom_cost_fraction_of_capex": "params:decom_cost_fraction_of_capex",
                     "capture_price": "params:capture_price",
                     "price_floor": "params:price_floor",
+                    "carbon_price_fill": "params:carbon_price_fill",
                 },
                 outputs="_scenario_pathways",
                 name="prepare_scenarios",

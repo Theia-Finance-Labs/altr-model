@@ -188,7 +188,7 @@ How to read `npv_change`, including its sign convention, is covered in the
 | `calculate_yearly_npv_trajectories` | `compute_yearly_npv_trajectories` | Discounts each year's FCFF and adds the terminal-value row |
 | `aggregate_npv_by_asset` | `calculate_npv_per_asset` | Collapses the yearly detail to one row per asset, pivoting by trajectory type |
 | `aggregate_npv_by_company_and_technology` | `aggregate_to_company_technology_npv` | Sums asset NPVs to company-technology-geography level |
-| `aggregate_npv_by_company` | `aggregate_to_company_npv` | Sums company-technology NPVs to company level |
+| `aggregate_npv_by_company` | `aggregate_to_company_npv` | Sums company-technology NPVs to company level. With `company_npv_floor: true` (off by default) it then floors both NPVs at 0, so a company loses at most everything and `npv_change` ≥ −100%. The raw sums are always written to `baseline_npv_unfloored` / `latesudden_npv_unfloored`; sum those for totals across companies, because the floor zeroes negative baselines while shock-case gains still count. Asset and company-technology NPVs are never floored. |
 
 This set of four node names is pinned by
 `tests/test_run.py::test_methodology_steps_are_visible_as_individual_nodes`.

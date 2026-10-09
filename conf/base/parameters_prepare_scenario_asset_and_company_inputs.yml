@@ -158,7 +158,7 @@ company_ids:
 # Values: a number in [0, 1] rewrites scrap as -(fraction × capex_usd_per_mw)
 # for every scenario row, so BOTH consumers move together; null keeps the
 # delivered column (the 50% convention the golden was pinned under, kept
-# reachable for comparison). DEFAULT 0.15 by owner ruling (Jakub, 2026-09-04),
+# reachable for comparison). DEFAULT 0.15 by owner ruling (2026-09-04),
 # measured on the full universe as arms R11/R13 in
 # docs/superpowers/plans/measurement-batch-results.md.
 decom_cost_fraction_of_capex: 0.15
@@ -231,3 +231,20 @@ capture_price:
 price_floor:
   method: none
   discount_rate: 0.08
+
+# ── Carbon-price fill (owner ruling 2026-10-01) ─────────────────────────────────
+# Six AR6 providers (AIM/CGE 2.2, COFFEE 1.1, GCAM 5.2/5.3, GCAM-PR 5.3, IMACLIM
+# 1.1) publish no regional Price|Carbon, so their scenarios arrive at 0 and
+# fossil plants pay nothing for carbon. There is no World-level series to fall
+# back on (scenario data team, 2026-09-30), and one global median would give every
+# scenario the same price, erasing the baseline/target gap.
+# Values: "none" (DEFAULT) - prices as delivered; the partner-facing run.
+#         "peer_scenario_median" - a scenario at 0 in EVERY row takes, per year,
+#         the median over other providers of the SAME scenario name (ENGAGE
+#         protocols are shared; exact name, so `900f` never pools with `900`) of each provider's
+#         median-across-geographies price, in all its geographies. Filled rows
+#         carry `carbon_price_filled = True`. No priced peer -> stays 0 (GCAM
+#         NGFS, GCAM-PR, IMACLIM ADVANCE in the 2026-10-01 mart). Needs the
+#         FULL scenarios table: a file cut to the run's two scenarios has no
+#         peers.
+carbon_price_fill: "none"

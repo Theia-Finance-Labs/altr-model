@@ -98,12 +98,15 @@ between the two modes.
 
 `prepare_inputs.py` also checks over-allocation - on the **delivered rows,
 before any tier is selected**: it totals `ownership_percentage` per
-`(asset_id, year)` across every rung and warns when more than 1% of asset-years
-exceed 105%. Two consequences of that design: a correct multi-tier file
-legitimately totals above 100% raw (each rung is an alternative view of the
-same capacity), which is why the threshold is a share, not a single row; and
-below the 1% share the check stays **silent**, so a quiet run is not proof of a
-clean ownership universe. Under `ownership_aggregation: "sum"` the warning is
+`(asset_id, year, tier)` - each rung on its own, because the rungs are
+alternative views of the same capacity - and warns when more than 1% of those
+groups exceed 105%, listing the share per tier. Only the tier named by
+`ownership_type` reaches the run, so read the share for that tier. On the
+2 Sep 2026 marts file the warning reports 32%: `direct` (financial control,
+the default) is 0.0%, while `equity` is 65.7%, because the equity rung lists
+every level of the chain at full look-through (a ministry at 100% and the
+government that owns it at 100%). Below the 1% share the check stays
+**silent**, so a quiet run is not proof of a clean ownership universe. Under `ownership_aggregation: "sum"` the warning is
 expected, not a data fault. Details:
 [Stage 1](pipelines/prepare_scenario_asset_and_company_inputs.md) and
 [Troubleshooting](troubleshooting.md#companies-n-of-asset-years-sum-to-105-warning-not-an-error).

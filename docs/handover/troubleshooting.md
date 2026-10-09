@@ -95,16 +95,16 @@ fails here.
 
 ### `companies: N% of asset-years sum to >105%` (warning, not an error)
 
-`prepare_inputs.py` totals `ownership_percentage` per `(asset_id, year)` on the
-**delivered rows, across every rung, before any tier is selected** - and the
-warning fires only when more than 1% of asset-years exceed 105%. Below that
-share it stays silent, so a quiet run is not proof of a clean ownership
-universe. Capacity is allocated as `capacity × ownership_percentage / 100` (the
-column is on the 0-100 scale), so rows that sum above 100% within one rung
-inflate every downstream number silently. A correct multi-tier file totals
-above 100% raw by design - each rung is an alternative view of the same
-capacity - which is why the threshold is a share of asset-years, not any single
-breach.
+`prepare_inputs.py` totals `ownership_percentage` per `(asset_id, year, tier)`
+on the **delivered rows, before any tier is selected** - each rung on its own -
+and the warning fires when more than 1% of those groups exceed 105%. It lists
+the share per tier: **read the one for your `ownership_type`**, because only
+that tier reaches the run. A dirty `equity` tier does not touch a run on
+`direct` (the default). Below the 1% share the check stays silent, so a quiet
+run is not proof of a clean ownership universe. Capacity is allocated as
+`capacity × ownership_percentage / 100` (the column is on the 0-100 scale), so
+rows that sum above 100% within the selected rung inflate every downstream
+number silently.
 
 The usual cause is an extract that flattens every rung of an ownership chain, so
 different companies on different rungs each claim the same capacity. Note that
