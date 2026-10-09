@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from altr_model.parameter_checks import check_parameters
 from altr_model.pipelines.prepare_scenario_asset_and_company_inputs._input_nodes import (
     apply_lrmc_price_floor,
     capital_recovery_factor,
@@ -200,9 +201,8 @@ def test_floors_are_per_region_year():
     ],
 )
 def test_bad_parameters_are_rejected(params):
-    frame = pd.DataFrame([_row("CoalCap - w/o CCS", 25.3, 70.0, **COAL)])
     with pytest.raises(ValueError, match="price_floor"):
-        apply_lrmc_price_floor(frame, params, "S")
+        check_parameters({"price_floor": params})
 
 
 def test_input_frame_is_not_mutated():
@@ -337,7 +337,7 @@ def test_params_none_and_a_null_rate_are_handled():
         out["price_floor_lrmc"] == 0.0
     ).all()
     with pytest.raises(ValueError, match="price_floor.discount_rate"):
-        apply_lrmc_price_floor(frame, {"method": "lrmc", "discount_rate": None})
+        check_parameters({"price_floor": {"method": "lrmc", "discount_rate": None}})
 
 
 STAGED = (
@@ -563,9 +563,7 @@ def test_an_absurdly_long_but_finite_lifetime_still_sets_a_floor():
 )
 def test_a_missing_or_non_numeric_rate_is_a_value_error(params):
     with pytest.raises(ValueError, match="price_floor.discount_rate"):
-        apply_lrmc_price_floor(
-            pd.DataFrame([_row("CoalCap - w/o CCS", 25.0, 70.0, **COAL)]), params, "S"
-        )
+        check_parameters({"price_floor": params})
 
 
 # ── the floor comes from the baseline scenario and is shared by every scenario ─

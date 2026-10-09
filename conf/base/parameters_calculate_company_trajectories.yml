@@ -6,7 +6,7 @@
 # ── Shock timing ──────────────────────────────────────────────────────────────────
 # Calendar years (integers). `shock_year` is when market participants learn about
 # the policy shock; `alignment_year` is when the target trajectory must be reached.
-# `alignment_year` must be >= `shock_year` (validated by `check_input_parameters`).
+# `alignment_year` must be >= `shock_year` (checked before the run by `altr_model/parameter_checks.py`).
 # The gap between them is the transition window: a longer window is a more realistic
 # phase-out, a shorter one a more abrupt repricing.
 shock_year: 2033

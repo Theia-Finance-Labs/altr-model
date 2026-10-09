@@ -7,17 +7,12 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-from altr_model._validation import validate_choice
+from altr_model.parameter_checks import (
+    RETIREMENT_TIMING_DEFERRED,
+    RETIREMENT_TIMING_NATURAL,
+)
 
 logger = logging.getLogger(__name__)
-
-
-#: How a NATURAL retirement — age past the technology's lifetime — is dated.
-#: The two pathways must use the SAME rule, or natural retirement stops
-#: cancelling out of the shock-minus-baseline difference.
-RETIREMENT_TIMING_DEFERRED = "deferred_to_window"
-RETIREMENT_TIMING_NATURAL = "natural"
-RETIREMENT_TIMINGS = (RETIREMENT_TIMING_DEFERRED, RETIREMENT_TIMING_NATURAL)
 
 
 def effective_retirement_year(
@@ -42,12 +37,9 @@ def effective_retirement_year(
 
     Accepts a scalar or a Series and returns the same shape.
 
-    Validated at the three public node entry points AND here. The node-entry
-    guards catch a misspelled value even on paths that return before reaching
-    this helper (empty allocations, retirement disabled, no retiring assets);
-    this guard is defence in depth for direct callers.
+    `retirement_timing` is checked once, before the run, in
+    altr_model.parameter_checks.
     """
-    validate_choice("retirement_timing", retirement_timing, RETIREMENT_TIMINGS)
     if retirement_timing == RETIREMENT_TIMING_NATURAL or alignment_year is None:
         return retirement_year
     return np.maximum(retirement_year, int(alignment_year) + 1)

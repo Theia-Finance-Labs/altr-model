@@ -7,29 +7,15 @@ import logging
 import numpy as np
 import pandas as pd
 
-from altr_model._validation import validate_choice
+from altr_model.parameter_checks import (
+    SPREAD_CARRIER_ALIGNMENT,
+    SPREAD_CARRIER_TECHNOLOGY,
+)
 
 logger = logging.getLogger(__name__)
 
 
 CARBONTECH_ALIGNMENTS = {"misaligned_high_carbon", "aligned_high_carbon"}
-
-#: What decides that an asset is "brown", for the discount spread AND the
-#: terminal growth rate alike — owner ruling 13 tied both to one carrier.
-SPREAD_CARRIER_TECHNOLOGY = "technology"
-SPREAD_CARRIER_ALIGNMENT = "alignment_type"
-SPREAD_CARRIERS = (SPREAD_CARRIER_TECHNOLOGY, SPREAD_CARRIER_ALIGNMENT)
-
-#: What a non-stranded group with a negative terminal FCFF is worth.
-NEGATIVE_TV_METHODS = ("perpetuity", "bounded_annuity")
-
-#: What the terminal anchor is allowed to see.
-TV_ANCHOR_POLICIES = ("raw", "operating")
-
-#: How the terminal value is computed. "none" writes no terminal value at all;
-#: "perpetuity" is the Gordon-growth tier split below. A typo used to take the
-#: "none" arm silently, collapsing every NPV to its forecast-window sum.
-TERMINAL_METHODS = ("none", "perpetuity")
 
 #: The asset-series grain `asset_horizon_attributes` is keyed on — the same
 #: `ASSET_SERIES_KEYS` the earnings stage writes it at. The valuation group keys
@@ -245,36 +231,8 @@ def compute_yearly_npv_trajectories(
 
     logger.info("Computing yearly NPV trajectories...")
 
-    # Each of these selects between behaviours that move published numbers, and
-    # each was reached by an `if x == "a": ... else: ...`, so a misspelling did
-    # not raise — it silently took the other arm. Reject at the top of the node
-    # instead, naming the conf key and every legal value.
-    validate_choice("dcf.terminal_value.method", terminal_method, TERMINAL_METHODS)
-    validate_choice("dcf.negative_tv_method", negative_tv_method, NEGATIVE_TV_METHODS)
-    validate_choice("dcf.tv_anchor_policy", tv_anchor_policy, TV_ANCHOR_POLICIES)
-    validate_choice("dcf.spread_carrier", spread_carrier, SPREAD_CARRIERS)
-
-    if stranding_aware_tv:
-        logger.info(
-            "Stranding-aware TV ENABLED (Gourdel 2024): "
-            "stranded (>=%d consecutive loss years) -> TV=0; "
-            "everything else -> Gordon Growth perpetuity",
-            stranding_consecutive_years,
-        )
-
-    if negative_tv_method == "bounded_annuity":
-        logger.info(
-            "Bounded negative TV ENABLED: a non-stranded group with a negative "
-            "terminal FCFF takes max(run-out annuity, -decommissioning cost) "
-            "instead of an unbounded negative perpetuity"
-        )
-
-    if tv_anchor_policy == "operating":
-        logger.info(
-            "Operating terminal anchor ENABLED: zero capacity at the horizon "
-            "means TV=0, and decommissioning charges are excluded from the "
-            "anchor years' FCFF"
-        )
+    # Switch values are checked once, before the run, in
+    # altr_model.parameter_checks, which also logs the active options.
 
     g_brown = (
         terminal_growth_rate_brown

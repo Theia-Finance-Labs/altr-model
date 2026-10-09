@@ -11,6 +11,7 @@ sees the same number.
 import numpy as np
 import pandas as pd
 import pytest
+from altr_model.parameter_checks import check_parameters
 from altr_model.pipelines.prepare_scenario_asset_and_company_inputs._input_nodes import (
     apply_decom_cost_fraction,
 )
@@ -52,7 +53,7 @@ def test_the_input_frame_is_not_mutated():
 @pytest.mark.parametrize("fraction", [1.5, -0.1, float("nan")])
 def test_a_fraction_outside_the_unit_interval_is_rejected(fraction):
     with pytest.raises(ValueError, match="decom_cost_fraction_of_capex"):
-        apply_decom_cost_fraction(_scenarios(), fraction)
+        check_parameters({"decom_cost_fraction_of_capex": fraction})
 
 
 def test_a_missing_capex_column_is_rejected_by_name():

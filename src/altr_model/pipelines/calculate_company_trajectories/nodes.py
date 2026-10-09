@@ -17,9 +17,6 @@ from altr_model.pipelines.calculate_company_trajectories._late_sudden_nodes impo
     late_sudden_misaligned_high_carbon_companies,
     late_sudden_misaligned_low_carbon_companies,
 )
-from altr_model.pipelines.prepare_scenario_asset_and_company_inputs._input_nodes import (
-    check_input_parameters,
-)
 from altr_model.pipelines.prepare_scenario_asset_and_company_inputs.nodes import (
     FINANCIAL_SURFACE_COLUMNS,
     STRUCTURAL_SURFACE_COLUMNS,
@@ -33,11 +30,6 @@ COMPANY_YEAR_KEYS = [
     "year",
 ]
 CLASSIFICATION_KEYS = COMPANY_YEAR_KEYS[:-1]
-
-
-def validate_model_years(shock_year: int, alignment_year: int) -> None:
-    """Validate transition timing next to the nodes that consume it."""
-    check_input_parameters(shock_year, alignment_year)
 
 
 def compute_baseline_and_target_trajectories(

@@ -22,13 +22,10 @@ import logging
 
 import pandas as pd
 
-from altr_model._validation import validate_choice
-
 logger = logging.getLogger(__name__)
 
 PRICE = "carbon_price_usd_per_tco2"
 FLAG = "carbon_price_filled"
-METHODS = ("none", "peer_scenario_median")
 
 
 def _protocol(scenario: pd.Series, provider: pd.Series) -> pd.Series:
@@ -42,7 +39,6 @@ def _protocol(scenario: pd.Series, provider: pd.Series) -> pd.Series:
 
 def fill_missing_carbon_prices(scenarios: pd.DataFrame, method: str) -> pd.DataFrame:
     """Return a copy with all-zero carbon prices filled from peers, flagged."""
-    validate_choice("carbon_price_fill", method, METHODS)
     if method == "none":
         return scenarios
 

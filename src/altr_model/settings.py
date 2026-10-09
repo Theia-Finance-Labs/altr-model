@@ -4,6 +4,11 @@ https://docs.kedro.org/en/stable/kedro_project_setup/settings.html."""
 
 import os
 
+from altr_model.parameter_checks import ParameterChecksHook
+
+# Parameter checks run once, before the first node of any pipeline.
+HOOKS = (ParameterChecksHook(),)
+
 # Instantiated project hooks.
 # For example, after creating a hooks.py and defining a ProjectHooks class there, do
 # from altr_model.hooks import ProjectHooks

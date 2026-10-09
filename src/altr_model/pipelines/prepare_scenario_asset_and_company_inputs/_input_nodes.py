@@ -9,14 +9,6 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 
-def check_input_parameters(
-    shock_year: int,
-    alignment_year: int,
-) -> None:
-    if alignment_year < shock_year:
-        raise ValueError("Alignment year cannot be earlier than shock year")
-
-
 def filter_scenarios(
     scenarios_pathways: pd.DataFrame, target_scenario: str, baseline_scenario: str
 ) -> pd.DataFrame:
@@ -235,16 +227,11 @@ def _select_ownership_tier(
     return selected
 
 
-#: Accepted values of the `ownership_aggregation` parameter, in the order the
-#: error message lists them; the first is the default.
-OWNERSHIP_AGGREGATIONS = ("tier_filter", "sum")
-
-
 def filter_companies(
     companies_ownerships: pd.DataFrame,
     company_ids: List[str],
     ownership_type: str = "direct",
-    ownership_aggregation: str = OWNERSHIP_AGGREGATIONS[0],
+    ownership_aggregation: str = "tier_filter",
 ) -> pd.DataFrame:
     """Reduce the ownership table to one stake row per company-asset-year.
 
@@ -252,14 +239,6 @@ def filter_companies(
     combine - see the annotated key in
     `conf/base/parameters_prepare_scenario_asset_and_company_inputs.yml`.
     """
-    if ownership_aggregation not in OWNERSHIP_AGGREGATIONS:
-        raise ValueError(
-            f"ownership_aggregation must be one of {OWNERSHIP_AGGREGATIONS}, "
-            f"got {ownership_aggregation!r}. Use 'tier_filter' to report on one "
-            "ownership tier (the validated default) or 'sum' to total every "
-            "holding a company has in an asset-year."
-        )
-
     # Tier first, then consolidate: consolidation sums the stakes it is given,
     # so under "tier_filter" it must only ever see one rung of the tree. Under
     # "sum" it is handed every rung deliberately.
@@ -687,9 +666,6 @@ def determine_lifetime_per_technology(
     return unique_combinations
 
 
-# Share of new-build cost charged at retirement: 0 = free exit, 1 = a full rebuild.
-DECOM_FRACTION_BOUNDS = (0.0, 1.0)
-
 
 def apply_decom_cost_fraction(
     scenarios: pd.DataFrame, fraction: float | None
@@ -705,12 +681,6 @@ def apply_decom_cost_fraction(
     """
     if fraction is None:
         return scenarios
-    lo, hi = DECOM_FRACTION_BOUNDS
-    if not (lo <= float(fraction) <= hi):
-        raise ValueError(
-            "decom_cost_fraction_of_capex must be within [0, 1] or null "
-            f"(share of capex_usd_per_mw charged at retirement); got {fraction!r}"
-        )
     if "capex_usd_per_mw" not in scenarios.columns:
         raise ValueError(
             "decom_cost_fraction_of_capex needs the capex_usd_per_mw column, "
@@ -745,7 +715,6 @@ def _generation_mwh(frame: pd.DataFrame) -> pd.Series:
     return (pathway * cf * 8760).where(cf.notna(), pathway)
 
 
-CAPTURE_PRICE_METHODS = ("none", "hirth2013")
 CAPTURE_WIND_TECHNOLOGIES = ("WindCap - Onshore", "WindCap - Offshore")
 CAPTURE_SOLAR_TECHNOLOGIES = ("SolarCap - PV",)
 _REGION_YEAR_KEYS = ["scenario", "scenario_geography", "year"]
@@ -766,10 +735,6 @@ def compute_capture_price_factor(
     """
     params = params or {}
     method = params.get("method", "none")
-    if method not in CAPTURE_PRICE_METHODS:
-        raise ValueError(
-            f"capture_price.method must be one of {CAPTURE_PRICE_METHODS}; got {method!r}"
-        )
     if method == "none":
         return scenarios.assign(capture_price_factor=1.0)
 
@@ -824,15 +789,12 @@ def compute_capture_price_factor(
 # the full cost of the plants those pathways keep building. In long-run
 # equilibrium the average price must at least cover the levelised cost of the
 # price-setting entrant, or nothing gets built (peak-load pricing, Boiteux).
-PRICE_FLOOR_METHODS = ("none", "lrmc")
 #: Technologies that can set the price: the region-year's largest thermal
 #: generator by scenario pathway. Nuclear and hydro are price-takers in practice.
 PRICE_SETTING_TECHNOLOGY_PREFIXES = ("CoalCap", "GasCap", "OilCap", "BiomassCap")
 HOURS_PER_YEAR = 8760
 #: The floor is one number per region-year, shared by every scenario in the run.
 _FLOOR_KEYS = ["scenario_geography", "year"]
-#: A real cost of capital must be a rate strictly between these bounds.
-DISCOUNT_RATE_BOUNDS = (0.0, 1.0)
 
 
 def capital_recovery_factor(rate: float, lifetime_years) -> float:
@@ -885,22 +847,9 @@ def apply_lrmc_price_floor(
     """
     params = params or {}
     method = params.get("method", "none")
-    if method not in PRICE_FLOOR_METHODS:
-        raise ValueError(
-            f"price_floor.method must be one of {PRICE_FLOOR_METHODS}; got {method!r}"
-        )
     if method == "none":
         return scenarios.assign(price_floor_lrmc=0.0, price_setter_technology=None)
-    try:
-        rate = float(params.get("discount_rate"))
-    except (TypeError, ValueError):
-        rate = float("nan")
-    lo, hi = DISCOUNT_RATE_BOUNDS
-    if not (lo < rate < hi):
-        raise ValueError(
-            "price_floor.discount_rate must be a real rate within (0, 1), e.g. 0.08; "
-            f"got {params.get('discount_rate')!r}"
-        )
+    rate = float(params["discount_rate"])
 
     if baseline_scenario is None:
         raise ValueError(

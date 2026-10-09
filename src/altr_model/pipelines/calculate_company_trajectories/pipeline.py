@@ -10,7 +10,6 @@ from .nodes import (
     classify_company_trajectory_alignment,
     combine_company_trajectory_cases,
     compute_baseline_and_target_trajectories,
-    validate_model_years,
 )
 
 NAMESPACE = "calculate_company_trajectories"
@@ -22,15 +21,6 @@ PIPELINE_PARAMETERS = {"alignment_year", "price_ramp", "shock_year"}
 def create_pipeline(**kwargs) -> Pipeline:
     return pipeline(
         [
-            node(
-                validate_model_years,
-                inputs={
-                    "shock_year": "params:shock_year",
-                    "alignment_year": "params:alignment_year",
-                },
-                outputs=None,
-                name="validate_model_years",
-            ),
             node(
                 compute_baseline_and_target_trajectories,
                 inputs="company_projection_inputs",

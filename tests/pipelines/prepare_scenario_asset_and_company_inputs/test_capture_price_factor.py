@@ -11,6 +11,7 @@ average to the system price, so dispatchable plant takes the residual.
 
 import pandas as pd
 import pytest
+from altr_model.parameter_checks import check_parameters
 from altr_model.pipelines.prepare_scenario_asset_and_company_inputs._input_nodes import (
     compute_capture_price_factor,
 )
@@ -108,9 +109,7 @@ def test_floor_and_cap_bind_at_extreme_shares():
 
 def test_an_unknown_method_is_rejected():
     with pytest.raises(ValueError, match="capture_price.method"):
-        compute_capture_price_factor(
-            _region({"CoalCap - w/o CCS": 1.0}), {"method": "merit_order"}
-        )
+        check_parameters({"capture_price": {"method": "merit_order"}})
 
 
 def test_input_frame_is_not_mutated():

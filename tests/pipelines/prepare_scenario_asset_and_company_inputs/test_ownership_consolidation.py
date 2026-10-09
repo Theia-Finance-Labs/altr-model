@@ -37,6 +37,7 @@ from altr_model.pipelines.prepare_scenario_asset_and_company_inputs._input_nodes
     _consolidate_ownership_stakes,
     filter_companies,
 )
+from altr_model.parameter_checks import check_parameters
 
 KEY = ["company_id", "asset_id", "year"]
 
@@ -326,6 +327,6 @@ def test_an_equity_only_holder_is_dropped_by_tier_filter_and_kept_by_sum():
 
 def test_an_unknown_ownership_aggregation_names_both_options():
     with pytest.raises(ValueError, match="tier_filter"):
-        filter_companies(_multi_stake_frame(), [], ownership_aggregation="average")
+        check_parameters({"ownership_aggregation": "average"})
     with pytest.raises(ValueError, match="sum"):
-        filter_companies(_multi_stake_frame(), [], ownership_aggregation="average")
+        check_parameters({"ownership_aggregation": "average"})

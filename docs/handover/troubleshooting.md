@@ -117,6 +117,23 @@ separate two DIFFERENT companies claiming the same capacity. Fix that in the
 source extract. (Under `ownership_aggregation: "sum"` the tiers are deliberately
 added together, so this warning is expected there and is not a data fault.)
 
+## Parameters
+
+### `ValueError` naming a parameter, before any node runs
+
+Every switch, numeric range and the `alignment_year` ≥ `shock_year` rule is
+checked once, before the first node of any pipeline, by
+`src/altr_model/parameter_checks.py`. The message names the key as it appears in
+`conf/` and lists the legal values, for example:
+
+```
+retirement_timing must be one of 'deferred_to_window', 'natural'; got 'Natural'.
+```
+
+Fix the value in `conf/local/` or on the `--params` line and run again. The
+start of every run also logs one `Model options:` line with the value of each
+switch, so the log records which model produced the numbers.
+
 ## Scenario selection
 
 ### `AssertionError: Target scenario '…' not found in scenarios pathways`

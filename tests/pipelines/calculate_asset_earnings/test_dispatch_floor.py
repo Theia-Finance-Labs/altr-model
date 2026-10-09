@@ -11,7 +11,7 @@ a plant without fuel, and it never pays fixed costs.
 
 import pandas as pd
 import pytest
-
+from altr_model.parameter_checks import check_parameters
 from altr_model.pipelines.calculate_asset_earnings.nodes import compute_ops_block
 
 YEARS = [2025, 2026]
@@ -97,4 +97,4 @@ def test_the_floor_applies_after_the_capture_factor():
 
 def test_an_unknown_method_is_rejected():
     with pytest.raises(ValueError, match="dispatch_floor"):
-        _ops(_block(price=25.0, fuel_price=27.0, efficiency=0.5), "merit_order")
+        check_parameters({"dispatch_floor": "merit_order"})

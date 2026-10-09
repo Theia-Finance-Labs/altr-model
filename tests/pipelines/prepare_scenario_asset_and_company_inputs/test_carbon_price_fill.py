@@ -11,6 +11,7 @@ median-across-geographies price. Scenarios with no priced peer stay at 0.
 import numpy as np
 import pandas as pd
 import pytest
+from altr_model.parameter_checks import check_parameters
 from altr_model.pipelines.prepare_scenario_asset_and_company_inputs._carbon_price_fill import (
     fill_missing_carbon_prices,
 )
@@ -106,4 +107,4 @@ def test_input_frame_is_not_mutated():
 
 def test_unknown_method_is_rejected():
     with pytest.raises(ValueError, match="carbon_price_fill"):
-        fill_missing_carbon_prices(_frame(), "global_median")
+        check_parameters({"carbon_price_fill": "global_median"})

@@ -60,7 +60,6 @@ surface is a mixture of the two scenarios rather than either one.
 
 | Node | Function | What it does |
 | --- | --- | --- |
-| `validate_model_years` | `validate_model_years` | Fails the run early if `alignment_year` is below `shock_year` |
 | `calculate_baseline_and_target_trajectories` | `compute_baseline_and_target_trajectories` | Applies the TMSR growth factors to each company's starting capacity, producing both reference paths |
 | `classify_company_trajectory_alignment` | `classify_company_trajectory_alignment` | Labels every company-technology with `aligned`, `increasing` and the four-way `alignment_type` |
 | `calculate_misaligned_decreasing_technology_transition` | same | Shock shape for `misaligned_high_carbon` pathways, with asset retirement |
